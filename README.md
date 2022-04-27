@@ -41,9 +41,26 @@ available in the [LICENSE](LICENSE) file.
 Please note that the project explicitly does not require a CLA (Contributor
 License Agreement) from its contributors.
 
+Trademarks
+============
+
+PostgreSQL, MySQL, M3 and ClickHouse are trademarks and property of their respective owners. All product and service names used in this website are for identification purposes only and do not imply endorsement.
+
+Credits
+============
+
+Rohmu was created by, and is maintained by, [Aiven](https://aiven.io).
+
+Rohmu was originally a part of [PGHoard](https://github.com/aiven/pghoard) but was later extracted to its own GitHub project.
+
 Contact
 ============
 Bug reports and patches are very welcome, please post them as GitHub issues and
 pull requests at https://github.com/aiven/rohmu .  To report any possible
 vulnerabilities or other serious issues please see our [security](SECURITY.md)
 policy.
+
+Copyright
+============
+
+Copyright (C) 2022 Aiven Ltd and contributors to the Rohmu project.
