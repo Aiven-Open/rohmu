@@ -6,7 +6,7 @@ permissions: read-all
 on:
   push:
     branches:
-      - import
+      - main
     tags:
       - '**'
   pull_request:
