@@ -36,6 +36,7 @@ jobs:
       - id: dependencies
         run: |
           pip install -r requirements.txt
+          pip install -r requirements.dev.txt
       - id: pylint
         run: make lint
 
