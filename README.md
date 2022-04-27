@@ -1,4 +1,4 @@
-![image](logo.svg)
+![image](logo.png)
 
 
 Rohmu is a Python library for building backup tools for databases providing
