@@ -1,5 +1,6 @@
-Rohmu
-======================
+![image](logo.svg)
+
+
 Rohmu is a Python library for building backup tools for databases providing
 functionality for compression, encryption and transferring data between the
 database and an object storage. Rohmu supports main public clouds such as GCP,
