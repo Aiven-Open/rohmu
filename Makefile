@@ -1,5 +1,5 @@
-short_ver = $(shell git describe --abbrev=0 --always)
-long_ver = $(shell git describe --long 2>/dev/null || echo $(short_ver)-0-unknown-g`git describe --always`)
+short_ver = $(shell git describe --abbrev=0 --always | cut -f2 -d/ )
+long_ver = $(shell git describe --long 2>/dev/null | cut -f2 -d/ || echo $(short_ver)-0-unknown-g`git describe --always`)
 
 .DEFAULT_GOAL := rpm
 
