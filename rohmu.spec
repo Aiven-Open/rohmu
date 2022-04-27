@@ -1,4 +1,4 @@
-Name:           rohmu
+Name:           python3-rohmu
 Version:        %{major_version}
 Release:        %{minor_version}%{?dist}
 Url:            https://github.com/aiven/rohmu
