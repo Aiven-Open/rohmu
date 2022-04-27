@@ -31,7 +31,7 @@ def test_basic_upload(transfer, tmp_path, request):
     assert transfer.get_contents_to_string("x1") == (b"dummy", {"k": "v"})
     # Same thing, but with a key looking like a directory
     transfer.store_file_from_memory("NONEXISTENT-DIR/x1", b"dummy", None)
-    assert transfer.get_contents_to_string("x1") == (b"dummy", None)
+    assert transfer.get_contents_to_string("NONEXISTENT-DIR/x1") == (b"dummy", {})
 
     # Same thing, but from disk now
     dummy_file= scratch / "a"
