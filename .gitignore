@@ -1,4 +1,3 @@
-*.pyc
 *.pyo
 *.log
 *~
@@ -19,3 +18,4 @@ __pycache__/
 /.venv/
 *.orig
 coverage.xml
+rohmu-rpm-src.tar
