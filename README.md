@@ -3,17 +3,28 @@ Rohmu
 Rohmu is a Python library for building backups tools for databases providing functionality for compression, encryption and transferring data between the database and an object storage. Rohmu supports main public clouds such as GCP, AWS and Azure for backup storage.  Rohmu is used in various backup tools such as [PGHhoard](https://github.com/aiven/pghoard) for PostgreSQL, [MyHoard](https://github.com/aiven/myhoard) for MySQL and [Astacus](https://github.com/aiven/astacus) for M3 qnd ClickHouse and other databases. 
 
 
-Overview
-========
-
-Rohmu is python library providing an interface to various cloud storage
-providers.
-
 Features
 ============
 
-Setup
+* Supported object storages: Azure, GCP, S3, Swift (OpenStack), local file storage and SFTP. 
+* Supported compression algorithms: Snappy, [zstd](https://github.com/facebook/zstd) and [lzma](https://docs.python.org/3/library/lzma.html).
+
+Requirements
 ============
+
+Rohmu requires Python >= 3.6+. For Python libary dependencies, have a look at [`requirements.txt`](https://github.com/aiven/rohmu/blob/main/requirements.txt).
+
+Usage example
+=============
+
+***Add usage example here***
+
+For real-world usage you can have a look at [how Rohmu is used in PGHoard](https://github.com/aiven/pghoard/blob/main/pghoard/basebackup.py).
+
+Development
+============
+
+***TODO***
 
 License
 ============
