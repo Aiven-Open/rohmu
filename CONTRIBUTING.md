@@ -20,7 +20,15 @@ Contributions are very welcome on {{ PROJECT }}. When contributing please keep t
 ## Manual testing
 
 
-### Configuration
+## Building the package
+
+### On Fedora
+```shell
+sudo make fedora-dev-setup
+make rpm
+```
+
+## Configuration
 
 
 # Opening a PR
