@@ -8,3 +8,7 @@ pytest-cov
 # Same version from pghoard
 yapf==0.30.0
 isort==5.7.0
+types-python-dateutil
+types-paramiko
+types-botocore
+types-httplib2
