@@ -18,3 +18,4 @@ __pycache__/
 /.venv/
 *.orig
 coverage.xml
+rohmu-rpm-src.tar
