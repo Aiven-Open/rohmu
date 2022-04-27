@@ -3,9 +3,11 @@ from rohmu.object_storage.local import LocalTransfer
 from rohmu.delta.snapshot import Snapshotter
 from rohmu.delta.common import EMBEDDED_FILE_SIZE, Progress
 
+
 @pytest.fixture(name="local_transfer")
 def local_transfer(tmp_path):
     return LocalTransfer(tmp_path / "local_storage")
+
 
 class SnapshotterWithDefaults(Snapshotter):
     def create_4foobar(self):
