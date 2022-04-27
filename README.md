@@ -1,4 +1,4 @@
-Rohmu
+Rohmu ![BuildStatus](https://github.com/aiven/rohmu/actions/workflows/build.yml/badge.svg?branch=main)
 ======================
 Rohmu is a Python library for building backup tools for databases providing
 functionality for compression, encryption and transferring data between the
