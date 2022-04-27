@@ -1,5 +1,5 @@
 # Lock mypy to the same major version used in downstream build environments
-mypy>=0.931,<1.0
+mypy
 # Same version from pghoard
 pylint>=2.4.3,<=2.7.2
 pylint-quotes
