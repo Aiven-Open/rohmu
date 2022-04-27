@@ -1,0 +1,16 @@
+# same versions than pghoard this must reviewed and pinned
+mypy
+# Same version from pghoard
+pylint>=2.4.3,<=2.7.2
+pylint-quotes
+pytest
+pytest-cov
+pytest-mock
+# Same version from pghoard
+yapf==0.30.0
+isort==5.7.0
+unify
+types-python-dateutil
+types-paramiko
+types-botocore
+types-httplib2
