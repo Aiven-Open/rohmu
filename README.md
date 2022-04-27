@@ -1,6 +1,7 @@
 Rohmu
 ======================
-This is a template repository for creating open source repositories at Aiven.
+Rohmu is a Python library for building backups tools for databases providing functionality for compression, encryption and transferring data between the database and an object storage. Rohmu supports main public clouds such as GCP, AWS and Azure for backup storage.  Rohmu is used in various backup tools such as [PGHhoard](https://github.com/aiven/pghoard) for PostgreSQL, [MyHoard](https://github.com/aiven/myhoard) for MySQL and [Astacus](https://github.com/aiven/astacus) for M3 qnd ClickHouse and other databases. 
+
 
 Overview
 ========
