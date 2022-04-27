@@ -1,7 +1,8 @@
 import pytest
-from rohmu.object_storage.local import LocalTransfer
-from rohmu.delta.snapshot import Snapshotter
+
 from rohmu.delta.common import EMBEDDED_FILE_SIZE, Progress
+from rohmu.delta.snapshot import Snapshotter
+from rohmu.object_storage.local import LocalTransfer
 
 
 @pytest.fixture(name="local_transfer")
