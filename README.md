@@ -10,17 +10,28 @@ as [PGHhoard](https://github.com/aiven/pghoard) for PostgreSQL,
 databases.
 
 
-Overview
-========
-
-Rohmu is python library providing an interface to various cloud storage
-providers.
-
 Features
 ============
 
-Setup
+* Supported object storages: Azure, GCP, S3, Swift (OpenStack), local file storage and SFTP. 
+* Supported compression algorithms: Snappy, [zstd](https://github.com/facebook/zstd) and [lzma](https://docs.python.org/3/library/lzma.html).
+
+Requirements
 ============
+
+Rohmu requires Python >= 3.6+. For Python libary dependencies, have a look at [`requirements.txt`](https://github.com/aiven/rohmu/blob/main/requirements.txt).
+
+Usage example
+=============
+
+***Add usage example here***
+
+For real-world usage you can have a look at [how Rohmu is used in PGHoard](https://github.com/aiven/pghoard/blob/main/pghoard/basebackup.py).
+
+Development
+============
+
+***TODO***
 
 License
 ============
