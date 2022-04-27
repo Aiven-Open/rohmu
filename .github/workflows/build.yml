@@ -43,15 +43,14 @@ jobs:
       - id: mypy
         run: make mypy
 
-      # Disabling for now since this is reformatting a lot of file.
-      # - id: validate-style
-      #  run: |
-      #    make fmt
-      #    if [ $(git diff --name-only --diff-filter=ACMR | wc -l ) != 0 ]; then
-      #      echo "Reformatting failed! Please run make fmt on your commits and resubmit!" 1>&2;
-      #      git diff;
-      #      exit 1;
-      #    fi
+      - id: validate-style
+        run: |
+          make fmt
+          if [ $(git diff --name-only --diff-filter=ACMR | wc -l ) != 0 ]; then
+            echo "Reformatting failed! Please run make fmt on your commits and resubmit!" 1>&2;
+            git diff;
+            exit 1;
+          fi
   test:
     runs-on: ubuntu-latest
     needs: lint
