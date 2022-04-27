@@ -50,9 +50,11 @@ PostgreSQL, MySQL, M3 and ClickHouse are trademarks and property of their respec
 Credits
 ============
 
-Rohmu was created by, and is maintained by, [Aiven](https://aiven.io).
+Rohmu was created by and is maintained by [Aiven](https://aiven.io).
 
 Rohmu was originally a part of [PGHoard](https://github.com/aiven/pghoard) but was later extracted to its own GitHub project.
+
+The Rohmu logo was created by [@evche-aiven](https://github.com/evche-aiven).
 
 Contact
 ============
