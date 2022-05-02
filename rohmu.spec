@@ -38,7 +38,7 @@ python3 setup.py install --prefix=%{_prefix} --root=%{buildroot}
 
 %files
 %defattr(-,root,root,-)
-%doc README.md
+%doc README.rst
 %license LICENSE
 %{python3_sitelib}/*
 
