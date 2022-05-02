@@ -1,12 +1,13 @@
-import pytest
-from rohmu import errors
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from datetime import datetime
+
+import pytest
+
+from rohmu import errors
 
 
-@pytest.mark.parametrize("transfer",
-                         ["local_transfer"])
+@pytest.mark.parametrize("transfer", ["local_transfer"])
 def test_nonexistent(transfer, request):
     transfer = request.getfixturevalue(transfer)
     with pytest.raises(errors.FileNotFoundFromStorageError):
@@ -23,8 +24,7 @@ def test_nonexistent(transfer, request):
     assert transfer.list_path("NONEXISTENT") == []
 
 
-@pytest.mark.parametrize("transfer",
-                         ["local_transfer"])
+@pytest.mark.parametrize("transfer", ["local_transfer"])
 def test_basic_upload(transfer, tmp_path, request):
     scratch = tmp_path / "scratch"
     scratch.mkdir()
@@ -36,7 +36,7 @@ def test_basic_upload(transfer, tmp_path, request):
     assert transfer.get_contents_to_string("NONEXISTENT-DIR/x1") == (b"dummy", {})
 
     # Same thing, but from disk now
-    dummy_file= scratch / "a"
+    dummy_file = scratch / "a"
     with open(dummy_file, "wb") as fp:
         fp.write(b"dummy")
     transfer.store_file_from_disk("test1/x1", dummy_file, None)
@@ -45,21 +45,19 @@ def test_basic_upload(transfer, tmp_path, request):
     assert transfer.get_contents_to_fileobj("test1/x1", out) == {}
     assert out.getvalue() == b"dummy"
 
-@pytest.mark.parametrize("transfer",
-                         ["local_transfer"])
+
+@pytest.mark.parametrize("transfer", ["local_transfer"])
 def test_copy(transfer, request):
     transfer = request.getfixturevalue(transfer)
     transfer.store_file_from_memory("dummy", b"dummy", {"k": "v"})
     transfer.copy_file(source_key="dummy", destination_key="dummy_copy")
     assert transfer.get_contents_to_string("dummy_copy") == (b"dummy", {"k": "v"})
     # Same thing, but with different metadata
-    transfer.copy_file(source_key="dummy", destination_key="dummy_copy_metadata",
-            metadata={"new_k": "new_v"})
-    assert transfer.get_contents_to_string("dummy_copy_metadata") == (b"dummy",
-            {"new_k": "new_v"})
+    transfer.copy_file(source_key="dummy", destination_key="dummy_copy_metadata", metadata={"new_k": "new_v"})
+    assert transfer.get_contents_to_string("dummy_copy_metadata") == (b"dummy", {"new_k": "new_v"})
 
-@pytest.mark.parametrize("transfer",
-                         ["local_transfer"])
+
+@pytest.mark.parametrize("transfer", ["local_transfer"])
 def test_list(transfer, request):
     transfer = request.getfixturevalue(transfer)
     assert transfer.list_path("") == []
@@ -82,6 +80,7 @@ def test_list(transfer, request):
     files = transfer.list_path("", deep=True)
     assert len(files) == 2
     assert set(f["name"] for f in files) == {"dummy", "dummydir/dummy"}
+
 
 def test_hidden_local_files(local_transfer):
     """
