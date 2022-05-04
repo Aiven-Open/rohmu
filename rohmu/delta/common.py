@@ -74,6 +74,7 @@ class DeltaModel(BaseModel):
         # validate_assignment = True
         # TBD: Figure out why this doesn't work in some unit tests;
         # possibly the tests themselves are broken
+        validate_assignment = True
 
     def jsondict(self, **kw):
         # By default,
@@ -137,16 +138,23 @@ class SnapshotHash(DeltaModel):
 
 @functools.total_ordering
 class SnapshotFile(DeltaModel):
-    relative_path: Path
+    relative_path: Path = Field(..., allow_mutation=False)
     file_size: int
     stored_file_size: int
     mtime_ns: int
     hexdigest: str = ""
     content_b64: Optional[str]
+    # Indicator if a file should be part of a chunk/bundle - useful for the files which are small to be treated as
+    # separate delta hash files, but not small enough to be embedded into a manifest file, so better to group them
+    # together when e.g. uploading to the object storage
+    should_be_bundled: bool = False
 
     def __lt__(self, o):
         # In our use case, paths uniquely identify files we care about
         return self.relative_path < o.relative_path
+
+    def __hash__(self):
+        return hash(self.relative_path)
 
     def equals_excluding_mtime(self, o):
         return self.copy(update={"mtime_ns": 0}) == o.copy(update={"mtime_ns": 0})

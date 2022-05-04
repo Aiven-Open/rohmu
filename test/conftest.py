@@ -1,6 +1,9 @@
+from pathlib import Path
+from typing import Dict
+
 import pytest
 
-from rohmu.delta.common import EMBEDDED_FILE_SIZE, Progress
+from rohmu.delta.common import Progress
 from rohmu.delta.snapshot import Snapshotter
 from rohmu.object_storage.local import LocalTransfer
 
@@ -11,11 +14,9 @@ def local_transfer(tmp_path):
 
 
 class SnapshotterWithDefaults(Snapshotter):
-    def create_4foobar(self):
-        (self.src / "foo").write_text("foobar")
-        (self.src / "foo2").write_text("foobar")
-        (self.src / "foobig").write_text("foobar" * EMBEDDED_FILE_SIZE)
-        (self.src / "foobig2").write_text("foobar" * EMBEDDED_FILE_SIZE)
+    def create_samples(self, samples: Dict[Path, str]):
+        for file_name, body in samples.items():
+            (self.src / file_name).write_text(body)
         progress = Progress()
         assert self.snapshot(progress=progress) > 0
         ss1 = self.get_snapshot_state()
@@ -26,10 +27,13 @@ class SnapshotterWithDefaults(Snapshotter):
         assert ss1 == ss2
 
 
-@pytest.fixture(name="snapshotter")
-def fixture_snapshotter(tmp_path):
-    src = tmp_path / "src"
-    src.mkdir()
-    dst = tmp_path / "dst"
-    dst.mkdir()
-    yield SnapshotterWithDefaults(src=src, dst=dst, globs=["*"], parallel=1)
+@pytest.fixture(name="snapshotter_creator")
+def fixture_snapshotter_creator(tmp_path):
+    def create_snapshotter(**kwargs):
+        src = tmp_path / "src"
+        src.mkdir()
+        dst = tmp_path / "dst"
+        dst.mkdir()
+        return SnapshotterWithDefaults(src=src, dst=dst, globs=["*"], parallel=1, **kwargs)
+
+    return create_snapshotter
