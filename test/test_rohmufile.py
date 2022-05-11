@@ -1,11 +1,12 @@
 # Copyright (c) 2021 Aiven, Helsinki, Finland. https://aiven.io/
 
+from io import BytesIO
+from tempfile import NamedTemporaryFile
+
 import pytest
 
-from io import BytesIO
 from rohmu import rohmufile
 from rohmu.errors import InvalidConfigurationError
-from tempfile import NamedTemporaryFile
 
 
 def test_fileobj_name(tmpdir):
