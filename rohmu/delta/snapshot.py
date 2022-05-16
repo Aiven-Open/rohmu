@@ -34,7 +34,16 @@ class Snapshotter:
         built-in to Snapshotter, but having it there enables asserting its
         state during public API calls.
         """
-    def __init__(self, *, src, dst, globs, src_iterate_func: Optional[Callable] = None, parallel=1):
+    def __init__(
+        self,
+        *,
+        src,
+        dst,
+        globs,
+        src_iterate_func: Optional[Callable] = None,
+        parallel: Optional[int] = 1,
+        min_delta_file_size: int = 0
+    ):
         assert globs
         self.src = Path(src)
         self.dst = Path(dst)
@@ -45,6 +54,7 @@ class Snapshotter:
         self.parallel = parallel
         self.lock = threading.Lock()
         self.empty_dirs: List[Path] = []
+        self.min_delta_file_size = min_delta_file_size
 
     def _list_files(self, basepath: Path):
         result_files = set()
@@ -96,6 +106,7 @@ class Snapshotter:
             if reuse_old_snapshotfiles and old_snapshotfile:
                 snapshotfile.hexdigest = old_snapshotfile.hexdigest
                 snapshotfile.content_b64 = old_snapshotfile.content_b64
+                snapshotfile.should_be_bundled = old_snapshotfile.should_be_bundled
                 if old_snapshotfile == snapshotfile:
                     same += 1
                     if increase_worth_reporting(same):
@@ -172,7 +183,7 @@ class Snapshotter:
             changes += 1
         return changes
 
-    def snapshot(self, *, progress: Optional[Progress] = None, reuse_old_snapshotfiles=True):
+    def snapshot(self, *, progress: Optional[Progress] = None, reuse_old_snapshotfiles: bool = True):
         assert self.lock.locked()
 
         if progress is None:
@@ -224,6 +235,8 @@ class Snapshotter:
             with snapshotfile.open_for_reading(self.dst) as f:
                 if snapshotfile.file_size <= EMBEDDED_FILE_SIZE:
                     snapshotfile.content_b64 = base64.b64encode(f.read()).decode()
+                elif snapshotfile.file_size < self.min_delta_file_size:
+                    snapshotfile.should_be_bundled = True
                 else:
                     snapshotfile.hexdigest = hash_hexdigest_readable(f)
             return snapshotfile
