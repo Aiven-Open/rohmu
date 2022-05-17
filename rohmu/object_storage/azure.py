@@ -4,14 +4,14 @@ rohmu - azure object store interface
 Copyright (c) 2016 Ohmu Ltd
 See LICENSE for details
 """
-import logging
-import time
-from io import BytesIO
-
 # pylint: disable=import-error, no-name-in-module
-import azure.common
 from azure.core.exceptions import HttpResponseError, ResourceExistsError
 from azure.storage.blob import BlobServiceClient, ContentSettings
+from io import BytesIO
+
+import azure.common
+import logging
+import time
 
 try:
     from azure.storage.blob import BlobPrefix, BlobType
@@ -19,14 +19,14 @@ except ImportError:
     # old versions of the azure blob storage library do not expose the classes publicly
     from azure.storage.blob._models import BlobPrefix, BlobType
 
-from ..errors import (FileNotFoundFromStorageError, InvalidConfigurationError, StorageError)
-from .base import (KEY_TYPE_OBJECT, KEY_TYPE_PREFIX, BaseTransfer, IterKeyItem, get_total_memory)
+from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
+from .base import BaseTransfer, get_total_memory, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
 
 ENDPOINT_SUFFIXES = {
     None: "core.windows.net",
     "germany": "core.cloudapi.de",  # Azure Germany is a completely separate cloud from the regular Azure Public cloud
     "china": "core.chinacloudapi.cn",
-    "public": "core.windows.net"
+    "public": "core.windows.net",
 }
 
 
@@ -298,7 +298,7 @@ class AzureTransfer(BaseTransfer):
             blob_type=BlobType.BlockBlob,
             content_settings=content_settings,
             metadata=self.sanitize_metadata(metadata, replace_hyphen_with="_"),
-            overwrite=True
+            overwrite=True,
         )
 
     def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
@@ -315,7 +315,7 @@ class AzureTransfer(BaseTransfer):
                 blob_type=BlobType.BlockBlob,
                 content_settings=content_settings,
                 metadata=self.sanitize_metadata(metadata, replace_hyphen_with="_"),
-                overwrite=True
+                overwrite=True,
             )
 
     def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
@@ -345,7 +345,7 @@ class AzureTransfer(BaseTransfer):
                 content_settings=content_settings,
                 metadata=self.sanitize_metadata(metadata, replace_hyphen_with="_"),
                 raw_response_hook=progress_callback,
-                overwrite=True
+                overwrite=True,
             )
         finally:
             if not seekable:

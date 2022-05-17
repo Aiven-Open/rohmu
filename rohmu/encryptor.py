@@ -5,22 +5,21 @@ Copyright (c) 2016 Ohmu Ltd
 See LICENSE for details
 """
 
+from . import IO_BLOCK_SIZE
+from .filewrap import FileWrap, Sink, Stream
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.ciphers import algorithms, Cipher, modes
+from cryptography.hazmat.primitives.hashes import SHA1, SHA256
+from cryptography.hazmat.primitives.hmac import HMAC
+
+import cryptography
+import cryptography.hazmat.backends.openssl.backend
 import io
 import logging
 import os
 import struct
-
-import cryptography
-import cryptography.hazmat.backends.openssl.backend
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import padding
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives.hashes import SHA1, SHA256
-from cryptography.hazmat.primitives.hmac import HMAC
-
-from . import IO_BLOCK_SIZE
-from .filewrap import FileWrap, Sink, Stream
 
 if cryptography.__version__ < "1.6":  # type: ignore
     # workaround for deadlock https://github.com/pyca/cryptography/issues/2911
@@ -31,7 +30,7 @@ AES_BLOCK_SIZE = 16
 
 
 class EncryptorError(Exception):
-    """ EncryptorError """
+    """EncryptorError"""
 
 
 class Encryptor:
@@ -110,6 +109,7 @@ class EncryptorFile(FileWrap):
 
 class EncryptorStream(Stream):
     """Non-seekable stream of data that adds encryption on top of given source stream"""
+
     def __init__(self, src_fp, rsa_public_key_pem):
         super().__init__(src_fp)
         self._encryptor = Encryptor(rsa_public_key_pem)
@@ -271,7 +271,7 @@ class DecryptorFile(FileWrap):
         # If we have an existing boundary block, fulfil the read entirely from that
         if self._boundary_block:
             size = min(size, len(self._boundary_block) - self.offset % AES_BLOCK_SIZE)
-            data = self._boundary_block[self.offset % AES_BLOCK_SIZE:self.offset % AES_BLOCK_SIZE + size]
+            data = self._boundary_block[self.offset % AES_BLOCK_SIZE : self.offset % AES_BLOCK_SIZE + size]
             if self.offset % AES_BLOCK_SIZE + size == len(self._boundary_block):
                 self._boundary_block = None
             data_len = len(data)
@@ -383,7 +383,7 @@ class DecryptSink(Sink):
             if header_bytes + offset > len(data):
                 self.header = data[offset:]
                 return b""
-            self.decryptor.process_header(data[offset:offset + header_bytes])
+            self.decryptor.process_header(data[offset : offset + header_bytes])
             offset += header_bytes
         data = data[offset:]
         self.data_size = self.file_size - self.decryptor.header_size() - self.decryptor.footer_size()

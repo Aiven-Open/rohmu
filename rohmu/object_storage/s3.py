@@ -4,17 +4,16 @@ rohmu
 Copyright (c) 2016 Ohmu Ltd
 See LICENSE for details
 """
-import math
-import os
-import time
+from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
+from .base import BaseTransfer, get_total_memory, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
 
 import botocore.client
 import botocore.config
 import botocore.exceptions
 import botocore.session
-
-from ..errors import (FileNotFoundFromStorageError, InvalidConfigurationError, StorageError)
-from .base import (KEY_TYPE_OBJECT, KEY_TYPE_PREFIX, BaseTransfer, IterKeyItem, get_total_memory)
+import math
+import os
+import time
 
 
 def calculate_chunk_size():
@@ -62,7 +61,7 @@ class S3Transfer(BaseTransfer):
         is_verify_tls=False,
         segment_size=MULTIPART_CHUNK_SIZE,
         encrypted=False,
-        proxy_info=None
+        proxy_info=None,
     ):
         super().__init__(prefix=prefix)
         botocore_session = botocore.session.get_session()
@@ -364,10 +363,12 @@ class S3Transfer(BaseTransfer):
                         len(data),
                         time.monotonic() - start_of_part_upload,
                     )
-                    parts.append({
-                        "ETag": response["ETag"],
-                        "PartNumber": part_number,
-                    })
+                    parts.append(
+                        {
+                            "ETag": response["ETag"],
+                            "PartNumber": part_number,
+                        }
+                    )
                     part_number += 1
                     bytes_sent += len(data)
                     if progress_fn:
@@ -392,8 +393,7 @@ class S3Transfer(BaseTransfer):
                 raise StorageError("Failed to complete multipart upload for {}".format(key)) from ex
 
         self.log.info(
-            "Multipart upload of %r complete, size: %r, took: %.2fs", key, size,
-            time.monotonic() - start_of_multipart_upload
+            "Multipart upload of %r complete, size: %r, took: %.2fs", key, size, time.monotonic() - start_of_multipart_upload
         )
 
     def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
@@ -403,7 +403,7 @@ class S3Transfer(BaseTransfer):
             key=key,
             metadata=metadata,
             mimetype=mimetype,
-            progress_fn=upload_progress_fn
+            progress_fn=upload_progress_fn,
         )
 
     def check_or_create_bucket(self):

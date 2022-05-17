@@ -5,18 +5,17 @@ Copyright (c) 2016 Ohmu Ltd
 See LICENSE for details
 """
 
+from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
+from .base import BaseTransfer, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
+from io import BytesIO, StringIO
+from stat import S_ISDIR
+
 import datetime
 import json
 import logging
 import os
-import warnings
-from io import BytesIO, StringIO
-from stat import S_ISDIR
-
 import paramiko
-
-from ..errors import (FileNotFoundFromStorageError, InvalidConfigurationError, StorageError)
-from .base import KEY_TYPE_OBJECT, KEY_TYPE_PREFIX, BaseTransfer, IterKeyItem
+import warnings
 
 
 class SFTPTransfer(BaseTransfer):
@@ -115,7 +114,7 @@ class SFTPTransfer(BaseTransfer):
                             "size": attr.st_size,
                             "last_modified": last_modified,
                             "metadata": metadata,
-                        }
+                        },
                     )
                     return
                 except FileNotFoundError:
@@ -152,7 +151,7 @@ class SFTPTransfer(BaseTransfer):
                             "size": attr.st_size,
                             "last_modified": last_modified,
                             "metadata": metadata,
-                        }
+                        },
                     )
 
     # can't support remote copy, only remote rename

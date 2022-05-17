@@ -1,10 +1,9 @@
 # Copyright (c) 2021 Aiven, Helsinki, Finland. https://aiven.io/
-import os
 from pathlib import Path
-
-import pytest
-
 from rohmu.delta.common import EMBEDDED_FILE_SIZE, Progress, SnapshotHash
+
+import os
+import pytest
 
 
 @pytest.mark.timeout(2)
@@ -14,7 +13,7 @@ def test_snapshot(snapshotter_creator):
         "foo": "foobar",
         "foo2": "foobar",
         "foobig": "foobar" * EMBEDDED_FILE_SIZE,
-        "foobig2": "foobar" * EMBEDDED_FILE_SIZE
+        "foobig2": "foobar" * EMBEDDED_FILE_SIZE,
     }
     with snapshotter.lock:
         # Start with empty
@@ -98,7 +97,7 @@ def test_snapshot_single_file_size(snapshotter_creator):
         "bundle1": "foobar" * EMBEDDED_FILE_SIZE,
         "bundle2": "foobar" * EMBEDDED_FILE_SIZE,
         "big1": "x" * 2 * 1024 * 1024,
-        "big2": "y" * 1 * 1024 * 1024
+        "big2": "y" * 1 * 1024 * 1024,
     }
     with snapshotter.lock:
         snapshotter.snapshot(progress=Progress())

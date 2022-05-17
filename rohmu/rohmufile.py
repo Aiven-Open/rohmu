@@ -5,14 +5,14 @@ Copyright (c) 2016 Ohmu Ltd
 See LICENSE for details
 """
 
-import time
-from contextlib import suppress
-
 from . import IO_BLOCK_SIZE
 from .compressor import CompressionFile, DecompressionFile, DecompressSink
 from .encryptor import DecryptorFile, DecryptSink, EncryptorFile
 from .errors import InvalidConfigurationError
 from .filewrap import ThrottleSink
+from contextlib import suppress
+
+import time
 
 
 def _fileobj_name(input_obj):
@@ -89,8 +89,12 @@ def read_file(*, input_obj, output_obj, metadata, key_lookup, progress_callback=
             action += " and decrypted"
 
         log_func(
-            "%s %d bytes to %d bytes in %s, took: %.3fs", action, original_size, result_size, _fileobj_name(output_obj),
-            time.monotonic() - start_time
+            "%s %d bytes to %d bytes in %s, took: %.3fs",
+            action,
+            original_size,
+            result_size,
+            _fileobj_name(output_obj),
+            time.monotonic() - start_time,
         )
 
     return original_size, result_size
@@ -125,7 +129,7 @@ def write_file(
         fileobj=output_obj,
         compression_algorithm=compression_algorithm,
         compression_level=compression_level,
-        rsa_public_key=rsa_public_key
+        rsa_public_key=rsa_public_key,
     ) as fp_out:
 
         header_block = True
