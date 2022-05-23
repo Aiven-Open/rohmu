@@ -35,8 +35,8 @@ jobs:
 
       - id: dependencies
         run: |
-          pip install -r requirements.txt
-          pip install -r requirements.dev.txt
+          pip install --upgrade -r requirements.txt
+          pip install --upgrade -r requirements.dev.txt
       - id: pylint
         run: make lint
 
