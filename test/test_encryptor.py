@@ -2,18 +2,16 @@
 Copyright (c) 2015 Ohmu Ltd
 See LICENSE for details
 """
+from .base import CONSTANT_TEST_RSA_PRIVATE_KEY, CONSTANT_TEST_RSA_PUBLIC_KEY
+from rohmu import IO_BLOCK_SIZE
+from rohmu.encryptor import Decryptor, DecryptorFile, Encryptor, EncryptorFile, EncryptorStream
+
 import io
 import json
 import os
+import pytest
 import random
 import tarfile
-
-import pytest
-
-from rohmu import IO_BLOCK_SIZE
-from rohmu.encryptor import (Decryptor, DecryptorFile, Encryptor, EncryptorFile, EncryptorStream)
-
-from .base import CONSTANT_TEST_RSA_PRIVATE_KEY, CONSTANT_TEST_RSA_PUBLIC_KEY
 
 
 def test_encryptor_decryptor():
@@ -32,12 +30,12 @@ def test_encryptor_decryptor():
         assert plaintext not in encrypted
         offset = 0
         while decryptor.expected_header_bytes() > 0:
-            chunk = encrypted[offset:offset + decryptor.expected_header_bytes()]
+            chunk = encrypted[offset : offset + decryptor.expected_header_bytes()]
             decryptor.process_header(chunk)
             offset += len(chunk)
         decrypted_size = len(encrypted) - decryptor.header_size() - decryptor.footer_size()
-        decrypted = decryptor.process_data(encrypted[decryptor.header_size():decryptor.header_size() + decrypted_size])
-        decrypted += decryptor.finalize(encrypted[-decryptor.footer_size():])
+        decrypted = decryptor.process_data(encrypted[decryptor.header_size() : decryptor.header_size() + decrypted_size])
+        decrypted += decryptor.finalize(encrypted[-decryptor.footer_size() :])
         assert plaintext == decrypted
 
 
@@ -97,7 +95,7 @@ def test_decryptorfile(tmpdir):
     with pytest.raises(io.UnsupportedOperation):
         fp.seek(1, os.SEEK_END)
     with pytest.raises(ValueError):
-        fp.seek(1, 0xff)
+        fp.seek(1, 0xFF)
     assert fp.seek(0, os.SEEK_END) == len(plaintext)
     assert fp.seek(0, os.SEEK_CUR) == len(plaintext)
 
@@ -111,13 +109,13 @@ def test_decryptorfile(tmpdir):
     result = fp.read(8192)
     assert result == plaintext[:8192]
     result = fp.read(8192)
-    assert result == plaintext[8192:8192 * 2]
+    assert result == plaintext[8192 : 8192 * 2]
     result = fp.read(IO_BLOCK_SIZE * 2)
-    assert plaintext[8192 * 2:] == result
+    assert plaintext[8192 * 2 :] == result
     assert fp.seek(IO_BLOCK_SIZE // 2) == IO_BLOCK_SIZE // 2
     result = fp.read()
     assert len(result) == len(plaintext) - IO_BLOCK_SIZE // 2
-    assert plaintext[IO_BLOCK_SIZE // 2:] == result
+    assert plaintext[IO_BLOCK_SIZE // 2 :] == result
 
     fp.seek(2)
     result = fp.read(1)

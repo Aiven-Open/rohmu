@@ -4,16 +4,15 @@ rohmu - openstack swift object store interface
 Copyright (c) 2016 Ohmu Ltd
 See LICENSE for details
 """
+from ..dates import parse_timestamp
+from ..errors import FileNotFoundFromStorageError
+from .base import BaseTransfer, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
+from contextlib import suppress
+from swiftclient import client, exceptions  # pylint: disable=import-error
+
 import logging
 import os
 import time
-from contextlib import suppress
-
-from swiftclient import client, exceptions  # pylint: disable=import-error
-
-from ..dates import parse_timestamp
-from ..errors import FileNotFoundFromStorageError
-from .base import KEY_TYPE_OBJECT, KEY_TYPE_PREFIX, BaseTransfer, IterKeyItem
 
 CHUNK_SIZE = 1024 * 1024 * 5  # 5 Mi
 SEGMENT_SIZE = 1024 * 1024 * 1024 * 3  # 3 Gi
@@ -80,7 +79,7 @@ class SwiftTransfer(BaseTransfer):
                 "project_domain_id": project_domain_id,
                 "project_domain_name": project_domain_name,
                 "service_type": service_type,
-                "endpoint_type": endpoint_type
+                "endpoint_type": endpoint_type,
             }
         else:
             if region_name is not None:
@@ -97,7 +96,7 @@ class SwiftTransfer(BaseTransfer):
 
     @staticmethod
     def _headers_to_metadata(headers):
-        return {name[len("x-object-meta-"):]: value for name, value in headers.items() if name.startswith("x-object-meta-")}
+        return {name[len("x-object-meta-") :]: value for name, value in headers.items() if name.startswith("x-object-meta-")}
 
     @staticmethod
     def _metadata_to_headers(metadata):
@@ -259,7 +258,7 @@ class SwiftTransfer(BaseTransfer):
                 multipart=multipart,
                 cache_control=cache_control,
                 mimetype=mimetype,
-                content_length=obsz
+                content_length=obsz,
             )
 
     def get_or_create_container(self, container_name):
@@ -296,7 +295,7 @@ class SwiftTransfer(BaseTransfer):
             mimetype=mimetype,
             upload_progress_fn=upload_progress_fn,
             multipart=True,
-            content_length=metadata.get("Content-Length")
+            content_length=metadata.get("Content-Length"),
         )
 
     def _store_file_contents(
@@ -308,7 +307,7 @@ class SwiftTransfer(BaseTransfer):
         mimetype=None,
         upload_progress_fn=None,
         multipart=None,
-        content_length=None
+        content_length=None,
     ):
         if cache_control is not None:
             raise NotImplementedError("SwiftTransfer: cache_control support not implemented")

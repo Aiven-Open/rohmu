@@ -1,11 +1,10 @@
 from pathlib import Path
-from typing import Dict
-
-import pytest
-
 from rohmu.delta.common import Progress
 from rohmu.delta.snapshot import Snapshotter
 from rohmu.object_storage.local import LocalTransfer
+from typing import Dict
+
+import pytest
 
 
 @pytest.fixture(name="local_transfer")

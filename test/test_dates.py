@@ -4,12 +4,11 @@ rohmu test case
 Copyright (c) 2017 Ohmu Ltd
 See LICENSE for details
 """
-import datetime
-import re
-
-import dateutil.tz
-
 from rohmu.dates import parse_timestamp
+
+import datetime
+import dateutil.tz
+import re
 
 
 def test_parse_timestamp():

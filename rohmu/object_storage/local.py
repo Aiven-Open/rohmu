@@ -4,16 +4,16 @@ rohmu - local filesystem interface
 Copyright (c) 2016 Ohmu Ltd
 See LICENSE for details
 """
+from ..errors import FileNotFoundFromStorageError, LocalFileIsRemoteFileError
+from .base import BaseTransfer, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
+from io import BytesIO
+
 import contextlib
 import datetime
 import json
 import os
 import shutil
 import tempfile
-from io import BytesIO
-
-from ..errors import FileNotFoundFromStorageError, LocalFileIsRemoteFileError
-from .base import KEY_TYPE_OBJECT, KEY_TYPE_PREFIX, BaseTransfer, IterKeyItem
 
 CHUNK_SIZE = 1024 * 1024
 

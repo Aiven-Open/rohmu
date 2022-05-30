@@ -1,10 +1,9 @@
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
+from rohmu import errors
 
 import pytest
-
-from rohmu import errors
 
 
 @pytest.mark.parametrize("transfer", ["local_transfer"])

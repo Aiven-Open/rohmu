@@ -1,15 +1,21 @@
 # Copyright (c) 2021 Aiven, Helsinki, Finland. https://aiven.io/
+from pathlib import Path
+from rohmu.delta.common import (
+    EMBEDDED_FILE_SIZE,
+    hash_hexdigest_readable,
+    increase_worth_reporting,
+    parallel_map_to,
+    Progress,
+    SnapshotFile,
+    SnapshotHash,
+    SnapshotState,
+)
+from typing import Callable, Dict, List, Optional
+
 import base64
 import logging
 import os
 import threading
-from pathlib import Path
-from typing import Callable, Dict, List, Optional
-
-from rohmu.delta.common import (
-    EMBEDDED_FILE_SIZE, Progress, SnapshotFile, SnapshotHash, SnapshotState, hash_hexdigest_readable,
-    increase_worth_reporting, parallel_map_to
-)
 
 logger = logging.getLogger(__name__)
 
@@ -17,23 +23,24 @@ logger = logging.getLogger(__name__)
 class Snapshotter:
     """Snapshotter keeps track of files on disk, and their hashes.
 
-        The hash on disk MAY change, which may require subsequent
-        incremential snapshot and-or ignoring the files which have changed.
+    The hash on disk MAY change, which may require subsequent
+    incremential snapshot and-or ignoring the files which have changed.
 
-        The output to outside is just root object's hash, as well as list
-        of other hashes which correspond to files referred to within the
-        file list contained in root object.
+    The output to outside is just root object's hash, as well as list
+    of other hashes which correspond to files referred to within the
+    file list contained in root object.
 
-        Note that any call to public API MUST be made with
-        snapshotter.lock held. This is because Snapshotter is process-wide
-        utility that is shared across operations, possibly used from
-        multiple threads, and the single-operation-only mode of operation
-        is not exactly flawless (the 'new operation can be started with
-        old running' is intentional feature but new operation should
-        eventually replace the old). The lock itself might not need to be
-        built-in to Snapshotter, but having it there enables asserting its
-        state during public API calls.
-        """
+    Note that any call to public API MUST be made with
+    snapshotter.lock held. This is because Snapshotter is process-wide
+    utility that is shared across operations, possibly used from
+    multiple threads, and the single-operation-only mode of operation
+    is not exactly flawless (the 'new operation can be started with
+    old running' is intentional feature but new operation should
+    eventually replace the old). The lock itself might not need to be
+    built-in to Snapshotter, but having it there enables asserting its
+    state during public API calls.
+    """
+
     def __init__(
         self,
         *,

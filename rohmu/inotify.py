@@ -4,14 +4,15 @@ rohmu - inotify wrapper
 Copyright (c) 2016 Ohmu Ltd
 See LICENSE for details
 """
+from contextlib import suppress
+from ctypes import c_char_p, c_int, c_uint32
+from threading import Thread
+
 import ctypes
 import logging
 import os
 import select
 import struct
-from contextlib import suppress
-from ctypes import c_char_p, c_int, c_uint32
-from threading import Thread
 
 
 class InotifyEvent(ctypes.Structure):
@@ -35,7 +36,7 @@ event_types = {
     "IN_MOVED_TO": 0x00000080,
     "IN_DELETE": 0x00000200,
     "IN_DELETE_SELF": 0x00000400,
-    "IN_IGNORED": 0x8000
+    "IN_IGNORED": 0x8000,
 }
 
 IN_NONBLOCK = 0x00004000
@@ -45,7 +46,7 @@ def parse_inotify_buffer(event_buffer):
     i = 0
     while i + s_size <= len(event_buffer):
         wd, mask, cookie, length = struct.unpack_from("iIII", event_buffer, i)
-        name = event_buffer[i + s_size:i + s_size + length].rstrip(b"\0")
+        name = event_buffer[i + s_size : i + s_size + length].rstrip(b"\0")
         i += s_size + length
         yield wd, mask, cookie, name
 
@@ -136,12 +137,14 @@ class InotifyWatcher(Thread):
             self.log_event("IN_MOVED_TO", full_path)
             src_path = self.cookies.pop(cookie, None)
             if src_path:
-                self.compression_queue.put({
-                    "type": "MOVE",
-                    "full_path": full_path,
-                    "src_path": src_path,
-                    "watched_path": watched_path
-                })
+                self.compression_queue.put(
+                    {
+                        "type": "MOVE",
+                        "full_path": full_path,
+                        "src_path": src_path,
+                        "watched_path": watched_path,
+                    }
+                )
             else:
                 self.compression_queue.put({"type": "CREATE", "full_path": full_path, "watched_path": watched_path})
 

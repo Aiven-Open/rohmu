@@ -1,18 +1,17 @@
 # Copyright (c) 2021 Aiven, Helsinki, Finland. https://aiven.io/
+from datetime import datetime
+from multiprocessing.dummy import Pool
+from pathlib import Path
+from pydantic import BaseModel, Field
+from rohmu.dates import now
+from typing import List, Optional
+
 import functools
 import hashlib
 import json as _json
 import logging
 import math
 import os
-from datetime import datetime
-from multiprocessing.dummy import Pool
-from pathlib import Path
-from typing import List, Optional
-
-from pydantic import BaseModel, Field
-
-from rohmu.dates import now
 
 _hash = hashlib.blake2s
 _log_1_1 = math.log(1.1)
@@ -34,7 +33,7 @@ def hash_hexdigest_readable(f, *, read_buffer=1_000_000):
 
 
 def increase_worth_reporting(value, new_value=None, *, total=None):
-    """ Make reporting sparser and sparser as values grow larger
+    """Make reporting sparser and sparser as values grow larger
     - report every 1.1**N or so
     - if we know total, report every percent
     """
@@ -123,6 +122,7 @@ class SnapshotHash(DeltaModel):
     same hexdigest is available from multiple nodes.
 
     """
+
     hexdigest: str
     size: int
 
@@ -202,7 +202,8 @@ class BackupManifest(DeltaModel):
 
 
 class Progress(DeltaModel):
-    """ JSON-encodable progress meter of sorts """
+    """JSON-encodable progress meter of sorts"""
+
     handled: int = 0
     failed: int = 0
     total: int = 0
@@ -213,7 +214,7 @@ class Progress(DeltaModel):
         return f"{self.handled}/{self.total} handled, {self.failed} failures{finished}"
 
     def start(self, n):
-        " Optional 'first' step, just for logic handling state (e.g. no progress object reuse desired) "
+        "Optional 'first' step, just for logic handling state (e.g. no progress object reuse desired)"
         assert not self.total
         logger.debug("start")
         self.add_total(n)

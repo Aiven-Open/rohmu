@@ -6,8 +6,25 @@ See LICENSE for details
 """
 # pylint: disable=import-error, no-name-in-module
 
+from ..dates import parse_timestamp
+from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError
+from .base import BaseTransfer, get_total_memory, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
+from contextlib import contextmanager
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+from googleapiclient.http import build_http, MediaFileUpload, MediaIoBaseDownload, MediaIoBaseUpload, MediaUpload
+from http.client import IncompleteRead
+from io import BytesIO, FileIO
+from oauth2client import GOOGLE_TOKEN_URI
+from oauth2client.client import GoogleCredentials
+
 import codecs
 import errno
+
+# NOTE: this import is not needed per-se, but it's imported here first to point the
+# user to the most important possible missing dependency
+import googleapiclient  # noqa pylint: disable=unused-import
+import httplib2
 import json
 import logging
 import os
@@ -15,26 +32,10 @@ import random
 import socket
 import ssl
 import time
-from contextlib import contextmanager
-from http.client import IncompleteRead
-from io import BytesIO, FileIO
-
-# NOTE: this import is not needed per-se, but it's imported here first to point the
-# user to the most important possible missing dependency
-import googleapiclient  # noqa pylint: disable=unused-import
-import httplib2
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-from googleapiclient.http import (MediaFileUpload, MediaIoBaseDownload, MediaIoBaseUpload, MediaUpload, build_http)
-from oauth2client import GOOGLE_TOKEN_URI
-from oauth2client.client import GoogleCredentials
-
-from ..dates import parse_timestamp
-from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError
-from .base import (KEY_TYPE_OBJECT, KEY_TYPE_PREFIX, BaseTransfer, IterKeyItem, get_total_memory)
 
 try:
     from oauth2client.service_account import ServiceAccountCredentials
+
     ServiceAccountCredentials_from_dict = ServiceAccountCredentials.from_json_keyfile_dict
 except ImportError:
     from oauth2client.service_account import _ServiceAccountCredentials
@@ -47,7 +48,7 @@ except ImportError:
             service_account_email=credentials["client_email"],
             private_key_id=credentials["private_key_id"],
             private_key_pkcs8_text=credentials["private_key"],
-            scopes=scopes
+            scopes=scopes,
         )
 
 
@@ -81,7 +82,7 @@ def get_credentials(credential_file=None, credentials=None):
             refresh_token=credentials["refresh_token"],
             token_expiry=None,
             token_uri=GOOGLE_TOKEN_URI,
-            user_agent="pghoard"
+            user_agent="pghoard",
         )
 
     return GoogleCredentials.get_application_default()
@@ -233,12 +234,7 @@ class GoogleTransfer(BaseTransfer):
             request = domain.list_next(request, result)
 
     def iter_key(
-        self,
-        key,
-        *,
-        with_metadata=True,  # pylint: disable=unused-argument, unused-variable
-        deep=False,
-        include_key=False
+        self, key, *, with_metadata=True, deep=False, include_key=False  # pylint: disable=unused-argument, unused-variable
     ):
         path = self.format_key_for_backend(key, trailing_slash=not include_key)
         self.log.debug("Listing path %r", path)
@@ -351,8 +347,11 @@ class GoogleTransfer(BaseTransfer):
                     now = time.monotonic()
                     if (now - last_log_output) >= 5.0:
                         self.log.debug(
-                            "Upload of %r to %r: %d%%, %s bytes", upload, key,
-                            status.progress() * 100, status.resumable_progress
+                            "Upload of %r to %r: %d%%, %s bytes",
+                            upload,
+                            key,
+                            status.progress() * 100,
+                            status.resumable_progress,
                         )
                         last_log_output = now
 
@@ -440,6 +439,7 @@ class GoogleTransfer(BaseTransfer):
 
 class MediaStreamUpload(MediaUpload):
     """Support streaming arbitrary amount of data from non-seekable object supporting read method."""
+
     def __init__(self, fd, *, chunk_size, mime_type, name):
         self._data = b""
         self._next_chunk = b""
@@ -497,7 +497,7 @@ class MediaStreamUpload(MediaUpload):
                 self._data = self._read_bytes(length - len(self._next_chunk), initial_data=self._next_chunk)
                 self._next_chunk = b""
         elif begin != self._position or length > len(self._data):
-            retain_chunk = self._data[begin - self._position:]
+            retain_chunk = self._data[begin - self._position :]
             bytes_remaining = length - len(retain_chunk)
             if 0 < bytes_remaining <= len(self._next_chunk):
                 self._data = retain_chunk + self._next_chunk[:bytes_remaining]
