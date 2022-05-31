@@ -1,15 +1,16 @@
 # same versions than pghoard this must reviewed and pinned
 black==22.3.0
+mock
 mypy
 # Same version from pghoard
 pylint>=2.4.3,<=2.7.2
 pylint-quotes
 pytest
 pytest-cov
-pytest-mock
 # Same version from pghoard
 isort==5.10.1
 types-python-dateutil
 types-paramiko
 types-botocore
 types-httplib2
+types-mock

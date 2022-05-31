@@ -1,6 +1,7 @@
 # Copyright (c) 2021 Aiven, Helsinki, Finland. https://aiven.io/
 from pathlib import Path
 from rohmu.delta.common import (
+    BackupPath,
     EMBEDDED_FILE_SIZE,
     hash_hexdigest_readable,
     increase_worth_reporting,
@@ -10,7 +11,7 @@ from rohmu.delta.common import (
     SnapshotHash,
     SnapshotState,
 )
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, Generator, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 import base64
 import logging
@@ -47,9 +48,9 @@ class Snapshotter:
         src,
         dst,
         globs,
-        src_iterate_func: Optional[Callable] = None,
-        parallel: Optional[int] = 1,
-        min_delta_file_size: int = 0
+        src_iterate_func: Optional[Callable[[], Iterable[Union[BackupPath, str, Path]]]] = None,
+        parallel: int = 1,
+        min_delta_file_size: int = 0,
     ):
         assert globs
         self.src = Path(src)
@@ -63,7 +64,7 @@ class Snapshotter:
         self.empty_dirs: List[Path] = []
         self.min_delta_file_size = min_delta_file_size
 
-    def _list_files(self, basepath: Path):
+    def _list_files(self, basepath: Path) -> List[Path]:
         result_files = set()
         for glob in self.globs:
             for path in basepath.glob(glob):
@@ -74,12 +75,12 @@ class Snapshotter:
 
         return sorted(result_files)
 
-    def _list_dirs_and_files(self, basepath: Path):
+    def _list_dirs_and_files(self, basepath: Path) -> Tuple[List[Path], List[Path]]:
         files = self._list_files(basepath)
         dirs = {p.parent for p in files}
         return sorted(dirs), files
 
-    def _add_snapshotfile(self, snapshotfile: SnapshotFile):
+    def _add_snapshotfile(self, snapshotfile: SnapshotFile) -> None:
         old_snapshotfile = self.relative_path_to_snapshotfile.get(snapshotfile.relative_path, None)
         if old_snapshotfile:
             self._remove_snapshotfile(old_snapshotfile)
@@ -87,25 +88,45 @@ class Snapshotter:
         if snapshotfile.hexdigest:
             self.hexdigest_to_snapshotfiles.setdefault(snapshotfile.hexdigest, []).append(snapshotfile)
 
-    def _remove_snapshotfile(self, snapshotfile: SnapshotFile):
+    def _remove_snapshotfile(self, snapshotfile: SnapshotFile) -> None:
         assert self.relative_path_to_snapshotfile[snapshotfile.relative_path] == snapshotfile
         del self.relative_path_to_snapshotfile[snapshotfile.relative_path]
         if snapshotfile.hexdigest:
             self.hexdigest_to_snapshotfiles[snapshotfile.hexdigest].remove(snapshotfile)
 
-    def _snapshotfile_from_path(self, relative_path):
+    def _snapshotfile_from_path(self, relative_path: Path, missing_ok: bool) -> SnapshotFile:
         src_path = self.src / relative_path
         st = src_path.stat()
-        return SnapshotFile(relative_path=relative_path, mtime_ns=st.st_mtime_ns, file_size=st.st_size, stored_file_size=0)
+        return SnapshotFile(
+            relative_path=relative_path,
+            mtime_ns=st.st_mtime_ns,
+            file_size=st.st_size,
+            stored_file_size=0,
+            missing_ok=missing_ok,
+        )
 
-    def _gen_snapshot_hashes(self, relative_paths, reuse_old_snapshotfiles):
+    def _gen_snapshot_hashes(
+        self, relative_paths: Sequence[Path], reuse_old_snapshotfiles: bool, required_paths: Optional[Set[Path]] = None
+    ) -> Generator[SnapshotFile, None, None]:
         same = 0
         lost = 0
+
+        if required_paths:
+            missing_files = required_paths.difference(set(relative_paths))
+            if missing_files:
+                logger.error("Required file(s) disappeared during the backup: %r", missing_files)
+                raise FileNotFoundError("File(s) disappeared during the backup, aborting.")
+
         for relative_path in relative_paths:
             old_snapshotfile = self.relative_path_to_snapshotfile.get(relative_path)
+            missing_ok = True
+            if required_paths and relative_path in required_paths:
+                missing_ok = False
             try:
-                snapshotfile = self._snapshotfile_from_path(relative_path)
-            except FileNotFoundError:
+                snapshotfile = self._snapshotfile_from_path(relative_path, missing_ok=missing_ok)
+            except FileNotFoundError as e:
+                if not missing_ok:
+                    raise FileNotFoundError(f"Required file disappeared during the backup: {relative_path}") from e
                 lost += 1
                 if increase_worth_reporting(lost):
                     logger.debug("#%d. lost - %s disappeared before stat, ignoring", lost, self.src / relative_path)
@@ -114,6 +135,7 @@ class Snapshotter:
                 snapshotfile.hexdigest = old_snapshotfile.hexdigest
                 snapshotfile.content_b64 = old_snapshotfile.content_b64
                 snapshotfile.should_be_bundled = old_snapshotfile.should_be_bundled
+                snapshotfile.missing_ok = old_snapshotfile.missing_ok
                 if old_snapshotfile == snapshotfile:
                     same += 1
                     if increase_worth_reporting(same):
@@ -121,25 +143,27 @@ class Snapshotter:
                     continue
             yield snapshotfile
 
-    def get_snapshot_hashes(self):
+    def get_snapshot_hashes(self) -> List[SnapshotHash]:
         assert self.lock.locked()
         return [
             SnapshotHash(hexdigest=dig, size=sf[0].file_size) for dig, sf in self.hexdigest_to_snapshotfiles.items() if sf
         ]
 
-    def get_snapshot_state(self):
+    def get_snapshot_state(self) -> SnapshotState:
         assert self.lock.locked()
         return SnapshotState(
             root_globs=self.globs, files=sorted(self.relative_path_to_snapshotfile.values()), empty_dirs=self.empty_dirs
         )
 
-    def update_snapshot_file_data(self, *, relative_path, hexdigest, file_size, stored_file_size):
+    def update_snapshot_file_data(
+        self, *, relative_path: Path, hexdigest: str, file_size: int, stored_file_size: int
+    ) -> None:
         snapshotfile = self.relative_path_to_snapshotfile[relative_path]
         snapshotfile.hexdigest = hexdigest
         snapshotfile.file_size = file_size
         snapshotfile.stored_file_size = stored_file_size
 
-    def _snapshot_create_missing_directories(self, *, src_dirs, dst_dirs):
+    def _snapshot_create_missing_directories(self, *, src_dirs: Sequence[Path], dst_dirs: Sequence[Path]) -> int:
         changes = 0
         for i, relative_dir in enumerate(set(src_dirs).difference(dst_dirs), 1):
             dst_path = self.dst / relative_dir
@@ -149,7 +173,7 @@ class Snapshotter:
             changes += 1
         return changes
 
-    def _snapshot_remove_extra_files(self, *, src_files, dst_files):
+    def _snapshot_remove_extra_files(self, *, src_files: Sequence[Path], dst_files: Sequence[Path]) -> int:
         changes = 0
         for i, relative_path in enumerate(set(dst_files).difference(src_files), 1):
             dst_path = self.dst / relative_path
@@ -162,7 +186,7 @@ class Snapshotter:
             changes += 1
         return changes
 
-    def _snapshot_add_missing_files(self, *, src_files, dst_files):
+    def _snapshot_add_missing_files(self, *, src_files: Sequence[Path], dst_files: Sequence[Path]) -> int:
         existing = 0
         disappeared = 0
         changes = 0
@@ -190,22 +214,35 @@ class Snapshotter:
             changes += 1
         return changes
 
-    def snapshot(self, *, progress: Optional[Progress] = None, reuse_old_snapshotfiles: bool = True):
+    def snapshot(self, *, progress: Optional[Progress] = None, reuse_old_snapshotfiles: bool = True) -> int:
         assert self.lock.locked()
 
         if progress is None:
             progress = Progress()
         progress.start(3)
 
+        required_paths: Set[Path] = set()
+
         if self.src_iterate_func:
             src_dirs_set = set()
             src_files_set = set()
             for item in self.src_iterate_func():
-                path = Path(item)
+                if isinstance(item, BackupPath):
+                    missing_ok = item.missing_ok
+                    path = item.path
+                else:
+                    # Default behaviour for backward compatibility
+                    path = Path(item)
+                    missing_ok = True
+
                 if path.is_file() and not path.is_symlink():
+                    if not missing_ok:
+                        required_paths.add(path.relative_to(self.src))
                     src_files_set.add(path.relative_to(self.src))
                 elif path.is_dir():
                     src_dirs_set.add(path.relative_to(self.src))
+                elif not missing_ok:
+                    raise FileNotFoundError(f"Required file disappeared during the backup: {path}")
 
             src_dirs = sorted(src_dirs_set | {p.parent for p in src_files_set})
             src_files = sorted(src_files_set)
@@ -234,10 +271,11 @@ class Snapshotter:
         # ones were already removed)
         dst_dirs, dst_files = self._list_dirs_and_files(self.dst)
         self.empty_dirs = src_dirs
-        snapshotfiles = list(self._gen_snapshot_hashes(dst_files, reuse_old_snapshotfiles))
+        snapshotfiles = list(self._gen_snapshot_hashes(dst_files, reuse_old_snapshotfiles, required_paths=required_paths))
+
         progress.add_total(len(snapshotfiles))
 
-        def _cb(snapshotfile):
+        def _cb(snapshotfile: SnapshotFile):
             # src may or may not be present; dst is present as it is in snapshot
             with snapshotfile.open_for_reading(self.dst) as f:
                 if snapshotfile.file_size <= EMBEDDED_FILE_SIZE:
