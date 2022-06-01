@@ -1,7 +1,8 @@
 # Copyright (c) 2021 Aiven, Helsinki, Finland. https://aiven.io/
 from pathlib import Path
-from rohmu.delta.common import EMBEDDED_FILE_SIZE, Progress, SnapshotHash
+from rohmu.delta.common import BackupPath, EMBEDDED_FILE_SIZE, Progress, SnapshotFile, SnapshotHash
 
+import mock
 import os
 import pytest
 
@@ -70,7 +71,7 @@ def test_snapshot(snapshotter_creator):
 
 
 @pytest.mark.parametrize("test", [(os, "link", 1, 1), (None, "_snapshotfile_from_path", 3, 0)])
-def test_snapshot_error_filenotfound(snapshotter_creator, mocker, test):
+def test_snapshot_error_filenotfound(snapshotter_creator, test):
     (obj, fun, exp_progress_1, exp_progress_2) = test
 
     def _not_really_found(*a, **kw):
@@ -78,14 +79,14 @@ def test_snapshot_error_filenotfound(snapshotter_creator, mocker, test):
 
     snapshotter = snapshotter_creator()
     obj = obj or snapshotter
-    mocker.patch.object(obj, fun, new=_not_really_found)
-    (snapshotter.src / "foo").write_text("foobar")
-    (snapshotter.src / "bar").write_text("foobar")
-    with snapshotter.lock:
-        progress = Progress()
-        assert snapshotter.snapshot(progress=progress) == exp_progress_1
-        progress = Progress()
-        assert snapshotter.snapshot(progress=progress) == exp_progress_2
+    with mock.patch.object(obj, fun, new=_not_really_found):
+        (snapshotter.src / "foo").write_text("foobar")
+        (snapshotter.src / "bar").write_text("foobar")
+        with snapshotter.lock:
+            progress = Progress()
+            assert snapshotter.snapshot(progress=progress) == exp_progress_1
+            progress = Progress()
+            assert snapshotter.snapshot(progress=progress) == exp_progress_2
 
 
 @pytest.mark.timeout(2)
@@ -131,3 +132,65 @@ def test_snapshot_single_file_size(snapshotter_creator):
             SnapshotHash(hexdigest="55924e2033f99b59100385820daeaa2623cbf4a2061831dc44be63506c8a255a", size=1048576),
             SnapshotHash(hexdigest="4ac533296ea373a0bdbe5f1ae8fda6b2e908399a528a5e10fe2eca3ed058403f", size=1048576),
         ]
+
+
+def test_snapshot_error_when_required_files_not_found(snapshotter_creator):
+    def src_iterate_func():
+        return [
+            BackupPath(path=snapshotter.src / "foo", missing_ok=False),
+            BackupPath(path=snapshotter.src / "bar"),
+            Path(snapshotter.src / "foo_path"),
+            Path(snapshotter.src / "bar_path"),
+            os.path.join(snapshotter.src / "foo_str_path"),
+            os.path.join(snapshotter.src / "bar_str_path"),
+        ]
+
+    snapshotter = snapshotter_creator(src_iterate_func=src_iterate_func)
+    (snapshotter.src / "bar").write_text("foobar")
+    (snapshotter.src / "bar_path").write_text("bar_path_text")
+    (snapshotter.src / "bar_str_path").write_text("bar_str_path_text")
+
+    with snapshotter.lock:
+        with pytest.raises(FileNotFoundError):
+            snapshotter.snapshot(progress=Progress())
+
+        (snapshotter.src / "foo").write_text("foobar")
+        assert snapshotter.snapshot(progress=Progress())
+
+        def validate_snapshot():
+            state = snapshotter.get_snapshot_state()
+            assert len(state.files) == 4
+            expected_paths = ["bar", "bar_path", "bar_str_path", "foo"]
+            # Files are sorted, so we can rely on that
+            for idx, sp in enumerate(state.files):
+                assert sp.relative_path.name == expected_paths[idx]
+                if sp.relative_path.name == "foo":
+                    assert not sp.missing_ok
+                else:
+                    assert sp.missing_ok
+
+        validate_snapshot()
+
+        orig_open_for_reading = SnapshotFile.open_for_reading
+
+        def fake_open_for_reading(self, path: Path):
+            if self.relative_path.name == "foo":
+                raise FileNotFoundError()
+            return orig_open_for_reading(self, path)
+
+        # Required file disappeared during hash calculation
+        # should succeed if we re-use snapshot files from previous snapshot, as there will be no new snapshot files
+        # created
+        with mock.patch.object(SnapshotFile, "open_for_reading", new=fake_open_for_reading):
+            snapshotter.snapshot(progress=Progress(), reuse_old_snapshotfiles=True)
+        validate_snapshot()
+
+        # Should fail when files are not re-used and required file is missing
+        with mock.patch.object(SnapshotFile, "open_for_reading", new=fake_open_for_reading):
+            with pytest.raises(FileNotFoundError):
+                snapshotter.snapshot(progress=Progress(), reuse_old_snapshotfiles=False)
+
+        # Should fail when files disappeared before hash calculation
+        with mock.patch("rohmu.delta.snapshot.Path.stat", side_effect=FileNotFoundError):
+            with pytest.raises(FileNotFoundError):
+                snapshotter.snapshot(progress=Progress(), reuse_old_snapshotfiles=True)

@@ -1,4 +1,5 @@
 # Copyright (c) 2021 Aiven, Helsinki, Finland. https://aiven.io/
+from dataclasses import dataclass
 from datetime import datetime
 from multiprocessing.dummy import Pool
 from pathlib import Path
@@ -148,6 +149,7 @@ class SnapshotFile(DeltaModel):
     # separate delta hash files, but not small enough to be embedded into a manifest file, so better to group them
     # together when e.g. uploading to the object storage
     should_be_bundled: bool = False
+    missing_ok: bool = True
 
     def __lt__(self, o):
         # In our use case, paths uniquely identify files we care about
@@ -289,3 +291,9 @@ def parallel_map_to(*, fun, iterable, result_callback, n=None) -> bool:
             if not result_callback(map_in=map_in, map_out=map_out):
                 return False
     return True
+
+
+@dataclass(frozen=True)
+class BackupPath:
+    path: Path
+    missing_ok: bool = True
