@@ -144,6 +144,10 @@ class SwiftTransfer(BaseTransfer):
                     metadata = None
                     segments_size = 0
                 last_modified = parse_timestamp(item["last_modified"])
+
+                # Response format is documented at:
+                #
+                #   https://docs.openstack.org/api-ref/object-store/?expanded=list-endpoints-detail,show-container-details-and-list-objects-detail # pylint: disable=line-too-long
                 yield IterKeyItem(
                     type=KEY_TYPE_OBJECT,
                     value={
@@ -151,7 +155,7 @@ class SwiftTransfer(BaseTransfer):
                         "size": item["bytes"] + segments_size,
                         "last_modified": last_modified,
                         "metadata": metadata,
-                        "hash": item.get("hash"),
+                        "hash": item["hash"],
                     },
                 )
 
