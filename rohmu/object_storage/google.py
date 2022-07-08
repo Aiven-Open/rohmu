@@ -5,6 +5,7 @@ Copyright (c) 2016 Ohmu Ltd
 See LICENSE for details
 """
 # pylint: disable=import-error, no-name-in-module
+import threading
 
 from ..dates import parse_timestamp
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError
@@ -130,7 +131,9 @@ class GoogleTransfer(BaseTransfer):
 
             try:
                 # sometimes fails: httplib2.ServerNotFoundError: Unable to find the server at www.googleapis.com
-                return build("storage", "v1", http=http)
+                local_storage = threading.local()
+                local_storage.gcp_client = build("storage", "v1", http=http)
+                return local_storage.gcp_client
             except (httplib2.ServerNotFoundError, socket.timeout):
                 if time.monotonic() - start_time > 600:
                     raise
