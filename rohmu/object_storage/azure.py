@@ -11,6 +11,7 @@ from io import BytesIO
 
 import azure.common
 import logging
+import os
 import time
 
 try:
@@ -191,6 +192,7 @@ class AzureTransfer(BaseTransfer):
                 )
 
     def delete_key(self, key):
+        plain_key = key
         key = self.format_key_for_backend(key, remove_slash_prefix=True)
         self.log.debug("Deleting key: %r", key)
         try:
@@ -198,6 +200,7 @@ class AzureTransfer(BaseTransfer):
             return blob_client.delete_blob()
         except azure.core.exceptions.ResourceNotFoundError as ex:  # pylint: disable=no-member
             raise FileNotFoundFromStorageError(key) from ex
+        self.notify_delete(plain_key)
 
     def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback=None):
         key = self.format_key_for_backend(key, remove_slash_prefix=True)
@@ -288,6 +291,7 @@ class AzureTransfer(BaseTransfer):
     def store_file_from_memory(self, key, memstring, metadata=None, cache_control=None, mimetype=None):
         if cache_control is not None:
             raise NotImplementedError("AzureTransfer: cache_control support not implemented")
+        plain_key = key
         key = self.format_key_for_backend(key, remove_slash_prefix=True)
         content_settings = None
         if mimetype:
@@ -300,10 +304,12 @@ class AzureTransfer(BaseTransfer):
             metadata=self.sanitize_metadata(metadata, replace_hyphen_with="_"),
             overwrite=True,
         )
+        self.notify_write(key=plain_key, size=len(bytes(memstring)))
 
     def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
         if cache_control is not None:
             raise NotImplementedError("AzureTransfer: cache_control support not implemented")
+        plain_key = key
         key = self.format_key_for_backend(key, remove_slash_prefix=True)
         content_settings = None
         if mimetype:
@@ -317,10 +323,13 @@ class AzureTransfer(BaseTransfer):
                 metadata=self.sanitize_metadata(metadata, replace_hyphen_with="_"),
                 overwrite=True,
             )
+        size = os.path.getsize(filepath)
+        self.notify_write(key=plain_key, size=size)
 
     def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
         if cache_control is not None:
             raise NotImplementedError("AzureTransfer: cache_control support not implemented")
+        plain_key = key
         key = self.format_key_for_backend(key, remove_slash_prefix=True)
         content_settings = None
         if mimetype:
@@ -347,6 +356,7 @@ class AzureTransfer(BaseTransfer):
                 raw_response_hook=progress_callback,
                 overwrite=True,
             )
+            self.notify_write(key=plain_key, size=self.get_file_size(key))
         finally:
             if not seekable:
                 if original_tell is not None:

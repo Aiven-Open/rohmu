@@ -6,9 +6,12 @@ See LICENSE for details
 """
 from ..errors import StorageError
 from collections import namedtuple
+from concurrent.futures import ThreadPoolExecutor
 
+import datetime
 import logging
 import platform
+import requests
 
 KEY_TYPE_OBJECT = "object"
 KEY_TYPE_PREFIX = "prefix"
@@ -16,9 +19,24 @@ KEY_TYPE_PREFIX = "prefix"
 IterKeyItem = namedtuple("IterKeyItem", ["type", "value"])
 
 
+def get_requests_session() -> requests.Session:
+    retry = requests.adapters.Retry(
+        total=3,
+        backoff_factor=0.5,  # sleeps: 0, 1s, 2s, 4s... by default, backoff was disabled!
+        status_forcelist=[429, 500, 502, 503, 504],
+        method_whitelist={"POST"},  # gets replaced with allowed_methods in new versions
+    )
+    adapter = requests.adapters.HTTPAdapter(max_retries=retry)
+    request_session = requests.Session()
+    request_session.mount("http://", adapter)
+    return request_session
+
+
 class BaseTransfer:
     def __init__(self, prefix):
         self.log = logging.getLogger(self.__class__.__name__)
+        self.notification_url = None
+        self.notifier = ThreadPoolExecutor(max_workers=1)
         if not prefix:
             prefix = ""
         elif prefix[-1] != "/":
@@ -120,6 +138,36 @@ class BaseTransfer:
 
     def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
         raise NotImplementedError
+
+    def update_notification_url(self, url: str) -> None:
+        """Allow changing the notificaiton url without having to recreate the object"""
+        self.notification_url = url
+
+    def _queue_notify(self, operation):
+        """Inform notification_url about operation"""
+        if self.notification_url:
+            self.notifier.submit(self._notify, operation)
+
+    def _notify(self, operation):
+        """Actually notify, this gets eventually called from the pool"""
+        try:
+            with get_requests_session() as session:
+                session.post(f"{self.notification_url}", json=operation)
+        except requests.RequestException as ex:
+            self.log.warning("Could not inform robjecter about %r, because %s", operation, ex)
+            # TODO: store the failure information and retry on next chance, something like this
+            # if robjecter.retry_later_on_failure
+            #   self.reconvey_operations.append(operation)
+            # order of operations might be important here, also if transfer object gets dropped then these will be lost
+            # so provde a method to retry these explicity
+
+    def notify_write(self, key, size, when=None):
+        if not when:
+            when = datetime.datetime.utcnow()
+        self._queue_notify({"key": key, "size_bytes": size, "op": "UPLOAD", "last_modified": when})
+
+    def notify_delete(self, key):
+        self._queue_notify({"key": key, "op": "DELETE"})
 
 
 def get_total_memory():

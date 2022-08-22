@@ -14,3 +14,4 @@ types-paramiko
 types-botocore
 types-httplib2
 types-mock
+types-requests

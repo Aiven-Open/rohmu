@@ -177,6 +177,7 @@ class SwiftTransfer(BaseTransfer):
                     self._delete_object_plain(item["name"])
 
     def delete_key(self, key):
+        plain_key = key
         key = self.format_key_for_backend(key)
         self.log.debug("Deleting key: %r", key)
         try:
@@ -189,6 +190,7 @@ class SwiftTransfer(BaseTransfer):
             self._delete_object_segments(key, headers["x-object-manifest"])
         else:
             self._delete_object_plain(key)
+        self.notify_delete(plain_key)
 
     def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback=None):
         temp_filepath = "{}~".format(filepath_to_store_to)
@@ -246,11 +248,13 @@ class SwiftTransfer(BaseTransfer):
         if cache_control is not None:
             raise NotImplementedError("SwiftTransfer: cache_control support not implemented")
 
+        plain_key = key
         key = self.format_key_for_backend(key)
         metadata_to_send = self._metadata_to_headers(self.sanitize_metadata(metadata))
         self.conn.put_object(
             self.container_name, key, contents=bytes(memstring), content_type=mimetype, headers=metadata_to_send
         )
+        self.notify_write(key=plain_key, size=len(bytes(memstring)))
 
     def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
         obsz = os.path.getsize(filepath)
@@ -264,6 +268,7 @@ class SwiftTransfer(BaseTransfer):
                 mimetype=mimetype,
                 content_length=obsz,
             )
+        self.notify_write(key=key, size=obsz)
 
     def get_or_create_container(self, container_name):
         start_time = time.monotonic()
