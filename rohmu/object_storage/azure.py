@@ -2,6 +2,7 @@
 rohmu - azure object store interface
 
 Copyright (c) 2016 Ohmu Ltd
+Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
 # pylint: disable=import-error, no-name-in-module
@@ -133,7 +134,7 @@ class AzureTransfer(BaseTransfer):
         path = self.format_key_for_backend(key, remove_slash_prefix=True, trailing_slash=False)
         items = list(self._iter_key(path=path, with_metadata=True, deep=False))
         if not items:
-            raise FileNotFoundFromStorageError(key)
+            raise FileNotFoundFromStorageError(path)
         expected_name = path.rsplit("/", 1)[-1]
         for item in items:
             # We expect single result but Azure listing is prefix match so we need to explicitly
@@ -147,7 +148,7 @@ class AzureTransfer(BaseTransfer):
         else:
             item = None
         if not item or item.type != KEY_TYPE_OBJECT:
-            raise FileNotFoundFromStorageError(key)  # not found or prefix
+            raise FileNotFoundFromStorageError(path)  # not found or prefix
         return item.value["metadata"]
 
     def _metadata_for_key(self, path):
