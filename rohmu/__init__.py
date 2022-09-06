@@ -2,17 +2,19 @@
 rohmu
 
 Copyright (c) 2016 Ohmu Ltd
+Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
 from .errors import InvalidConfigurationError
 from .object_storage.base import BaseTransfer
-from typing import Type
+from typing import Any, Dict, Mapping, Type
 
 IO_BLOCK_SIZE = 2**20  # 1 MiB
 STORAGE_TYPE = "storage_type"
+Config = Mapping[str, Any]
 
 
-def get_class_for_transfer(obj_store) -> Type[BaseTransfer]:
+def get_class_for_transfer(obj_store: Config) -> Type[BaseTransfer]:
     storage_type = obj_store[STORAGE_TYPE]
     if storage_type == "azure":
         from .object_storage.azure import AzureTransfer
@@ -42,8 +44,8 @@ def get_class_for_transfer(obj_store) -> Type[BaseTransfer]:
     raise InvalidConfigurationError("unsupported storage type {0!r}".format(storage_type))
 
 
-def get_transfer(storage_config) -> BaseTransfer:
+def get_transfer(storage_config: Config) -> BaseTransfer:
     storage_class = get_class_for_transfer(storage_config)
-    storage_config = storage_config.copy()
+    storage_config = dict(storage_config)
     storage_config.pop(STORAGE_TYPE)
     return storage_class(**storage_config)
