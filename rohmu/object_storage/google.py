@@ -2,6 +2,7 @@
 rohmu - google cloud object store interface
 
 Copyright (c) 2016 Ohmu Ltd
+Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
 # pylint: disable=import-error, no-name-in-module
@@ -213,9 +214,9 @@ class GoogleTransfer(BaseTransfer):
             self._retry_on_reset(request, request.execute)
 
     def get_metadata_for_key(self, key):
-        key = self.format_key_for_backend(key)
-        with self._object_client(not_found=key) as clob:
-            return self._metadata_for_key(clob, key)
+        path = self.format_key_for_backend(key)
+        with self._object_client(not_found=path) as clob:
+            return self._metadata_for_key(clob, path)
 
     def _metadata_for_key(self, clob, key):
         req = clob.get(bucket=self.bucket_name, object=key)
@@ -271,10 +272,10 @@ class GoogleTransfer(BaseTransfer):
                     raise NotImplementedError(property_name)
 
     def delete_key(self, key):
-        key = self.format_key_for_backend(key)
-        self.log.debug("Deleting key: %r", key)
-        with self._object_client(not_found=key) as clob:
-            req = clob.delete(bucket=self.bucket_name, object=key)
+        path = self.format_key_for_backend(key)
+        self.log.debug("Deleting key: %r", path)
+        with self._object_client(not_found=path) as clob:
+            req = clob.delete(bucket=self.bucket_name, object=path)
             self._retry_on_reset(req, req.execute)
 
     def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback=None):
@@ -291,12 +292,12 @@ class GoogleTransfer(BaseTransfer):
         return metadata
 
     def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback=None):
-        key = self.format_key_for_backend(key)
-        self.log.debug("Starting to fetch the contents of: %r to %r", key, fileobj_to_store_to)
+        path = self.format_key_for_backend(key)
+        self.log.debug("Starting to fetch the contents of: %r to %r", path, fileobj_to_store_to)
         next_prog_report = 0.0
         last_log_output = 0.0
-        with self._object_client(not_found=key) as clob:
-            req = clob.get_media(bucket=self.bucket_name, object=key)
+        with self._object_client(not_found=path) as clob:
+            req = clob.get_media(bucket=self.bucket_name, object=path)
             download = MediaIoBaseDownload(fileobj_to_store_to, req, chunksize=DOWNLOAD_CHUNK_SIZE)
             done = False
             while not done:
@@ -305,32 +306,32 @@ class GoogleTransfer(BaseTransfer):
                     progress_pct = status.progress() * 100
                     now = time.monotonic()
                     if (now - last_log_output) >= 5.0:
-                        self.log.debug("Download of %r: %d%%", key, progress_pct)
+                        self.log.debug("Download of %r: %d%%", path, progress_pct)
                         last_log_output = now
 
                     if progress_callback and progress_pct > next_prog_report:
                         progress_callback(progress_pct, 100)
                         next_prog_report = progress_pct + 0.1
-            return self._metadata_for_key(clob, key)
+            return self._metadata_for_key(clob, path)
 
     def get_contents_to_string(self, key):
-        key = self.format_key_for_backend(key)
-        self.log.debug("Starting to fetch the contents of: %r", key)
-        with self._object_client(not_found=key) as clob:
-            req = clob.get_media(bucket=self.bucket_name, object=key)
+        path = self.format_key_for_backend(key)
+        self.log.debug("Starting to fetch the contents of: %r", path)
+        with self._object_client(not_found=path) as clob:
+            req = clob.get_media(bucket=self.bucket_name, object=path)
             data = self._retry_on_reset(req, req.execute)
-            return data, self._metadata_for_key(clob, key)
+            return data, self._metadata_for_key(clob, path)
 
     def get_file_size(self, key):
-        key = self.format_key_for_backend(key)
-        with self._object_client(not_found=key) as clob:
-            req = clob.get(bucket=self.bucket_name, object=key)
+        path = self.format_key_for_backend(key)
+        with self._object_client(not_found=path) as clob:
+            req = clob.get(bucket=self.bucket_name, object=path)
             obj = self._retry_on_reset(req, req.execute)
             return int(obj["size"])
 
     def _upload(self, upload, key, metadata, extra_props, cache_control, upload_progress_fn=None):
-        key = self.format_key_for_backend(key)
-        self.log.debug("Starting to upload %r", key)
+        path = self.format_key_for_backend(key)
+        self.log.debug("Starting to upload %r", path)
         body = {"metadata": metadata}
         if extra_props:
             body.update(extra_props)
@@ -339,7 +340,7 @@ class GoogleTransfer(BaseTransfer):
 
         last_log_output = 0.0
         with self._object_client() as clob:
-            req = clob.insert(bucket=self.bucket_name, name=key, media_body=upload, body=body)
+            req = clob.insert(bucket=self.bucket_name, name=path, media_body=upload, body=body)
             response = None
             while response is None:
                 status, response = self._retry_on_reset(req, req.next_chunk)
@@ -349,7 +350,7 @@ class GoogleTransfer(BaseTransfer):
                         self.log.debug(
                             "Upload of %r to %r: %d%%, %s bytes",
                             upload,
-                            key,
+                            path,
                             status.progress() * 100,
                             status.resumable_progress,
                         )
