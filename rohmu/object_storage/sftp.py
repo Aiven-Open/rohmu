@@ -5,11 +5,12 @@ Copyright (c) 2016 Ohmu Ltd
 Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
-
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
 from ..notifier.interface import Notifier
 from .base import BaseTransfer, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
 from io import BytesIO, StringIO
+from pathlib import Path
+from rohmu.atomic_opener import atomic_opener
 from stat import S_ISDIR
 from typing import cast
 
@@ -60,7 +61,7 @@ class SFTPTransfer(BaseTransfer):
         self.log.debug("SFTPTransfer initialized")
 
     def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback=None):
-        with open(filepath_to_store_to, "wb") as fh:
+        with atomic_opener(Path(filepath_to_store_to), mode="wb") as fh:
             return self.get_contents_to_fileobj(key, fh, progress_callback=progress_callback)
 
     def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback=None):

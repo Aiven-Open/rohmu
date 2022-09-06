@@ -11,6 +11,8 @@ from ..notifier.interface import Notifier
 from azure.core.exceptions import HttpResponseError, ResourceExistsError
 from azure.storage.blob import BlobServiceClient, ContentSettings
 from io import BytesIO
+from pathlib import Path
+from rohmu.atomic_opener import atomic_opener
 
 import azure.common
 import logging
@@ -220,7 +222,7 @@ class AzureTransfer(BaseTransfer):
 
         self.log.debug("Starting to fetch the contents of: %r to: %r", path, filepath_to_store_to)
         try:
-            with open(filepath_to_store_to, "wb") as f:
+            with atomic_opener(Path(filepath_to_store_to), mode="wb") as f:
                 container_client = self.conn.get_container_client(self.container_name)
                 container_client.download_blob(path).readinto(f)
         except azure.core.exceptions.ResourceNotFoundError as ex:  # pylint: disable=no-member

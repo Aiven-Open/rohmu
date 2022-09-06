@@ -8,6 +8,8 @@ See LICENSE for details
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
 from ..notifier.interface import Notifier
 from .base import BaseTransfer, get_total_memory, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
+from pathlib import Path
+from rohmu.atomic_opener import atomic_opener
 from typing import Dict, Optional
 
 import botocore.client
@@ -253,7 +255,7 @@ class S3Transfer(BaseTransfer):
             cb(data_read, body_length)
 
     def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback=None):
-        with open(filepath_to_store_to, "wb") as fh:
+        with atomic_opener(Path(filepath_to_store_to), mode="wb") as fh:
             stream, length, metadata = self._get_object_stream(key)
             self._read_object_to_fileobj(fh, stream, length, cb=progress_callback)
         return metadata
