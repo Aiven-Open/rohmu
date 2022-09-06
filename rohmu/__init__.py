@@ -9,10 +9,11 @@ from .object_storage.base import BaseTransfer
 from typing import Type
 
 IO_BLOCK_SIZE = 2**20  # 1 MiB
+STORAGE_TYPE = "storage_type"
 
 
 def get_class_for_transfer(obj_store) -> Type[BaseTransfer]:
-    storage_type = obj_store["storage_type"]
+    storage_type = obj_store[STORAGE_TYPE]
     if storage_type == "azure":
         from .object_storage.azure import AzureTransfer
 
@@ -44,5 +45,5 @@ def get_class_for_transfer(obj_store) -> Type[BaseTransfer]:
 def get_transfer(storage_config) -> BaseTransfer:
     storage_class = get_class_for_transfer(storage_config)
     storage_config = storage_config.copy()
-    storage_config.pop("storage_type")
+    storage_config.pop(STORAGE_TYPE)
     return storage_class(**storage_config)
