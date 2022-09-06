@@ -5,7 +5,6 @@ Copyright (c) 2016 Ohmu Ltd
 See LICENSE for details
 """
 # pylint: disable=import-error, no-name-in-module
-
 from ..dates import parse_timestamp
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError
 from .base import BaseTransfer, get_total_memory, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
@@ -14,9 +13,11 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import build_http, MediaFileUpload, MediaIoBaseDownload, MediaIoBaseUpload, MediaUpload
 from http.client import IncompleteRead
-from io import BytesIO, FileIO
+from io import BytesIO
 from oauth2client import GOOGLE_TOKEN_URI
 from oauth2client.client import GoogleCredentials
+from pathlib import Path
+from rohmu.atomic_opener import atomic_opener
 
 import codecs
 import errno
@@ -27,7 +28,6 @@ import googleapiclient  # noqa pylint: disable=unused-import
 import httplib2
 import json
 import logging
-import os
 import random
 import socket
 import ssl
@@ -278,17 +278,8 @@ class GoogleTransfer(BaseTransfer):
             self._retry_on_reset(req, req.execute)
 
     def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback=None):
-        fileobj = FileIO(filepath_to_store_to, mode="wb")
-        done = False
-        metadata = {}
-        try:
-            metadata = self.get_contents_to_fileobj(key, fileobj, progress_callback=progress_callback)
-            done = True
-        finally:
-            fileobj.close()
-            if not done:
-                os.unlink(filepath_to_store_to)
-        return metadata
+        with atomic_opener(Path(filepath_to_store_to), mode="wb") as fileobj:
+            return self.get_contents_to_fileobj(key, fileobj, progress_callback=progress_callback)
 
     def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback=None):
         key = self.format_key_for_backend(key)
