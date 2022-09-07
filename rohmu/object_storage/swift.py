@@ -2,6 +2,7 @@
 rohmu - openstack swift object store interface
 
 Copyright (c) 2016 Ohmu Ltd
+Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
 from ..dates import parse_timestamp
@@ -103,8 +104,8 @@ class SwiftTransfer(BaseTransfer):
         return {"x-object-meta-{}".format(name): str(value) for name, value in metadata.items()}
 
     def get_metadata_for_key(self, key):
-        key = self.format_key_for_backend(key)
-        return self._metadata_for_key(key)
+        path = self.format_key_for_backend(key)
+        return self._metadata_for_key(path)
 
     def _metadata_for_key(self, key, *, resolve_manifest=False):
         try:
@@ -177,18 +178,18 @@ class SwiftTransfer(BaseTransfer):
                     self._delete_object_plain(item["name"])
 
     def delete_key(self, key):
-        key = self.format_key_for_backend(key)
-        self.log.debug("Deleting key: %r", key)
+        path = self.format_key_for_backend(key)
+        self.log.debug("Deleting key: %r", path)
         try:
-            headers = self.conn.head_object(self.container_name, key)
+            headers = self.conn.head_object(self.container_name, path)
         except exceptions.ClientException as ex:
             if ex.http_status == 404:
-                raise FileNotFoundFromStorageError(key)
+                raise FileNotFoundFromStorageError(path)
             raise
         if "x-object-manifest" in headers:
-            self._delete_object_segments(key, headers["x-object-manifest"])
+            self._delete_object_segments(path, headers["x-object-manifest"])
         else:
-            self._delete_object_plain(key)
+            self._delete_object_plain(path)
 
     def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback=None):
         temp_filepath = "{}~".format(filepath_to_store_to)
@@ -202,12 +203,12 @@ class SwiftTransfer(BaseTransfer):
         return metadata
 
     def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback=None):
-        key = self.format_key_for_backend(key)
+        path = self.format_key_for_backend(key)
         try:
-            headers, data_gen = self.conn.get_object(self.container_name, key, resp_chunk_size=CHUNK_SIZE)
+            headers, data_gen = self.conn.get_object(self.container_name, path, resp_chunk_size=CHUNK_SIZE)
         except exceptions.ClientException as ex:
             if ex.http_status == 404:
-                raise FileNotFoundFromStorageError(key)
+                raise FileNotFoundFromStorageError(path)
             raise
 
         content_len = int(headers.get("content-length") or 0)
@@ -225,13 +226,13 @@ class SwiftTransfer(BaseTransfer):
         return self._headers_to_metadata(headers)
 
     def get_contents_to_string(self, key):
-        key = self.format_key_for_backend(key)
-        self.log.debug("Starting to fetch the contents of: %r", key)
+        path = self.format_key_for_backend(key)
+        self.log.debug("Starting to fetch the contents of: %r", path)
         try:
-            headers, data = self.conn.get_object(self.container_name, key)
+            headers, data = self.conn.get_object(self.container_name, path)
         except exceptions.ClientException as ex:
             if ex.http_status == 404:
-                raise FileNotFoundFromStorageError(key)
+                raise FileNotFoundFromStorageError(path)
             raise
 
         metadata = self._headers_to_metadata(headers)
@@ -246,10 +247,10 @@ class SwiftTransfer(BaseTransfer):
         if cache_control is not None:
             raise NotImplementedError("SwiftTransfer: cache_control support not implemented")
 
-        key = self.format_key_for_backend(key)
+        path = self.format_key_for_backend(key)
         metadata_to_send = self._metadata_to_headers(self.sanitize_metadata(metadata))
         self.conn.put_object(
-            self.container_name, key, contents=bytes(memstring), content_type=mimetype, headers=metadata_to_send
+            self.container_name, path, contents=bytes(memstring), content_type=mimetype, headers=metadata_to_send
         )
 
     def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
@@ -323,32 +324,32 @@ class SwiftTransfer(BaseTransfer):
             # chunks.
             with suppress(FileNotFoundFromStorageError):
                 self.delete_key(key)
-        key = self.format_key_for_backend(key)
+        path = self.format_key_for_backend(key)
         headers = self._metadata_to_headers(self.sanitize_metadata(metadata))
         # Fall back to the "one segment" if possible
         if (not multipart) or (not content_length) or content_length <= self.segment_size:
-            self.log.debug("Uploading %r to %r (%r bytes)", fp, key, content_length)
-            self.conn.put_object(self.container_name, key, contents=fp, content_length=content_length, headers=headers)
+            self.log.debug("Uploading %r to %r (%r bytes)", fp, path, content_length)
+            self.conn.put_object(self.container_name, path, contents=fp, content_length=content_length, headers=headers)
             return
 
         # Segmented transfer
         # upload segments of a file like `backup-bucket/site-name/basebackup/2016-03-22_0`
         # to as `backup-bucket/site-name/basebackup_segments/2016-03-22_0/{:08x}`
         segment_no = 0
-        segment_path = "{}_segments/{}/".format(os.path.dirname(key), os.path.basename(key))
+        segment_path = "{}_segments/{}/".format(os.path.dirname(path), os.path.basename(path))
         segment_key_format = "{}{{:08x}}".format(segment_path).format
         remaining = content_length
         while remaining > 0:
             this_segment_size = min(self.segment_size, remaining)
             remaining -= this_segment_size
             segment_no += 1
-            self.log.debug("Uploading segment %r of %r to %r (%r bytes)", segment_no, fp, key, this_segment_size)
+            self.log.debug("Uploading segment %r of %r to %r (%r bytes)", segment_no, fp, path, this_segment_size)
             segment_key = segment_key_format(segment_no)  # pylint: disable=too-many-format-args
             self.conn.put_object(
                 self.container_name, segment_key, contents=fp, content_length=this_segment_size, content_type=mimetype
             )
             if upload_progress_fn:
                 upload_progress_fn(content_length - remaining)
-        self.log.info("Uploaded %r segments of %r to %r", segment_no, key, segment_path)
+        self.log.info("Uploaded %r segments of %r to %r", segment_no, path, segment_path)
         headers["x-object-manifest"] = "{}/{}".format(self.container_name, segment_path.lstrip("/"))
-        self.conn.put_object(self.container_name, key, contents="", headers=headers, content_length=0)
+        self.conn.put_object(self.container_name, path, contents="", headers=headers, content_length=0)

@@ -2,6 +2,7 @@
 rohmu - azure object store interface
 
 Copyright (c) 2016 Ohmu Ltd
+Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
 # pylint: disable=import-error, no-name-in-module
@@ -133,7 +134,7 @@ class AzureTransfer(BaseTransfer):
         path = self.format_key_for_backend(key, remove_slash_prefix=True, trailing_slash=False)
         items = list(self._iter_key(path=path, with_metadata=True, deep=False))
         if not items:
-            raise FileNotFoundFromStorageError(key)
+            raise FileNotFoundFromStorageError(path)
         expected_name = path.rsplit("/", 1)[-1]
         for item in items:
             # We expect single result but Azure listing is prefix match so we need to explicitly
@@ -147,7 +148,7 @@ class AzureTransfer(BaseTransfer):
         else:
             item = None
         if not item or item.type != KEY_TYPE_OBJECT:
-            raise FileNotFoundFromStorageError(key)  # not found or prefix
+            raise FileNotFoundFromStorageError(path)  # not found or prefix
         return item.value["metadata"]
 
     def _metadata_for_key(self, path):
@@ -191,28 +192,28 @@ class AzureTransfer(BaseTransfer):
                 )
 
     def delete_key(self, key):
-        key = self.format_key_for_backend(key, remove_slash_prefix=True)
-        self.log.debug("Deleting key: %r", key)
+        path = self.format_key_for_backend(key, remove_slash_prefix=True)
+        self.log.debug("Deleting key: %r", path)
         try:
-            blob_client = self.conn.get_blob_client(container=self.container_name, blob=key)
+            blob_client = self.conn.get_blob_client(container=self.container_name, blob=path)
             return blob_client.delete_blob()
         except azure.core.exceptions.ResourceNotFoundError as ex:  # pylint: disable=no-member
-            raise FileNotFoundFromStorageError(key) from ex
+            raise FileNotFoundFromStorageError(path) from ex
 
     def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback=None):
-        key = self.format_key_for_backend(key, remove_slash_prefix=True)
+        path = self.format_key_for_backend(key, remove_slash_prefix=True)
 
-        self.log.debug("Starting to fetch the contents of: %r to: %r", key, filepath_to_store_to)
+        self.log.debug("Starting to fetch the contents of: %r to: %r", path, filepath_to_store_to)
         try:
             with open(filepath_to_store_to, "wb") as f:
                 container_client = self.conn.get_container_client(self.container_name)
-                container_client.download_blob(key).readinto(f)
+                container_client.download_blob(path).readinto(f)
         except azure.core.exceptions.ResourceNotFoundError as ex:  # pylint: disable=no-member
-            raise FileNotFoundFromStorageError(key) from ex
+            raise FileNotFoundFromStorageError(path) from ex
 
         if progress_callback:
             progress_callback(1, 1)
-        return self._metadata_for_key(key)
+        return self._metadata_for_key(path)
 
     @classmethod
     def _parse_length_from_content_range(cls, content_range):
@@ -254,45 +255,45 @@ class AzureTransfer(BaseTransfer):
                 raise FileNotFoundFromStorageError(key) from ex
 
     def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback=None):
-        key = self.format_key_for_backend(key, remove_slash_prefix=True)
+        path = self.format_key_for_backend(key, remove_slash_prefix=True)
 
-        self.log.debug("Starting to fetch the contents of: %r", key)
+        self.log.debug("Starting to fetch the contents of: %r", path)
         try:
-            self._stream_blob(key, fileobj_to_store_to, progress_callback)
+            self._stream_blob(path, fileobj_to_store_to, progress_callback)
         except azure.core.exceptions.ResourceNotFoundError as ex:  # pylint: disable=no-member
-            raise FileNotFoundFromStorageError(key) from ex
+            raise FileNotFoundFromStorageError(path) from ex
 
         if progress_callback:
             progress_callback(1, 1)
-        return self._metadata_for_key(key)
+        return self._metadata_for_key(path)
 
     def get_contents_to_string(self, key):
-        key = self.format_key_for_backend(key, remove_slash_prefix=True)
-        self.log.debug("Starting to fetch the contents of: %r", key)
+        path = self.format_key_for_backend(key, remove_slash_prefix=True)
+        self.log.debug("Starting to fetch the contents of: %r", path)
         try:
             container_client = self.conn.get_container_client(self.container_name)
             blob = BytesIO()
-            container_client.download_blob(key).download_to_stream(blob)
-            return blob.getvalue(), self._metadata_for_key(key)
+            container_client.download_blob(path).download_to_stream(blob)
+            return blob.getvalue(), self._metadata_for_key(path)
         except azure.core.exceptions.ResourceNotFoundError as ex:  # pylint: disable=no-member
-            raise FileNotFoundFromStorageError(key) from ex
+            raise FileNotFoundFromStorageError(path) from ex
 
     def get_file_size(self, key):
-        key = self.format_key_for_backend(key, remove_slash_prefix=True)
+        path = self.format_key_for_backend(key, remove_slash_prefix=True)
         try:
-            blob_client = self.conn.get_blob_client(self.container_name, key)
+            blob_client = self.conn.get_blob_client(self.container_name, path)
             return blob_client.get_blob_properties().size
         except azure.core.exceptions.ResourceNotFoundError as ex:  # pylint: disable=no-member
-            raise FileNotFoundFromStorageError(key) from ex
+            raise FileNotFoundFromStorageError(path) from ex
 
     def store_file_from_memory(self, key, memstring, metadata=None, cache_control=None, mimetype=None):
         if cache_control is not None:
             raise NotImplementedError("AzureTransfer: cache_control support not implemented")
-        key = self.format_key_for_backend(key, remove_slash_prefix=True)
+        path = self.format_key_for_backend(key, remove_slash_prefix=True)
         content_settings = None
         if mimetype:
             content_settings = ContentSettings(content_type=mimetype)
-        blob_client = self.conn.get_blob_client(self.container_name, key)
+        blob_client = self.conn.get_blob_client(self.container_name, path)
         blob_client.upload_blob(
             bytes(memstring),
             blob_type=BlobType.BlockBlob,
@@ -304,12 +305,12 @@ class AzureTransfer(BaseTransfer):
     def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
         if cache_control is not None:
             raise NotImplementedError("AzureTransfer: cache_control support not implemented")
-        key = self.format_key_for_backend(key, remove_slash_prefix=True)
+        path = self.format_key_for_backend(key, remove_slash_prefix=True)
         content_settings = None
         if mimetype:
             content_settings = ContentSettings(content_type=mimetype)
         with open(filepath, "rb") as data:
-            blob_client = self.conn.get_blob_client(self.container_name, key)
+            blob_client = self.conn.get_blob_client(self.container_name, path)
             blob_client.upload_blob(
                 data,
                 blob_type=BlobType.BlockBlob,
@@ -321,7 +322,7 @@ class AzureTransfer(BaseTransfer):
     def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
         if cache_control is not None:
             raise NotImplementedError("AzureTransfer: cache_control support not implemented")
-        key = self.format_key_for_backend(key, remove_slash_prefix=True)
+        path = self.format_key_for_backend(key, remove_slash_prefix=True)
         content_settings = None
         if mimetype:
             content_settings = ContentSettings(content_type=mimetype)
@@ -338,7 +339,7 @@ class AzureTransfer(BaseTransfer):
             original_tell = getattr(fd, "tell", None)
             fd.tell = lambda: None
         try:
-            blob_client = self.conn.get_blob_client(self.container_name, key)
+            blob_client = self.conn.get_blob_client(self.container_name, path)
             blob_client.upload_blob(
                 fd,
                 blob_type=BlobType.BlockBlob,

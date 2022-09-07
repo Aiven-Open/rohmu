@@ -1,7 +1,8 @@
 """
-rohmu
+rohmu - aws s3 object store interface
 
 Copyright (c) 2016 Ohmu Ltd
+Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
@@ -142,8 +143,8 @@ class S3Transfer(BaseTransfer):
                 raise StorageError("Copying {!r} to {!r} failed: {!r}".format(source_key, destination_key, ex)) from ex
 
     def get_metadata_for_key(self, key):
-        key = self.format_key_for_backend(key, remove_slash_prefix=True)
-        return self._metadata_for_key(key)
+        path = self.format_key_for_backend(key, remove_slash_prefix=True)
+        return self._metadata_for_key(path)
 
     def _metadata_for_key(self, key):
         try:
@@ -158,15 +159,15 @@ class S3Transfer(BaseTransfer):
         return response["Metadata"]
 
     def delete_key(self, key):
-        key = self.format_key_for_backend(key, remove_slash_prefix=True)
-        self.log.debug("Deleting key: %r", key)
-        self._metadata_for_key(key)  # check that key exists
-        self.s3_client.delete_object(Bucket=self.bucket_name, Key=key)
+        path = self.format_key_for_backend(key, remove_slash_prefix=True)
+        self.log.debug("Deleting key: %r", path)
+        self._metadata_for_key(path)  # check that key exists
+        self.s3_client.delete_object(Bucket=self.bucket_name, Key=path)
 
     def delete_tree(self, key):
-        key = self.format_key_for_backend(key, remove_slash_prefix=True, trailing_slash=True)
-        self.log.debug("Deleting tree: %r", key)
-        objects_to_delete = self.s3_client.list_objects(Bucket=self.bucket_name, Prefix=key)
+        path = self.format_key_for_backend(key, remove_slash_prefix=True, trailing_slash=True)
+        self.log.debug("Deleting tree: %r", path)
+        objects_to_delete = self.s3_client.list_objects(Bucket=self.bucket_name, Prefix=path)
         delete_keys = [{"Key": key} for key in [obj["Key"] for obj in objects_to_delete.get("Contents", [])]]
         if delete_keys:
             self.s3_client.delete_objects(Bucket=self.bucket_name, Delete={"Objects": delete_keys})
@@ -215,18 +216,18 @@ class S3Transfer(BaseTransfer):
                 break
 
     def _get_object_stream(self, key):
-        key = self.format_key_for_backend(key, remove_slash_prefix=True)
+        path = self.format_key_for_backend(key, remove_slash_prefix=True)
         try:
             response = self.s3_client.get_object(
                 Bucket=self.bucket_name,
-                Key=key,
+                Key=path,
             )
         except botocore.exceptions.ClientError as ex:
             status_code = ex.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
             if status_code == 404:
-                raise FileNotFoundFromStorageError(key)
+                raise FileNotFoundFromStorageError(path)
             else:
-                raise StorageError("Fetching the remote object {} failed".format(key)) from ex
+                raise StorageError("Fetching the remote object {} failed".format(path)) from ex
         return response["Body"], response["ContentLength"], response["Metadata"]
 
     def _read_object_to_fileobj(self, fileobj, streaming_body, body_length, cb=None):
@@ -260,22 +261,22 @@ class S3Transfer(BaseTransfer):
         return data, metadata
 
     def get_file_size(self, key):
-        key = self.format_key_for_backend(key, remove_slash_prefix=True)
+        path = self.format_key_for_backend(key, remove_slash_prefix=True)
         try:
-            response = self.s3_client.head_object(Bucket=self.bucket_name, Key=key)
+            response = self.s3_client.head_object(Bucket=self.bucket_name, Key=path)
             return int(response["ContentLength"])
         except botocore.exceptions.ClientError as ex:
             if ex.response.get("ResponseMetadata", {}).get("HTTPStatusCode") == 404:
-                raise FileNotFoundFromStorageError(key)
+                raise FileNotFoundFromStorageError(path)
             else:
-                raise StorageError("File size lookup failed for {}".format(key)) from ex
+                raise StorageError("File size lookup failed for {}".format(path)) from ex
 
     def store_file_from_memory(self, key, memstring, metadata=None, cache_control=None, mimetype=None):
-        key = self.format_key_for_backend(key, remove_slash_prefix=True)
+        path = self.format_key_for_backend(key, remove_slash_prefix=True)
         args = {
             "Bucket": self.bucket_name,
             "Body": bytes(memstring),  # make sure Body is of type bytes as memoryview's not allowed, only bytes/bytearrays
-            "Key": key,
+            "Key": path,
         }
         if metadata:
             args["Metadata"] = self.sanitize_metadata(metadata)
@@ -301,21 +302,21 @@ class S3Transfer(BaseTransfer):
             )
 
     def multipart_upload_file_object(self, *, cache_control, fp, key, metadata, mimetype, progress_fn=None, size=None):
-        key = self.format_key_for_backend(key, remove_slash_prefix=True)
+        path = self.format_key_for_backend(key, remove_slash_prefix=True)
         start_of_multipart_upload = time.monotonic()
         bytes_sent = 0
 
         chunks = "Unknown"
         if size is not None:
             chunks = math.ceil(size / self.multipart_chunk_size)
-        self.log.debug("Starting to upload multipart file: %r, size: %s, chunks: %s", key, size, chunks)
+        self.log.debug("Starting to upload multipart file: %r, size: %s, chunks: %s", path, size, chunks)
 
         parts = []
         part_number = 1
 
         args = {
             "Bucket": self.bucket_name,
-            "Key": key,
+            "Key": path,
         }
         if metadata:
             args["Metadata"] = self.sanitize_metadata(metadata)
@@ -328,7 +329,7 @@ class S3Transfer(BaseTransfer):
         try:
             response = self.s3_client.create_multipart_upload(**args)
         except botocore.exceptions.ClientError as ex:
-            raise StorageError("Failed to initiate multipart upload for {}".format(key)) from ex
+            raise StorageError("Failed to initiate multipart upload for {}".format(path)) from ex
 
         mp_id = response["UploadId"]
 
@@ -345,21 +346,21 @@ class S3Transfer(BaseTransfer):
                     response = self.s3_client.upload_part(
                         Body=data,
                         Bucket=self.bucket_name,
-                        Key=key,
+                        Key=path,
                         PartNumber=part_number,
                         UploadId=mp_id,
                     )
                 except botocore.exceptions.ClientError as ex:
-                    self.log.exception("Uploading part %d for %s failed, attempts left: %d", part_number, key, attempts)
+                    self.log.exception("Uploading part %d for %s failed, attempts left: %d", part_number, path, attempts)
                     if attempts <= 0:
                         try:
                             self.s3_client.abort_multipart_upload(
                                 Bucket=self.bucket_name,
-                                Key=key,
+                                Key=path,
                                 UploadId=mp_id,
                             )
                         finally:
-                            err = "Multipart upload of {0} failed: {1.__class__.__name__}: {1}".format(key, ex)
+                            err = "Multipart upload of {0} failed: {1.__class__.__name__}: {1}".format(path, ex)
                             raise StorageError(err) from ex
                     else:
                         time.sleep(1.0)
@@ -386,7 +387,7 @@ class S3Transfer(BaseTransfer):
         try:
             self.s3_client.complete_multipart_upload(
                 Bucket=self.bucket_name,
-                Key=key,
+                Key=path,
                 MultipartUpload={"Parts": parts},
                 UploadId=mp_id,
             )
@@ -394,14 +395,17 @@ class S3Transfer(BaseTransfer):
             try:
                 self.s3_client.abort_multipart_upload(
                     Bucket=self.bucket_name,
-                    Key=key,
+                    Key=path,
                     UploadId=mp_id,
                 )
             finally:
-                raise StorageError("Failed to complete multipart upload for {}".format(key)) from ex
+                raise StorageError("Failed to complete multipart upload for {}".format(path)) from ex
 
         self.log.info(
-            "Multipart upload of %r complete, size: %r, took: %.2fs", key, size, time.monotonic() - start_of_multipart_upload
+            "Multipart upload of %r complete, size: %r, took: %.2fs",
+            path,
+            size,
+            time.monotonic() - start_of_multipart_upload,
         )
 
     def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
