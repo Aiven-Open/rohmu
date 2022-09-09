@@ -2,9 +2,12 @@
 rohmu - object_storage.base
 
 Copyright (c) 2016 Ohmu Ltd
+Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
 from ..errors import StorageError
+from ..notifier.interface import Notifier
+from ..notifier.null import NullNotifier
 from collections import namedtuple
 
 import logging
@@ -17,13 +20,14 @@ IterKeyItem = namedtuple("IterKeyItem", ["type", "value"])
 
 
 class BaseTransfer:
-    def __init__(self, prefix):
+    def __init__(self, prefix, notifier: Notifier = None) -> None:
         self.log = logging.getLogger(self.__class__.__name__)
         if not prefix:
             prefix = ""
         elif prefix[-1] != "/":
             prefix += "/"
         self.prefix = prefix
+        self.notifier = notifier or NullNotifier()
 
     def copy_file(self, *, source_key, destination_key, metadata=None, **_kwargs):
         """Performs remote copy from source key name to destination key name. Key must identify a file, trees
