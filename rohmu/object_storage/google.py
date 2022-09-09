@@ -131,6 +131,7 @@ class GoogleTransfer(BaseTransfer):
 
             try:
                 # sometimes fails: httplib2.ServerNotFoundError: Unable to find the server at www.googleapis.com
+                # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.html
                 return build("storage", "v1", http=http)
             except (httplib2.ServerNotFoundError, socket.timeout):
                 if time.monotonic() - start_time > 600:
@@ -148,6 +149,7 @@ class GoogleTransfer(BaseTransfer):
         if self.gs_object_client is None:
             if self.gs is None:
                 self.gs = self._init_google_client()
+            # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.objects.html
             self.gs_object_client = self.gs.objects()  # pylint: disable=no-member
 
         try:
@@ -204,6 +206,7 @@ class GoogleTransfer(BaseTransfer):
             body["metadata"] = metadata
 
         with self._object_client(not_found=source_key) as clob:
+            # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.objects.html#copy
             request = clob.copy(
                 body=body,
                 destinationBucket=self.bucket_name,
@@ -219,6 +222,7 @@ class GoogleTransfer(BaseTransfer):
             return self._metadata_for_key(clob, path)
 
     def _metadata_for_key(self, clob, key):
+        # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.objects.html#get
         req = clob.get(bucket=self.bucket_name, object=key)
         obj = self._retry_on_reset(req, req.execute)
         return obj.get("metadata", {})
@@ -246,6 +250,7 @@ class GoogleTransfer(BaseTransfer):
                     kwargs = {}
                 else:
                     kwargs = {"delimiter": "/"}
+                # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.objects.html#list
                 return domain.list(bucket=self.bucket_name, prefix=path, **kwargs)
 
             for property_name, items in self._unpaginate(clob, initial_op, on_properties=["items", "prefixes"]):
@@ -275,6 +280,7 @@ class GoogleTransfer(BaseTransfer):
         path = self.format_key_for_backend(key)
         self.log.debug("Deleting key: %r", path)
         with self._object_client(not_found=path) as clob:
+            # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.objects.html#delete
             req = clob.delete(bucket=self.bucket_name, object=path)
             self._retry_on_reset(req, req.execute)
 
@@ -297,6 +303,7 @@ class GoogleTransfer(BaseTransfer):
         next_prog_report = 0.0
         last_log_output = 0.0
         with self._object_client(not_found=path) as clob:
+            # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.objects.html#get_media
             req = clob.get_media(bucket=self.bucket_name, object=path)
             download = MediaIoBaseDownload(fileobj_to_store_to, req, chunksize=DOWNLOAD_CHUNK_SIZE)
             done = False
@@ -318,6 +325,7 @@ class GoogleTransfer(BaseTransfer):
         path = self.format_key_for_backend(key)
         self.log.debug("Starting to fetch the contents of: %r", path)
         with self._object_client(not_found=path) as clob:
+            # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.objects.html#get_media
             req = clob.get_media(bucket=self.bucket_name, object=path)
             data = self._retry_on_reset(req, req.execute)
             return data, self._metadata_for_key(clob, path)
@@ -325,6 +333,7 @@ class GoogleTransfer(BaseTransfer):
     def get_file_size(self, key):
         path = self.format_key_for_backend(key)
         with self._object_client(not_found=path) as clob:
+            # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.objects.html#get
             req = clob.get(bucket=self.bucket_name, object=path)
             obj = self._retry_on_reset(req, req.execute)
             return int(obj["size"])
@@ -340,6 +349,7 @@ class GoogleTransfer(BaseTransfer):
 
         last_log_output = 0.0
         with self._object_client() as clob:
+            # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.objects.html#insert
             req = clob.insert(bucket=self.bucket_name, name=path, media_body=upload, body=body)
             response = None
             while response is None:
