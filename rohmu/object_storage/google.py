@@ -9,6 +9,7 @@ See LICENSE for details
 
 from ..dates import parse_timestamp
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError
+from ..notifier.interface import Notifier
 from .base import BaseTransfer, get_total_memory, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
 from contextlib import contextmanager
 from googleapiclient.discovery import build
@@ -98,8 +99,17 @@ def base64_to_hex(b64val):
 
 
 class GoogleTransfer(BaseTransfer):
-    def __init__(self, project_id, bucket_name, credential_file=None, credentials=None, prefix=None, proxy_info=None):
-        super().__init__(prefix=prefix)
+    def __init__(
+        self,
+        project_id,
+        bucket_name,
+        credential_file=None,
+        credentials=None,
+        prefix=None,
+        proxy_info=None,
+        notifier: Notifier = None,
+    ) -> None:
+        super().__init__(prefix=prefix, notifier=notifier)
         self.project_id = project_id
         self.proxy_info = proxy_info
         self.google_creds = get_credentials(credential_file=credential_file, credentials=credentials)
@@ -214,7 +224,8 @@ class GoogleTransfer(BaseTransfer):
                 sourceBucket=self.bucket_name,
                 sourceObject=source_object,
             )
-            self._retry_on_reset(request, request.execute)
+            result = self._retry_on_reset(request, request.execute)
+            self.notifier.object_copied(key=destination_key, size=int(result["size"]))
 
     def get_metadata_for_key(self, key):
         path = self.format_key_for_backend(key)
@@ -283,6 +294,7 @@ class GoogleTransfer(BaseTransfer):
             # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.objects.html#delete
             req = clob.delete(bucket=self.bucket_name, object=path)
             self._retry_on_reset(req, req.execute)
+            self.notifier.object_deleted(key)
 
     def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback=None):
         fileobj = FileIO(filepath_to_store_to, mode="wb")
@@ -368,13 +380,15 @@ class GoogleTransfer(BaseTransfer):
 
                     if upload_progress_fn:
                         upload_progress_fn(status.resumable_progress)
+        return response
 
     # pylint: disable=arguments-differ
     def store_file_from_memory(self, key, memstring, metadata=None, extra_props=None, cache_control=None, mimetype=None):
-        upload = MediaIoBaseUpload(
-            BytesIO(memstring), mimetype or "application/octet-stream", chunksize=UPLOAD_CHUNK_SIZE, resumable=True
-        )
-        return self._upload(upload, key, self.sanitize_metadata(metadata), extra_props, cache_control=cache_control)
+        data = BytesIO(memstring)
+        upload = MediaIoBaseUpload(data, mimetype or "application/octet-stream", chunksize=UPLOAD_CHUNK_SIZE, resumable=True)
+        result = self._upload(upload, key, self.sanitize_metadata(metadata), extra_props, cache_control=cache_control)
+        self.notifier.object_created(key=key, size=int(result["size"]))
+        return result
 
     # pylint: disable=arguments-differ
     def store_file_from_disk(
@@ -390,11 +404,13 @@ class GoogleTransfer(BaseTransfer):
     ):
         mimetype = mimetype or "application/octet-stream"
         upload = MediaFileUpload(filepath, mimetype, chunksize=UPLOAD_CHUNK_SIZE, resumable=True)
-        return self._upload(upload, key, self.sanitize_metadata(metadata), extra_props, cache_control=cache_control)
+        result = self._upload(upload, key, self.sanitize_metadata(metadata), extra_props, cache_control=cache_control)
+        self.notifier.object_created(key=key, size=int(result["size"]))
+        return result
 
     def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
         mimetype = mimetype or "application/octet-stream"
-        return self._upload(
+        result = self._upload(
             MediaStreamUpload(fd, chunk_size=UPLOAD_CHUNK_SIZE, mime_type=mimetype, name=key),
             key,
             self.sanitize_metadata(metadata),
@@ -402,6 +418,8 @@ class GoogleTransfer(BaseTransfer):
             cache_control=cache_control,
             upload_progress_fn=upload_progress_fn,
         )
+        self.notifier.object_created(key=key, size=int(result["size"]))
+        return result
 
     def get_or_create_bucket(self, bucket_name):
         """Look up the bucket if it already exists and try to create the
