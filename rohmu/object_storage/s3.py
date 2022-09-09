@@ -6,7 +6,9 @@ Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
+from ..notifier.interface import Notifier
 from .base import BaseTransfer, get_total_memory, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
+from typing import Dict, Optional
 
 import botocore.client
 import botocore.config
@@ -65,8 +67,9 @@ class S3Transfer(BaseTransfer):
         proxy_info=None,
         connect_timeout=None,
         read_timeout=None,
-    ):
-        super().__init__(prefix=prefix)
+        notifier: Notifier = None,
+    ) -> None:
+        super().__init__(prefix=prefix, notifier=notifier)
         botocore_session = botocore.session.get_session()
         self.bucket_name = bucket_name
         self.location = ""
@@ -98,21 +101,20 @@ class S3Transfer(BaseTransfer):
                 self.location = self.region
             else:
                 signature_version = "s3"
-            proxies = {}
+            proxies: Optional[Dict[str, str]] = None
             if proxy_info:
-                proxy_url = get_proxy_url(proxy_info)
-                proxies["proxies"] = {"https": proxy_url}
-            custom_config = botocore.client.Config(
+                proxies = {"https": get_proxy_url(proxy_info)}
+            boto_config = botocore.client.Config(
                 s3={"addressing_style": "path"},
                 signature_version=signature_version,
-                **proxies,
+                proxies=proxies,
                 **timeouts,
             )
             self.s3_client = botocore_session.create_client(
                 "s3",
                 aws_access_key_id=aws_access_key_id,
                 aws_secret_access_key=aws_secret_access_key,
-                config=custom_config,
+                config=boto_config,
                 endpoint_url=custom_url,
                 region_name=region,
                 verify=is_verify_tls,
@@ -135,6 +137,7 @@ class S3Transfer(BaseTransfer):
                 Metadata=metadata or {},
                 MetadataDirective="COPY" if metadata is None else "REPLACE",
             )
+            self.notifier.object_copied(key=destination_key, size=None)
         except botocore.exceptions.ClientError as ex:
             status_code = ex.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
             if status_code == 404:
@@ -163,6 +166,7 @@ class S3Transfer(BaseTransfer):
         self.log.debug("Deleting key: %r", path)
         self._metadata_for_key(path)  # check that key exists
         self.s3_client.delete_object(Bucket=self.bucket_name, Key=path)
+        self.notifier.object_deleted(key=key)
 
     def delete_tree(self, key):
         path = self.format_key_for_backend(key, remove_slash_prefix=True, trailing_slash=True)
@@ -171,6 +175,10 @@ class S3Transfer(BaseTransfer):
         delete_keys = [{"Key": key} for key in [obj["Key"] for obj in objects_to_delete.get("Contents", [])]]
         if delete_keys:
             self.s3_client.delete_objects(Bucket=self.bucket_name, Delete={"Objects": delete_keys})
+            # Note: `tree_deleted` is not used here because the operation on S3 is not atomic, i.e.
+            # it is possible for a new object to be created after `list_objects` above
+            for obj in delete_keys:
+                self.notifier.object_deleted(key=obj["Key"])
 
     def iter_key(self, key, *, with_metadata=True, deep=False, include_key=False):
         path = self.format_key_for_backend(key, remove_slash_prefix=True, trailing_slash=not include_key)
@@ -273,9 +281,10 @@ class S3Transfer(BaseTransfer):
 
     def store_file_from_memory(self, key, memstring, metadata=None, cache_control=None, mimetype=None):
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
+        data = bytes(memstring)  # make sure Body is of type bytes as memoryview's not allowed, only bytes/bytearrays
         args = {
             "Bucket": self.bucket_name,
-            "Body": bytes(memstring),  # make sure Body is of type bytes as memoryview's not allowed, only bytes/bytearrays
+            "Body": data,
             "Key": path,
         }
         if metadata:
@@ -287,6 +296,7 @@ class S3Transfer(BaseTransfer):
         if mimetype is not None:
             args["ContentType"] = mimetype
         self.s3_client.put_object(**args)
+        self.notifier.object_created(key=key, size=len(data))
 
     def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
         size = os.path.getsize(filepath)
@@ -300,6 +310,7 @@ class S3Transfer(BaseTransfer):
             self.multipart_upload_file_object(
                 cache_control=cache_control, fp=fp, key=key, metadata=metadata, mimetype=mimetype, size=size
             )
+            self.notifier.object_created(key=key, size=os.path.getsize(filepath))
 
     def multipart_upload_file_object(self, *, cache_control, fp, key, metadata, mimetype, progress_fn=None, size=None):
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
@@ -401,6 +412,7 @@ class S3Transfer(BaseTransfer):
             finally:
                 raise StorageError("Failed to complete multipart upload for {}".format(path)) from ex
 
+        self.notifier.object_created(key=key, size=bytes_sent)
         self.log.info(
             "Multipart upload of %r complete, size: %r, took: %.2fs",
             path,
