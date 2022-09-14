@@ -92,7 +92,6 @@ class AzureTransfer(BaseTransfer):
             credential=self.sas_token,
             **config,
         )
-        self.conn.socket_timeout = 120  # Default Azure socket timeout 20s is a bit short
         self.container = self.get_or_create_container(self.container_name)
         self.log.debug("AzureTransfer initialized, %r", self.container_name)
 
