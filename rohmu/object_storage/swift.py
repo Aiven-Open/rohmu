@@ -7,6 +7,7 @@ See LICENSE for details
 """
 from ..dates import parse_timestamp
 from ..errors import FileNotFoundFromStorageError
+from ..notifier.interface import Notifier
 from .base import BaseTransfer, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
 from contextlib import suppress
 from swiftclient import client, exceptions  # pylint: disable=import-error
@@ -62,10 +63,11 @@ class SwiftTransfer(BaseTransfer):
         project_domain_id=None,
         project_domain_name=None,
         service_type=None,
-        endpoint_type=None
-    ):
+        endpoint_type=None,
+        notifier: Notifier = None,
+    ) -> None:
         prefix = prefix.lstrip("/") if prefix else ""
-        super().__init__(prefix=prefix)
+        super().__init__(prefix=prefix, notifier=notifier)
         self.container_name = container_name
 
         if auth_version == "3.0":
@@ -190,6 +192,7 @@ class SwiftTransfer(BaseTransfer):
             self._delete_object_segments(path, headers["x-object-manifest"])
         else:
             self._delete_object_plain(path)
+        self.notifier.object_deleted(key=key)
 
     def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback=None):
         temp_filepath = "{}~".format(filepath_to_store_to)
@@ -249,9 +252,9 @@ class SwiftTransfer(BaseTransfer):
 
         path = self.format_key_for_backend(key)
         metadata_to_send = self._metadata_to_headers(self.sanitize_metadata(metadata))
-        self.conn.put_object(
-            self.container_name, path, contents=bytes(memstring), content_type=mimetype, headers=metadata_to_send
-        )
+        data = bytes(memstring)
+        self.conn.put_object(self.container_name, path, contents=data, content_type=mimetype, headers=metadata_to_send)
+        self.notifier.object_created(key=key, size=len(data))
 
     def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
         obsz = os.path.getsize(filepath)
@@ -265,6 +268,7 @@ class SwiftTransfer(BaseTransfer):
                 mimetype=mimetype,
                 content_length=obsz,
             )
+            self.notifier.object_created(key=key, size=os.path.getsize(fp))
 
     def get_or_create_container(self, container_name):
         start_time = time.monotonic()
@@ -289,6 +293,7 @@ class SwiftTransfer(BaseTransfer):
         if metadata:
             headers["X-Fresh-Metadata"] = True
         self.conn.copy_object(self.container_name, source_key, destination=destination_key, headers=headers)
+        self.notifier.object_copied(key=destination_key, size=None)
 
     def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
         metadata = metadata or {}
@@ -302,6 +307,7 @@ class SwiftTransfer(BaseTransfer):
             multipart=True,
             content_length=metadata.get("Content-Length"),
         )
+        self.notifier.object_created(key=key, size=os.path.getsize(fd))
 
     def _store_file_contents(
         self,

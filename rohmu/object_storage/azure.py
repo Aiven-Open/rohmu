@@ -5,6 +5,8 @@ Copyright (c) 2016 Ohmu Ltd
 Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
+from ..notifier.interface import Notifier
+
 # pylint: disable=import-error, no-name-in-module
 from azure.core.exceptions import HttpResponseError, ResourceExistsError
 from azure.storage.blob import BlobServiceClient, ContentSettings
@@ -12,6 +14,7 @@ from io import BytesIO
 
 import azure.common
 import logging
+import os
 import time
 
 try:
@@ -49,10 +52,18 @@ logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(l
 
 class AzureTransfer(BaseTransfer):
     def __init__(
-        self, bucket_name, account_name, account_key=None, sas_token=None, prefix=None, azure_cloud=None, proxy_info=None
-    ):
+        self,
+        bucket_name,
+        account_name,
+        account_key=None,
+        sas_token=None,
+        prefix=None,
+        azure_cloud=None,
+        proxy_info=None,
+        notifier: Notifier = None,
+    ) -> None:
         prefix = "{}".format(prefix.lstrip("/") if prefix else "")
-        super().__init__(prefix=prefix)
+        super().__init__(prefix=prefix, notifier=notifier)
         if not account_key and not sas_token:
             raise InvalidConfigurationError("One of account_key or sas_token must be specified to authenticate")
 
@@ -87,12 +98,11 @@ class AzureTransfer(BaseTransfer):
                 schema = "http"
             config["proxies"] = {"https": f"{schema}://{auth}{host}:{port}"}
 
-        self.conn = BlobServiceClient.from_connection_string(
+        self.conn: BlobServiceClient = BlobServiceClient.from_connection_string(
             conn_str=conn_str,
             credential=self.sas_token,
             **config,
         )
-        self.conn.socket_timeout = 120  # Default Azure socket timeout 20s is a bit short
         self.container = self.get_or_create_container(self.container_name)
         self.log.debug("AzureTransfer initialized, %r", self.container_name)
 
@@ -110,6 +120,7 @@ class AzureTransfer(BaseTransfer):
             blob_properties = destination_client.get_blob_properties(timeout=timeout)
             copy_props = blob_properties.copy
             if copy_props.status == "success":
+                self.notifier.object_copied(destination_key, size=blob_properties["size"])
                 return
             elif copy_props.status == "pending":
                 if time.monotonic() - start < timeout:
@@ -196,9 +207,13 @@ class AzureTransfer(BaseTransfer):
         self.log.debug("Deleting key: %r", path)
         try:
             blob_client = self.conn.get_blob_client(container=self.container_name, blob=path)
-            return blob_client.delete_blob()
+            result = blob_client.delete_blob()
         except azure.core.exceptions.ResourceNotFoundError as ex:  # pylint: disable=no-member
             raise FileNotFoundFromStorageError(path) from ex
+
+        self.notifier.object_deleted(key)
+
+        return result
 
     def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback=None):
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
@@ -294,13 +309,16 @@ class AzureTransfer(BaseTransfer):
         if mimetype:
             content_settings = ContentSettings(content_type=mimetype)
         blob_client = self.conn.get_blob_client(self.container_name, path)
+        # Azure's client requires a bytes object
+        data = bytes(memstring)
         blob_client.upload_blob(
-            bytes(memstring),
+            data,
             blob_type=BlobType.BlockBlob,
             content_settings=content_settings,
             metadata=self.sanitize_metadata(metadata, replace_hyphen_with="_"),
             overwrite=True,
         )
+        self.notifier.object_created(key=key, size=len(data))
 
     def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
         if cache_control is not None:
@@ -318,6 +336,7 @@ class AzureTransfer(BaseTransfer):
                 metadata=self.sanitize_metadata(metadata, replace_hyphen_with="_"),
                 overwrite=True,
             )
+            self.notifier.object_created(key=key, size=os.path.getsize(filepath))
 
     def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
         if cache_control is not None:
@@ -348,6 +367,7 @@ class AzureTransfer(BaseTransfer):
                 raw_response_hook=progress_callback,
                 overwrite=True,
             )
+            self.notifier.object_created(key=key, size=os.path.getsize(fd))
         finally:
             if not seekable:
                 if original_tell is not None:

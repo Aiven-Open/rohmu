@@ -7,6 +7,7 @@ See LICENSE for details
 """
 
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
+from ..notifier.interface import Notifier
 from .base import BaseTransfer, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
 from io import BytesIO, StringIO
 from stat import S_ISDIR
@@ -20,8 +21,17 @@ import warnings
 
 
 class SFTPTransfer(BaseTransfer):
-    def __init__(self, server, port, username, password=None, private_key=None, prefix=None):
-        super().__init__(prefix=prefix)
+    def __init__(
+        self,
+        server,
+        port,
+        username,
+        password=None,
+        private_key=None,
+        prefix=None,
+        notifier: Notifier = None,
+    ) -> None:
+        super().__init__(prefix=prefix, notifier=notifier)
         self.server = server
         self.port = port
         self.username = username
@@ -166,19 +176,23 @@ class SFTPTransfer(BaseTransfer):
         try:
             self.client.remove(target_path + ".metadata")
             self.client.remove(target_path)
+            self.notifier.object_deleted(key=key)
         except FileNotFoundError as ex:
             raise FileNotFoundFromStorageError(key) from ex
 
     def store_file_from_memory(self, key, memstring, metadata=None, cache_control=None, mimetype=None):
-        bio = BytesIO(memstring)
+        data = bytes(memstring)
+        bio = BytesIO(data)
         try:
             self.store_file_object(key=key, fd=bio, cache_control=cache_control, metadata=metadata, mimetype=mimetype)
+            self.notifier.object_created(key=key, size=len(data))
         except OSError as ex:
             raise StorageError(key) from ex
 
     def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
         with open(filepath, "rb") as fh:
             self.store_file_object(key=key, fd=fh, cache_control=cache_control, metadata=metadata, mimetype=mimetype)
+            self.notifier.object_created(key=key, size=os.path.getsize(fh))
 
     # pylint: disable=unused-argument
     def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
@@ -196,6 +210,7 @@ class SFTPTransfer(BaseTransfer):
         # metadata is saved last, because we ignore data files until the metadata file exists
         # see iter_key above
         self._save_metadata(target_path, metadata)
+        self.notifier.object_created(key=key, size=os.path.getsize(fd))
 
     def _save_metadata(self, target_path, metadata):
         metadata_path = target_path + ".metadata"

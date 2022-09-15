@@ -2,9 +2,11 @@
 rohmu - local filesystem interface
 
 Copyright (c) 2016 Ohmu Ltd
+Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
 from ..errors import FileNotFoundFromStorageError, LocalFileIsRemoteFileError
+from ..notifier.interface import Notifier
 from .base import BaseTransfer, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
 from io import BytesIO
 
@@ -19,9 +21,14 @@ CHUNK_SIZE = 1024 * 1024
 
 
 class LocalTransfer(BaseTransfer):
-    def __init__(self, directory, prefix=None):
+    def __init__(
+        self,
+        directory,
+        prefix=None,
+        notifier: Notifier = None,
+    ) -> None:
         prefix = os.path.join(directory, (prefix or "").strip("/"))
-        super().__init__(prefix=prefix)
+        super().__init__(prefix=prefix, notifier=notifier)
         self.log.debug("LocalTransfer initialized")
 
     def copy_file(self, *, source_key, destination_key, metadata=None, **_kwargs):
@@ -35,6 +42,7 @@ class LocalTransfer(BaseTransfer):
             shutil.copy(source_path + ".metadata", destination_path + ".metadata")
         else:
             self._save_metadata(destination_path, metadata)
+        self.notifier.object_copied(key=destination_key, size=os.path.getsize(destination_path))
 
     def get_metadata_for_key(self, key):
         source_path = self.format_key_for_backend(key.strip("/"))
@@ -59,6 +67,7 @@ class LocalTransfer(BaseTransfer):
         metadata_path = target_path + ".metadata"
         with contextlib.suppress(FileNotFoundError):
             os.unlink(metadata_path)
+        self.notifier.object_deleted(key=key)
 
     def delete_tree(self, key):
         self.log.debug("Deleting tree: %r", key)
@@ -66,6 +75,7 @@ class LocalTransfer(BaseTransfer):
         if not os.path.isdir(target_path):
             raise FileNotFoundFromStorageError(key)
         shutil.rmtree(target_path)
+        self.notifier.tree_deleted(key=key)
 
     @staticmethod
     def _skip_file_name(file_name):
@@ -182,6 +192,7 @@ class LocalTransfer(BaseTransfer):
         with open(target_path, "wb") as fp:
             fp.write(memstring)
         self._save_metadata(target_path, metadata)
+        self.notifier.object_created(key=key, size=os.path.getsize(target_path))
 
     def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
         target_path = self.format_key_for_backend(key.strip("/"))
@@ -194,6 +205,7 @@ class LocalTransfer(BaseTransfer):
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
         shutil.copyfile(filepath, target_path)
         self._save_metadata(target_path, metadata)
+        self.notifier.object_created(key=key, size=os.path.getsize(target_path))
 
     def store_file_object(
         self,
@@ -219,6 +231,7 @@ class LocalTransfer(BaseTransfer):
                     upload_progress_fn(bytes_written)
 
         self._save_metadata(target_path, metadata)
+        self.notifier.object_created(key=key, size=os.path.getsize(target_path))
 
 
 @contextlib.contextmanager

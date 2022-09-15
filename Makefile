@@ -31,7 +31,7 @@ lint:
 
 .PHONY: mypy
 mypy:
-	$(PYTHON) -m mypy $(PYTHON_SOURCE_DIRS)
+	$(PYTHON) -m mypy --show-error-codes $(PYTHON_SOURCE_DIRS)
 
 .PHONY: fmt
 fmt:
