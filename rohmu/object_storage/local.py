@@ -235,18 +235,8 @@ class LocalTransfer(BaseTransfer):
         self.notifier.object_created(key=key, size=os.path.getsize(target_path))
 
 
-@contextlib.contextmanager
 def atomic_create_file(file_path):
-    """Open a temporary file for writing, rename to final name when done"""
-    fd, tmp_file_path = tempfile.mkstemp(
-        prefix=os.path.basename(file_path), dir=os.path.dirname(file_path), suffix=".metadata_tmp"
-    )
-    try:
-        with os.fdopen(fd, "w") as out_file:
-            yield out_file
-
-        os.rename(tmp_file_path, file_path)
-    except Exception:  # pytest: disable=broad-except
-        with contextlib.suppress(Exception):
-            os.unlink(tmp_file_path)
-        raise
+    """
+    Deprecated; use atomic_opener directly.
+    """
+    return atomic_opener(final_path=file_path, mode="w")
