@@ -345,11 +345,14 @@ class AzureTransfer(BaseTransfer):
         content_settings = None
         if mimetype:
             content_settings = ContentSettings(content_type=mimetype)
+        notify_size = [0]
 
         def progress_callback(pipeline_response):
             bytes_sent = pipeline_response.context["upload_stream_current"]
-            if upload_progress_fn and bytes_sent:
-                upload_progress_fn(bytes_sent)
+            if bytes_sent:
+                notify_size[0] = bytes_sent
+                if upload_progress_fn:
+                    upload_progress_fn(bytes_sent)
 
         # Azure _BlobChunkUploader calls `tell()` on the stream even though it doesn't use the result.
         # We expect the input stream not to support `tell()` so use dummy implementation for it
@@ -367,7 +370,7 @@ class AzureTransfer(BaseTransfer):
                 raw_response_hook=progress_callback,
                 overwrite=True,
             )
-            self.notifier.object_created(key=key, size=os.path.getsize(fd))
+            self.notifier.object_created(key=key, size=notify_size[0])
         finally:
             if not seekable:
                 if original_tell is not None:
