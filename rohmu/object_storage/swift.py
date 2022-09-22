@@ -268,7 +268,7 @@ class SwiftTransfer(BaseTransfer):
                 mimetype=mimetype,
                 content_length=obsz,
             )
-            self.notifier.object_created(key=key, size=os.path.getsize(fp))
+        self.notifier.object_created(key=key, size=obsz)
 
     def get_or_create_container(self, container_name):
         start_time = time.monotonic()
@@ -297,6 +297,8 @@ class SwiftTransfer(BaseTransfer):
 
     def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
         metadata = metadata or {}
+        content_length = metadata.get("Content-Length")
+
         self._store_file_contents(
             key,
             fd,
@@ -305,9 +307,9 @@ class SwiftTransfer(BaseTransfer):
             mimetype=mimetype,
             upload_progress_fn=upload_progress_fn,
             multipart=True,
-            content_length=metadata.get("Content-Length"),
+            content_length=content_length,
         )
-        self.notifier.object_created(key=key, size=os.path.getsize(fd))
+        self.notifier.object_created(key=key, size=content_length)
 
     def _store_file_contents(
         self,
@@ -336,6 +338,8 @@ class SwiftTransfer(BaseTransfer):
         if (not multipart) or (not content_length) or content_length <= self.segment_size:
             self.log.debug("Uploading %r to %r (%r bytes)", fp, path, content_length)
             self.conn.put_object(self.container_name, path, contents=fp, content_length=content_length, headers=headers)
+            if upload_progress_fn and content_length is not None:
+                upload_progress_fn(content_length)
             return
 
         # Segmented transfer

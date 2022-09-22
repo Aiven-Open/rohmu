@@ -11,6 +11,7 @@ from ..notifier.interface import Notifier
 from .base import BaseTransfer, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
 from io import BytesIO, StringIO
 from stat import S_ISDIR
+from typing import cast
 
 import datetime
 import json
@@ -54,7 +55,7 @@ class SFTPTransfer(BaseTransfer):
         else:  # password must be defined due to previous check above
             transport.connect(username=self.username, password=self.password)
 
-        self.client = paramiko.SFTPClient.from_transport(transport)
+        self.client = cast(paramiko.SFTPClient, paramiko.SFTPClient.from_transport(transport))
 
         self.log.debug("SFTPTransfer initialized")
 
@@ -180,27 +181,33 @@ class SFTPTransfer(BaseTransfer):
         except FileNotFoundError as ex:
             raise FileNotFoundFromStorageError(key) from ex
 
+    # pylint: disable=unused-argument
     def store_file_from_memory(self, key, memstring, metadata=None, cache_control=None, mimetype=None):
         data = bytes(memstring)
         bio = BytesIO(data)
         try:
-            self.store_file_object(key=key, fd=bio, cache_control=cache_control, metadata=metadata, mimetype=mimetype)
+            self._put_object(key=key, fd=bio, metadata=metadata)
             self.notifier.object_created(key=key, size=len(data))
         except OSError as ex:
             raise StorageError(key) from ex
 
     def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
         with open(filepath, "rb") as fh:
-            self.store_file_object(key=key, fd=fh, cache_control=cache_control, metadata=metadata, mimetype=mimetype)
-            self.notifier.object_created(key=key, size=os.path.getsize(fh))
+            self._put_object(key=key, fd=fh, metadata=metadata)
+            self.notifier.object_created(key=key, size=os.fstat(fh.fileno()).st_size)
 
-    # pylint: disable=unused-argument
     def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
+        bytes_written = self._put_object(key, fd, metadata=metadata, upload_progress_fn=upload_progress_fn)
+        self.notifier.object_created(key=key, size=bytes_written)
+
+    def _put_object(self, key, fd, *, metadata=None, upload_progress_fn=None) -> int:
         target_path = self.format_key_for_backend(key.strip("/"))
+        total_bytes_written = [0]
 
         self.log.debug("Store path: %r", target_path)
 
         def wrapper_upload_progress_fn(bytes_written, total_bytes):  # pylint: disable=unused-argument
+            total_bytes_written[0] = bytes_written
             if upload_progress_fn:
                 upload_progress_fn(bytes_written)
 
@@ -210,7 +217,7 @@ class SFTPTransfer(BaseTransfer):
         # metadata is saved last, because we ignore data files until the metadata file exists
         # see iter_key above
         self._save_metadata(target_path, metadata)
-        self.notifier.object_created(key=key, size=os.path.getsize(fd))
+        return total_bytes_written[0]
 
     def _save_metadata(self, target_path, metadata):
         metadata_path = target_path + ".metadata"
