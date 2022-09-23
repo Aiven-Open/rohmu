@@ -310,7 +310,7 @@ class S3Transfer(BaseTransfer):
             self.multipart_upload_file_object(
                 cache_control=cache_control, fp=fp, key=key, metadata=metadata, mimetype=mimetype, size=size
             )
-            self.notifier.object_created(key=key, size=os.path.getsize(filepath))
+            self.notifier.object_created(key=key, size=size)
 
     def multipart_upload_file_object(self, *, cache_control, fp, key, metadata, mimetype, progress_fn=None, size=None):
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
