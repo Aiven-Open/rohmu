@@ -55,3 +55,18 @@ def test_store_file_object(swift_module: ModuleType) -> None:
 
     connection.put_object.assert_called()
     notifier.object_created.assert_called_once_with(key="test_key2", size=len(test_data))
+
+
+def test_iter_key_with_empty_key(swift_module: ModuleType) -> None:
+    notifier = MagicMock()
+    connection = MagicMock(get_container=MagicMock(return_value=[None, {}]))
+    swift_module.client.Connection.return_value = connection
+    transfer = swift_module.SwiftTransfer(
+        user="testuser",
+        key="testkey",
+        container_name="test_container",
+        auth_url="http://auth.example.com",
+        notifier=notifier,
+    )
+    list(transfer.iter_key(""))
+    transfer.conn.get_container.assert_called_with("test_container", prefix="", full_listing=True, delimiter="/")

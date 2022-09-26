@@ -131,7 +131,7 @@ class SwiftTransfer(BaseTransfer):
         return metadata
 
     def iter_key(self, key, *, with_metadata=True, deep=False, include_key=False):
-        path = self.format_key_for_backend(key, trailing_slash=not include_key)
+        path = self.format_key_for_backend(key, remove_slash_prefix=True, trailing_slash=not include_key)
         self.log.debug("Listing path %r", path)
         if not deep:
             kwargs = {"delimiter": "/"}
