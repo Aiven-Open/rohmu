@@ -34,7 +34,7 @@ def test_store_file_from_disk(swift_module: ModuleType) -> None:
         transfer.store_file_from_disk(key="test_key1", filepath=tmpfile.name)
 
     connection.put_object.assert_called()
-    notifier.object_created.assert_called_once_with(key="test_key1", size=len(test_data))
+    notifier.object_created.assert_called_once_with(key="test_key1", size=len(test_data), metadata=None)
 
 
 def test_store_file_object(swift_module: ModuleType) -> None:
@@ -50,11 +50,11 @@ def test_store_file_object(swift_module: ModuleType) -> None:
     )
     test_data = b"test-data"
     file_object = BytesIO(test_data)
-
-    transfer.store_file_object(key="test_key2", fd=file_object, metadata={"Content-Length": len(test_data)})
+    metadata = {"Content-Length": len(test_data)}
+    transfer.store_file_object(key="test_key2", fd=file_object, metadata=metadata)
 
     connection.put_object.assert_called()
-    notifier.object_created.assert_called_once_with(key="test_key2", size=len(test_data))
+    notifier.object_created.assert_called_once_with(key="test_key2", size=len(test_data), metadata=metadata)
 
 
 def test_iter_key_with_empty_key(swift_module: ModuleType) -> None:

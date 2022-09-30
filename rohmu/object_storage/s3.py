@@ -139,7 +139,7 @@ class S3Transfer(BaseTransfer):
                 Metadata=metadata or {},
                 MetadataDirective="COPY" if metadata is None else "REPLACE",
             )
-            self.notifier.object_copied(key=destination_key, size=None)
+            self.notifier.object_copied(key=destination_key, size=None, metadata=metadata)
         except botocore.exceptions.ClientError as ex:
             status_code = ex.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
             if status_code == 404:
@@ -298,7 +298,7 @@ class S3Transfer(BaseTransfer):
         if mimetype is not None:
             args["ContentType"] = mimetype
         self.s3_client.put_object(**args)
-        self.notifier.object_created(key=key, size=len(data))
+        self.notifier.object_created(key=key, size=len(data), metadata=metadata)
 
     def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
         size = os.path.getsize(filepath)
@@ -312,7 +312,7 @@ class S3Transfer(BaseTransfer):
             self.multipart_upload_file_object(
                 cache_control=cache_control, fp=fp, key=key, metadata=metadata, mimetype=mimetype, size=size
             )
-            self.notifier.object_created(key=key, size=size)
+            self.notifier.object_created(key=key, size=size, metadata=metadata)
 
     def multipart_upload_file_object(self, *, cache_control, fp, key, metadata, mimetype, progress_fn=None, size=None):
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
@@ -414,7 +414,7 @@ class S3Transfer(BaseTransfer):
             finally:
                 raise StorageError("Failed to complete multipart upload for {}".format(path)) from ex
 
-        self.notifier.object_created(key=key, size=bytes_sent)
+        self.notifier.object_created(key=key, size=bytes_sent, metadata=metadata)
         self.log.info(
             "Multipart upload of %r complete, size: %r, took: %.2fs",
             path,

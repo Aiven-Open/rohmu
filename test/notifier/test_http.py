@@ -152,7 +152,7 @@ def test_BackgroundHTTPNotifier_target_url_not_available() -> None:
     size = 1
 
     with _make_notifier(url=f"http://localhost:{hopefully_unused_port}/bad/path") as notifier:
-        notifier.object_created(key=key, size=size)
+        notifier.object_created(key=key, size=size, metadata=None)
         # the queue must be consumed by the background thread and the job discarded if the target
         # url is invalid
         _join_queue_with_timeout(notifier._queue, timeout=5.0)
@@ -163,7 +163,7 @@ def test_BackgroundHTTPNotifier_object_create_size_none() -> None:
     size = None
 
     with _create_server_and_configured_notifier(path=f"/{key}") as (notifier, server, post_called):
-        notifier.object_created(key=key, size=size)
+        notifier.object_created(key=key, size=size, metadata=None)
         assert len(post_called) == 0
         server.handle_request()
         assert len(post_called) == 1
@@ -179,7 +179,7 @@ def test_BackgroundHTTPNotifier_object_create() -> None:
     size = 3
 
     with _create_server_and_configured_notifier(path=f"/{key}") as (notifier, server, post_called):
-        notifier.object_created(key=key, size=size)
+        notifier.object_created(key=key, size=size, metadata=None)
         assert len(post_called) == 0
         server.handle_request()
         assert len(post_called) == 1
@@ -221,7 +221,7 @@ def test_BackgroundHTTPNotifier_object_copied() -> None:
     size = 3
 
     with _create_server_and_configured_notifier(path=f"/{key}") as (notifier, server, post_called):
-        notifier.object_copied(key=key, size=size)
+        notifier.object_copied(key=key, size=size, metadata=None)
         assert len(post_called) == 0
         server.handle_request()
         assert len(post_called) == 1

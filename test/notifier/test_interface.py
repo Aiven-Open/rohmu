@@ -10,7 +10,7 @@ class _TestNotifier(Notifier):
         self.object_deleted_called = 0
         self.tree_deleted_called = 0
 
-    def object_created(self, key: str, size: Optional[int]) -> None:
+    def object_created(self, key: str, size: Optional[int], metadata: Optional[dict]) -> None:
         self.object_created_called += 1
 
     def object_deleted(self, key: str) -> None:
@@ -25,11 +25,11 @@ def test_interface() -> None:
     key = "test_interface"
 
     assert test.object_created_called == 0
-    test.object_created(key=key, size=0)
+    test.object_created(key=key, size=0, metadata=None)
     assert test.object_created_called == 1
 
     assert test.object_created_called == 1
-    test.object_copied(key=key, size=0)
+    test.object_copied(key=key, size=0, metadata=None)
     assert test.object_created_called == 2, "default implementation calls object_created"
 
     assert test.object_deleted_called == 0

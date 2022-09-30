@@ -23,7 +23,7 @@ def test_store_file_from_disk() -> None:
             transfer.store_file_from_disk(key="test_key1", filepath=tmpfile.name)
 
         s3_client.put_object.assert_called()
-        notifier.object_created.assert_called_once_with(key="test_key1", size=len(test_data))
+        notifier.object_created.assert_called_once_with(key="test_key1", size=len(test_data), metadata=None)
 
 
 def test_store_file_object() -> None:
@@ -46,4 +46,4 @@ def test_store_file_object() -> None:
         s3_client.create_multipart_upload.assert_called()
         s3_client.upload_part.assert_called()
         s3_client.complete_multipart_upload.assert_called()
-        notifier.object_created.assert_called_once_with(key="test_key2", size=len(test_data))
+        notifier.object_created.assert_called_once_with(key="test_key2", size=len(test_data), metadata=None)

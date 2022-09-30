@@ -130,7 +130,7 @@ class BackgroundHTTPNotifier(Notifier):
         self._stop_event.set()
         self._thread.join(_THREAD_JOIN_TIMEOUT)
 
-    def object_created(self, key: str, size: Optional[int]) -> None:
+    def object_created(self, key: str, size: Optional[int], metadata: Optional[dict]) -> None:
         self._queue.put(
             HTTPNotifyJob(
                 self._url,
@@ -140,6 +140,7 @@ class BackgroundHTTPNotifier(Notifier):
                         "key": key,
                         "size": size,
                         "last_modified": datetime.now(tz=timezone.utc).isoformat(),
+                        "metadata": metadata,
                     }
                 ),
             )

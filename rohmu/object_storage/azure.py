@@ -122,7 +122,7 @@ class AzureTransfer(BaseTransfer):
             blob_properties = destination_client.get_blob_properties(timeout=timeout)
             copy_props = blob_properties.copy
             if copy_props.status == "success":
-                self.notifier.object_copied(destination_key, size=blob_properties["size"])
+                self.notifier.object_copied(destination_key, size=blob_properties["size"], metadata=metadata)
                 return
             elif copy_props.status == "pending":
                 if time.monotonic() - start < timeout:
@@ -320,7 +320,7 @@ class AzureTransfer(BaseTransfer):
             metadata=self.sanitize_metadata(metadata, replace_hyphen_with="_"),
             overwrite=True,
         )
-        self.notifier.object_created(key=key, size=len(data))
+        self.notifier.object_created(key=key, size=len(data), metadata=metadata)
 
     def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
         if cache_control is not None:
@@ -338,7 +338,7 @@ class AzureTransfer(BaseTransfer):
                 metadata=self.sanitize_metadata(metadata, replace_hyphen_with="_"),
                 overwrite=True,
             )
-            self.notifier.object_created(key=key, size=os.path.getsize(filepath))
+            self.notifier.object_created(key=key, size=os.path.getsize(filepath), metadata=metadata)
 
     def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
         if cache_control is not None:
@@ -372,7 +372,7 @@ class AzureTransfer(BaseTransfer):
                 raw_response_hook=progress_callback,
                 overwrite=True,
             )
-            self.notifier.object_created(key=key, size=notify_size[0])
+            self.notifier.object_created(key=key, size=notify_size[0], metadata=metadata)
         finally:
             if not seekable:
                 if original_tell is not None:
