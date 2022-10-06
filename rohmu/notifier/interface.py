@@ -7,7 +7,7 @@ class Notifier(ABC):
     """This interface allows external code to be notified about object changes."""
 
     @abstractmethod
-    def object_created(self, key: str, size: Optional[int]) -> None:
+    def object_created(self, key: str, size: Optional[int], metadata: Optional[dict]) -> None:
         """Called when an object is created."""
 
     @abstractmethod
@@ -28,9 +28,9 @@ class Notifier(ABC):
         called instead.
         """
 
-    def object_copied(self, key: str, size: Optional[int]) -> None:
+    def object_copied(self, key: str, size: Optional[int], metadata: Optional[dict]) -> None:
         """Called when an object is copied."""
-        self.object_created(key=key, size=size)
+        self.object_created(key=key, size=size, metadata=metadata)
 
     def close(self) -> None:
         """Method used to clean resources of the notifier, if any."""

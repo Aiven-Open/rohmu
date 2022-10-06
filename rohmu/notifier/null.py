@@ -9,7 +9,7 @@ class NullNotifier(Notifier):
     Used by default if configuration is missing to avoid None checks
     """
 
-    def object_created(self, key: str, size: Optional[int]) -> None:
+    def object_created(self, key: str, size: Optional[int], metadata: Optional[dict]) -> None:
         pass
 
     def object_deleted(self, key: str) -> None:

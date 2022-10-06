@@ -7,6 +7,6 @@ def test_null_notifier() -> None:
     key = "test_null_notifier"
     size = 2
 
-    notifier.object_created(key=key, size=size)
+    notifier.object_created(key=key, size=size, metadata=None)
     notifier.object_deleted(key=key)
     notifier.tree_deleted(key=key)

@@ -225,7 +225,7 @@ class GoogleTransfer(BaseTransfer):
                 sourceObject=source_object,
             )
             result = self._retry_on_reset(request, request.execute)
-            self.notifier.object_copied(key=destination_key, size=int(result["size"]))
+            self.notifier.object_copied(key=destination_key, size=int(result["size"]), metadata=metadata)
 
     def get_metadata_for_key(self, key):
         path = self.format_key_for_backend(key)
@@ -378,7 +378,7 @@ class GoogleTransfer(BaseTransfer):
         data = BytesIO(memstring)
         upload = MediaIoBaseUpload(data, mimetype or "application/octet-stream", chunksize=UPLOAD_CHUNK_SIZE, resumable=True)
         result = self._upload(upload, key, self.sanitize_metadata(metadata), extra_props, cache_control=cache_control)
-        self.notifier.object_created(key=key, size=int(result["size"]))
+        self.notifier.object_created(key=key, size=int(result["size"]), metadata=metadata)
         return result
 
     # pylint: disable=arguments-differ
@@ -396,7 +396,7 @@ class GoogleTransfer(BaseTransfer):
         mimetype = mimetype or "application/octet-stream"
         upload = MediaFileUpload(filepath, mimetype, chunksize=UPLOAD_CHUNK_SIZE, resumable=True)
         result = self._upload(upload, key, self.sanitize_metadata(metadata), extra_props, cache_control=cache_control)
-        self.notifier.object_created(key=key, size=int(result["size"]))
+        self.notifier.object_created(key=key, size=int(result["size"]), metadata=metadata)
         return result
 
     def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
@@ -409,7 +409,7 @@ class GoogleTransfer(BaseTransfer):
             cache_control=cache_control,
             upload_progress_fn=upload_progress_fn,
         )
-        self.notifier.object_created(key=key, size=int(result["size"]))
+        self.notifier.object_created(key=key, size=int(result["size"]), metadata=metadata)
         return result
 
     def get_or_create_bucket(self, bucket_name):

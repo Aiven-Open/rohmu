@@ -43,7 +43,7 @@ class LocalTransfer(BaseTransfer):
             shutil.copy(source_path + ".metadata", destination_path + ".metadata")
         else:
             self._save_metadata(destination_path, metadata)
-        self.notifier.object_copied(key=destination_key, size=os.path.getsize(destination_path))
+        self.notifier.object_copied(key=destination_key, size=os.path.getsize(destination_path), metadata=metadata)
 
     def get_metadata_for_key(self, key):
         source_path = self.format_key_for_backend(key.strip("/"))
@@ -193,7 +193,7 @@ class LocalTransfer(BaseTransfer):
         with open(target_path, "wb") as fp:
             fp.write(memstring)
         self._save_metadata(target_path, metadata)
-        self.notifier.object_created(key=key, size=os.path.getsize(target_path))
+        self.notifier.object_created(key=key, size=os.path.getsize(target_path), metadata=metadata)
 
     def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
         target_path = self.format_key_for_backend(key.strip("/"))
@@ -206,7 +206,7 @@ class LocalTransfer(BaseTransfer):
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
         shutil.copyfile(filepath, target_path)
         self._save_metadata(target_path, metadata)
-        self.notifier.object_created(key=key, size=os.path.getsize(target_path))
+        self.notifier.object_created(key=key, size=os.path.getsize(target_path), metadata=metadata)
 
     def store_file_object(
         self,
@@ -232,7 +232,7 @@ class LocalTransfer(BaseTransfer):
                     upload_progress_fn(bytes_written)
 
         self._save_metadata(target_path, metadata)
-        self.notifier.object_created(key=key, size=os.path.getsize(target_path))
+        self.notifier.object_created(key=key, size=os.path.getsize(target_path), metadata=metadata)
 
 
 def atomic_create_file(file_path):
