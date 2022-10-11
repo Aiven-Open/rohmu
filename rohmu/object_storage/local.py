@@ -9,14 +9,13 @@ from ..errors import FileNotFoundFromStorageError, LocalFileIsRemoteFileError
 from ..notifier.interface import Notifier
 from .base import BaseTransfer, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
 from io import BytesIO
-from pathlib import Path
-from rohmu.atomic_opener import atomic_opener
 
 import contextlib
 import datetime
 import json
 import os
 import shutil
+import tempfile
 
 CHUNK_SIZE = 1024 * 1024
 
@@ -149,7 +148,7 @@ class LocalTransfer(BaseTransfer):
             dst_stat = os.stat(filepath_to_store_to)
             if dst_stat.st_dev == src_stat.st_dev and dst_stat.st_ino == src_stat.st_ino:
                 raise LocalFileIsRemoteFileError(source_path)
-        with atomic_opener(Path(filepath_to_store_to), mode="wb") as fileobj_to_store_to:
+        with open(filepath_to_store_to, "wb") as fileobj_to_store_to:
             return self.get_contents_to_fileobj(key, fileobj_to_store_to, progress_callback=progress_callback)
 
     def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback=None):
@@ -184,7 +183,7 @@ class LocalTransfer(BaseTransfer):
 
     def _save_metadata(self, target_path, metadata):
         metadata_path = target_path + ".metadata"
-        with atomic_opener(Path(metadata_path), mode="w") as fp:
+        with atomic_create_file(metadata_path) as fp:
             json.dump(self.sanitize_metadata(metadata), fp)
 
     def store_file_from_memory(self, key, memstring, metadata=None, cache_control=None, mimetype=None):

@@ -14,13 +14,13 @@ def _verify_file_not_created_and_dir_not_polluted(output_file: Path):
 
 def test_error_thrown_if_final_path_parent_doesnt_exist(tmp_path: Path):
     with pytest.raises(IOError):
-        with atomic_opener(tmp_path / "nonexistingdir" / "final_path", mode="w"):
+        with atomic_opener(tmp_path / "nonexistingdir" / "final_path", mode="w") as f:
             pass
 
 
 def test_error_mode_doesnt_contain_write(tmp_path: Path):
     with pytest.raises(ValueError):
-        with atomic_opener(tmp_path, mode="r"):  # type: ignore
+        with atomic_opener(tmp_path, mode="r") as f:  # type: ignore
             pass
 
 

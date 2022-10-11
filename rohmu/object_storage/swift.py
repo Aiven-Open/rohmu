@@ -10,8 +10,6 @@ from ..errors import FileNotFoundFromStorageError
 from ..notifier.interface import Notifier
 from .base import BaseTransfer, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
 from contextlib import suppress
-from pathlib import Path
-from rohmu.atomic_opener import atomic_opener
 from swiftclient import client, exceptions  # pylint: disable=import-error
 
 import logging
@@ -197,8 +195,15 @@ class SwiftTransfer(BaseTransfer):
         self.notifier.object_deleted(key=key)
 
     def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback=None):
-        with atomic_opener(Path(filepath_to_store_to), mode="wb") as fp:
-            return self.get_contents_to_fileobj(key, fp, progress_callback=progress_callback)
+        temp_filepath = "{}~".format(filepath_to_store_to)
+        try:
+            with open(temp_filepath, "wb") as fp:
+                metadata = self.get_contents_to_fileobj(key, fp, progress_callback=progress_callback)
+                os.rename(temp_filepath, filepath_to_store_to)
+        finally:
+            with suppress(FileNotFoundError):
+                os.unlink(temp_filepath)
+        return metadata
 
     def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback=None):
         path = self.format_key_for_backend(key)
