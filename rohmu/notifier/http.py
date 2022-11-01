@@ -32,8 +32,8 @@ class Operation(Enum):
 
 def _get_requests_session() -> requests.Session:
     retry = requests.adapters.Retry(
-        total=3,
-        backoff_factor=0.5,
+        total=5,
+        backoff_factor=1,
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods={"POST"},
     )
