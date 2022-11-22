@@ -10,7 +10,9 @@ from .compressor import CompressionFile, DecompressionFile, DecompressSink
 from .encryptor import DecryptorFile, DecryptSink, EncryptorFile
 from .errors import InvalidConfigurationError
 from .filewrap import ThrottleSink
+from .object_storage.base import IncrementalProgressCallbackType
 from contextlib import suppress
+from inspect import signature
 
 import time
 
@@ -67,8 +69,21 @@ def create_sink_pipeline(*, output, file_size=None, metadata=None, key_lookup=No
     return output
 
 
-def read_file(*, input_obj, output_obj, metadata, key_lookup, progress_callback=None, log_func=None):
+def _callback_wrapper(progress_callback: IncrementalProgressCallbackType) -> IncrementalProgressCallbackType:
+    # Gracefully support legacy callbacks which do not expect any arguments to be passed to them
+    if progress_callback is None:
+        return None
+    sig = signature(progress_callback)
+    if len(sig.parameters) == 0:
+        return lambda f: progress_callback()  # type: ignore
+    return progress_callback
+
+
+def read_file(
+    *, input_obj, output_obj, metadata, key_lookup, progress_callback: IncrementalProgressCallbackType = None, log_func=None
+):
     start_time = time.monotonic()
+    progress_callback = _callback_wrapper(progress_callback)
 
     with file_reader(fileobj=input_obj, metadata=metadata, key_lookup=key_lookup) as fp_in:
         while True:
@@ -78,7 +93,7 @@ def read_file(*, input_obj, output_obj, metadata, key_lookup, progress_callback=
 
             output_obj.write(input_data)
             if progress_callback:
-                progress_callback()
+                progress_callback(len(input_data))
 
     original_size = input_obj.tell()
     result_size = output_obj.tell()
@@ -120,9 +135,10 @@ def write_file(
     rsa_public_key=None,
     log_func=None,
     header_func=None,
-    data_callback=None
+    data_callback=None,
 ):
     start_time = time.monotonic()
+    progress_callback = _callback_wrapper(progress_callback)
 
     original_size = 0
     with file_writer(
@@ -148,7 +164,7 @@ def write_file(
             fp_out.write(input_data)
             original_size += len(input_data)
             if progress_callback:
-                progress_callback()
+                progress_callback(len(input_data))
 
     result_size = output_obj.tell()
 
