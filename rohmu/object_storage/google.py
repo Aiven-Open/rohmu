@@ -411,12 +411,12 @@ class GoogleTransfer(BaseTransfer):
         key,
         filepath,
         metadata=None,  # pylint: disable=arguments-differ, unused-variable
-        *,
         multipart=None,
-        extra_props=None,  # pylint: disable=arguments-differ, unused-variable
         cache_control=None,
         mimetype=None,
         progress_fn: ProgressProportionCallbackType = None,
+        *,
+        extra_props=None,  # pylint: disable=arguments-differ, unused-variable
     ):
         size = os.path.getsize(filepath)
         mimetype = mimetype or "application/octet-stream"
