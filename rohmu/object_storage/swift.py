@@ -8,7 +8,14 @@ See LICENSE for details
 from ..dates import parse_timestamp
 from ..errors import FileNotFoundFromStorageError
 from ..notifier.interface import Notifier
-from .base import BaseTransfer, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
+from .base import (
+    BaseTransfer,
+    IncrementalProgressCallbackType,
+    IterKeyItem,
+    KEY_TYPE_OBJECT,
+    KEY_TYPE_PREFIX,
+    ProgressProportionCallbackType,
+)
 from contextlib import suppress
 from swiftclient import client, exceptions  # pylint: disable=import-error
 from typing import Optional
@@ -195,7 +202,7 @@ class SwiftTransfer(BaseTransfer):
             self._delete_object_plain(path)
         self.notifier.object_deleted(key=key)
 
-    def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback=None):
+    def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         temp_filepath = "{}~".format(filepath_to_store_to)
         try:
             with open(temp_filepath, "wb") as fp:
@@ -206,7 +213,7 @@ class SwiftTransfer(BaseTransfer):
                 os.unlink(temp_filepath)
         return metadata
 
-    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback=None):
+    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         path = self.format_key_for_backend(key)
         try:
             headers, data_gen = self.conn.get_object(self.container_name, path, resp_chunk_size=CHUNK_SIZE)
@@ -258,7 +265,16 @@ class SwiftTransfer(BaseTransfer):
         self.conn.put_object(self.container_name, path, contents=data, content_type=mimetype, headers=metadata_to_send)
         self.notifier.object_created(key=key, size=len(data), metadata=sanitized_metadata)
 
-    def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
+    def store_file_from_disk(
+        self,
+        key,
+        filepath,
+        metadata=None,
+        multipart=None,
+        cache_control=None,
+        mimetype=None,
+        progress_fn: ProgressProportionCallbackType = None,
+    ):
         obsz = os.path.getsize(filepath)
         with open(filepath, "rb") as fp:
             self._store_file_contents(
@@ -269,6 +285,7 @@ class SwiftTransfer(BaseTransfer):
                 cache_control=cache_control,
                 mimetype=mimetype,
                 content_length=obsz,
+                upload_progress_fn=self._incremental_to_proportional_progress(cb=progress_fn, size=obsz),
             )
         self.notifier.object_created(key=key, size=obsz, metadata=self.sanitize_metadata(metadata))
 
@@ -298,7 +315,16 @@ class SwiftTransfer(BaseTransfer):
         self.conn.copy_object(self.container_name, source_key, destination=destination_key, headers=headers)
         self.notifier.object_copied(key=destination_key, size=None, metadata=sanitized_metadata)
 
-    def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
+    def store_file_object(
+        self,
+        key,
+        fd,
+        *,
+        cache_control=None,
+        metadata=None,
+        mimetype=None,
+        upload_progress_fn: IncrementalProgressCallbackType = None,
+    ):
         metadata = metadata or {}
         content_length = metadata.get("Content-Length")
 
@@ -321,7 +347,7 @@ class SwiftTransfer(BaseTransfer):
         cache_control=None,
         metadata=None,
         mimetype=None,
-        upload_progress_fn=None,
+        upload_progress_fn: IncrementalProgressCallbackType = None,
         multipart=None,
         content_length=None,
     ):
@@ -341,7 +367,7 @@ class SwiftTransfer(BaseTransfer):
         if (not multipart) or (not content_length) or content_length <= self.segment_size:
             self.log.debug("Uploading %r to %r (%r bytes)", fp, path, content_length)
             self.conn.put_object(self.container_name, path, contents=fp, content_length=content_length, headers=headers)
-            if upload_progress_fn and content_length is not None:
+            if upload_progress_fn:
                 upload_progress_fn(content_length)
             return
 

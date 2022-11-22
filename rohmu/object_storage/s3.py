@@ -7,7 +7,15 @@ See LICENSE for details
 """
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
 from ..notifier.interface import Notifier
-from .base import BaseTransfer, get_total_memory, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
+from .base import (
+    BaseTransfer,
+    get_total_memory,
+    IncrementalProgressCallbackType,
+    IterKeyItem,
+    KEY_TYPE_OBJECT,
+    KEY_TYPE_PREFIX,
+    ProgressProportionCallbackType,
+)
 from typing import Dict, Optional
 
 import botocore.client
@@ -241,7 +249,7 @@ class S3Transfer(BaseTransfer):
                 raise StorageError("Fetching the remote object {} failed".format(path)) from ex
         return response["Body"], response["ContentLength"], response["Metadata"]
 
-    def _read_object_to_fileobj(self, fileobj, streaming_body, body_length, cb=None):
+    def _read_object_to_fileobj(self, fileobj, streaming_body, body_length, cb: ProgressProportionCallbackType = None):
         data_read = 0
         while data_read < body_length:
             read_amount = body_length - data_read
@@ -255,13 +263,13 @@ class S3Transfer(BaseTransfer):
         if cb:
             cb(data_read, body_length)
 
-    def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback=None):
+    def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         with open(filepath_to_store_to, "wb") as fh:
             stream, length, metadata = self._get_object_stream(key)
             self._read_object_to_fileobj(fh, stream, length, cb=progress_callback)
         return metadata
 
-    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback=None):
+    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         stream, length, metadata = self._get_object_stream(key)
         self._read_object_to_fileobj(fileobj_to_store_to, stream, length, cb=progress_callback)
         return metadata
@@ -302,22 +310,43 @@ class S3Transfer(BaseTransfer):
         self.s3_client.put_object(**args)
         self.notifier.object_created(key=key, size=len(data), metadata=sanitized_metadata)
 
-    def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
+    def store_file_from_disk(
+        self,
+        key,
+        filepath,
+        metadata=None,
+        multipart=None,
+        cache_control=None,
+        mimetype=None,
+        progress_fn: ProgressProportionCallbackType = None,
+    ):
         size = os.path.getsize(filepath)
         if not multipart or size <= self.multipart_chunk_size:
             with open(filepath, "rb") as fh:
                 data = fh.read()
                 self.store_file_from_memory(key, data, metadata, cache_control=cache_control)
+            if progress_fn:
+                progress_fn(size, size)
             return
 
         with open(filepath, "rb") as fp:
             self.multipart_upload_file_object(
-                cache_control=cache_control, fp=fp, key=key, metadata=metadata, mimetype=mimetype, size=size
+                cache_control=cache_control,
+                fp=fp,
+                key=key,
+                metadata=metadata,
+                mimetype=mimetype,
+                size=size,
+                progress_fn=progress_fn,
             )
             sanitized_metadata = self.sanitize_metadata(metadata)
             self.notifier.object_created(key=key, size=size, metadata=sanitized_metadata)
+        if progress_fn:
+            progress_fn(size, size)
 
-    def multipart_upload_file_object(self, *, cache_control, fp, key, metadata, mimetype, progress_fn=None, size=None):
+    def multipart_upload_file_object(
+        self, *, cache_control, fp, key, metadata, mimetype, progress_fn: ProgressProportionCallbackType = None, size=None
+    ):
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
         start_of_multipart_upload = time.monotonic()
         bytes_sent = 0
@@ -398,7 +427,7 @@ class S3Transfer(BaseTransfer):
                     part_number += 1
                     bytes_sent += len(data)
                     if progress_fn:
-                        progress_fn(bytes_sent)
+                        progress_fn(bytes_sent, size)
                     break
 
         try:
@@ -426,14 +455,23 @@ class S3Transfer(BaseTransfer):
             time.monotonic() - start_of_multipart_upload,
         )
 
-    def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
+    def store_file_object(
+        self,
+        key,
+        fd,
+        *,
+        cache_control=None,
+        metadata=None,
+        mimetype=None,
+        upload_progress_fn: IncrementalProgressCallbackType = None,
+    ):
         self.multipart_upload_file_object(
             cache_control=cache_control,
             fp=fd,
             key=key,
             metadata=metadata,
             mimetype=mimetype,
-            progress_fn=upload_progress_fn,
+            progress_fn=self._proportional_to_incremental_progress(upload_progress_fn),
         )
 
     def check_or_create_bucket(self):

@@ -10,7 +10,15 @@ See LICENSE for details
 from ..dates import parse_timestamp
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError
 from ..notifier.interface import Notifier
-from .base import BaseTransfer, get_total_memory, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
+from .base import (
+    BaseTransfer,
+    get_total_memory,
+    IncrementalProgressCallbackType,
+    IterKeyItem,
+    KEY_TYPE_OBJECT,
+    KEY_TYPE_PREFIX,
+    ProgressProportionCallbackType,
+)
 from contextlib import contextmanager
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -298,7 +306,7 @@ class GoogleTransfer(BaseTransfer):
             self._retry_on_reset(req, req.execute)
             self.notifier.object_deleted(key)
 
-    def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback=None):
+    def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         fileobj = FileIO(filepath_to_store_to, mode="wb")
         done = False
         metadata = {}
@@ -311,7 +319,7 @@ class GoogleTransfer(BaseTransfer):
                 os.unlink(filepath_to_store_to)
         return metadata
 
-    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback=None):
+    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         path = self.format_key_for_backend(key)
         self.log.debug("Starting to fetch the contents of: %r to %r", path, fileobj_to_store_to)
         next_prog_report = 0.0
@@ -333,6 +341,8 @@ class GoogleTransfer(BaseTransfer):
                     if progress_callback and progress_pct > next_prog_report:
                         progress_callback(progress_pct, 100)
                         next_prog_report = progress_pct + 0.1
+            if progress_callback:
+                progress_callback(100, 100)
             return self._metadata_for_key(clob, path)
 
     def get_contents_to_string(self, key):
@@ -352,7 +362,9 @@ class GoogleTransfer(BaseTransfer):
             obj = self._retry_on_reset(req, req.execute)
             return int(obj["size"])
 
-    def _upload(self, upload, key, metadata, extra_props, cache_control, upload_progress_fn=None):
+    def _upload(
+        self, upload, key, metadata, extra_props, cache_control, upload_progress_fn: IncrementalProgressCallbackType = None
+    ):
         path = self.format_key_for_backend(key)
         self.log.debug("Starting to upload %r", path)
         body = {"metadata": metadata}
@@ -403,17 +415,36 @@ class GoogleTransfer(BaseTransfer):
         multipart=None,
         extra_props=None,  # pylint: disable=arguments-differ, unused-variable
         cache_control=None,
-        mimetype=None
+        mimetype=None,
+        progress_fn: ProgressProportionCallbackType = None,
     ):
+        size = os.path.getsize(filepath)
         mimetype = mimetype or "application/octet-stream"
         upload = MediaFileUpload(filepath, mimetype, chunksize=UPLOAD_CHUNK_SIZE, resumable=True)
         sanitized_metadata = self.sanitize_metadata(metadata)
-        result = self._upload(upload, key, sanitized_metadata, extra_props, cache_control=cache_control)
-        size = result.get("size", os.path.getsize(filepath))
-        self.notifier.object_created(key=key, size=int(size), metadata=sanitized_metadata)
+        result = self._upload(
+            upload,
+            key,
+            sanitized_metadata,
+            extra_props,
+            cache_control=cache_control,
+            upload_progress_fn=self._incremental_to_proportional_progress(cb=progress_fn, size=size),
+        )
+        self.notifier.object_created(key=key, size=size, metadata=sanitized_metadata)
+        if progress_fn:
+            progress_fn(size, size)
         return result
 
-    def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
+    def store_file_object(
+        self,
+        key,
+        fd,
+        *,
+        cache_control=None,
+        metadata=None,
+        mimetype=None,
+        upload_progress_fn: IncrementalProgressCallbackType = None,
+    ):
         mimetype = mimetype or "application/octet-stream"
         sanitized_metadata = self.sanitize_metadata(metadata)
         result = self._upload(
