@@ -19,6 +19,7 @@ from http.client import IncompleteRead
 from io import BytesIO, FileIO
 from oauth2client import GOOGLE_TOKEN_URI
 from oauth2client.client import GoogleCredentials
+from typing import Optional
 
 import codecs
 import errno
@@ -107,7 +108,7 @@ class GoogleTransfer(BaseTransfer):
         credentials=None,
         prefix=None,
         proxy_info=None,
-        notifier: Notifier = None,
+        notifier: Optional[Notifier] = None,
     ) -> None:
         super().__init__(prefix=prefix, notifier=notifier)
         self.project_id = project_id

@@ -11,7 +11,7 @@ from ..notifier.interface import Notifier
 from .base import BaseTransfer, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
 from io import BytesIO, StringIO
 from stat import S_ISDIR
-from typing import cast
+from typing import cast, Optional
 
 import datetime
 import json
@@ -30,7 +30,7 @@ class SFTPTransfer(BaseTransfer):
         password=None,
         private_key=None,
         prefix=None,
-        notifier: Notifier = None,
+        notifier: Optional[Notifier] = None,
     ) -> None:
         super().__init__(prefix=prefix, notifier=notifier)
         self.server = server

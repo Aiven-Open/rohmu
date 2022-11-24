@@ -11,6 +11,7 @@ from ..notifier.interface import Notifier
 from azure.core.exceptions import HttpResponseError, ResourceExistsError
 from azure.storage.blob import BlobServiceClient, ContentSettings
 from io import BytesIO
+from typing import Optional
 
 import azure.common
 import logging
@@ -60,7 +61,7 @@ class AzureTransfer(BaseTransfer):
         prefix=None,
         azure_cloud=None,
         proxy_info=None,
-        notifier: Notifier = None,
+        notifier: Optional[Notifier] = None,
     ) -> None:
         prefix = "{}".format(prefix.lstrip("/") if prefix else "")
         super().__init__(prefix=prefix, notifier=notifier)

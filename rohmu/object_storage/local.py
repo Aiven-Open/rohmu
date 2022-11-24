@@ -9,6 +9,7 @@ from ..errors import FileNotFoundFromStorageError, LocalFileIsRemoteFileError
 from ..notifier.interface import Notifier
 from .base import BaseTransfer, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
 from io import BytesIO
+from typing import Optional
 
 import contextlib
 import datetime
@@ -25,7 +26,7 @@ class LocalTransfer(BaseTransfer):
         self,
         directory,
         prefix=None,
-        notifier: Notifier = None,
+        notifier: Optional[Notifier] = None,
     ) -> None:
         prefix = os.path.join(directory, (prefix or "").strip("/"))
         super().__init__(prefix=prefix, notifier=notifier)

@@ -9,6 +9,7 @@ from ..errors import StorageError
 from ..notifier.interface import Notifier
 from ..notifier.null import NullNotifier
 from collections import namedtuple
+from typing import Optional
 
 import logging
 import platform
@@ -20,7 +21,7 @@ IterKeyItem = namedtuple("IterKeyItem", ["type", "value"])
 
 
 class BaseTransfer:
-    def __init__(self, prefix, notifier: Notifier = None) -> None:
+    def __init__(self, prefix, notifier: Optional[Notifier] = None) -> None:
         self.log = logging.getLogger(self.__class__.__name__)
         if not prefix:
             prefix = ""

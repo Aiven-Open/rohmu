@@ -11,6 +11,7 @@ from ..notifier.interface import Notifier
 from .base import BaseTransfer, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
 from contextlib import suppress
 from swiftclient import client, exceptions  # pylint: disable=import-error
+from typing import Optional
 
 import logging
 import os
@@ -64,7 +65,7 @@ class SwiftTransfer(BaseTransfer):
         project_domain_name=None,
         service_type=None,
         endpoint_type=None,
-        notifier: Notifier = None,
+        notifier: Optional[Notifier] = None,
     ) -> None:
         prefix = prefix.lstrip("/") if prefix else ""
         super().__init__(prefix=prefix, notifier=notifier)

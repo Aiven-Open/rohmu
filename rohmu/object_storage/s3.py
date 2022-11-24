@@ -67,7 +67,7 @@ class S3Transfer(BaseTransfer):
         proxy_info=None,
         connect_timeout=None,
         read_timeout=None,
-        notifier: Notifier = None,
+        notifier: Optional[Notifier] = None,
     ) -> None:
         super().__init__(prefix=prefix, notifier=notifier)
         botocore_session = botocore.session.get_session()
