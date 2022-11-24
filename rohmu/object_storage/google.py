@@ -386,8 +386,9 @@ class GoogleTransfer(BaseTransfer):
     def store_file_from_memory(self, key, memstring, metadata=None, extra_props=None, cache_control=None, mimetype=None):
         data = BytesIO(memstring)
         upload = MediaIoBaseUpload(data, mimetype or "application/octet-stream", chunksize=UPLOAD_CHUNK_SIZE, resumable=True)
-        result = self._upload(upload, key, self.sanitize_metadata(metadata), extra_props, cache_control=cache_control)
-        self.notifier.object_created(key=key, size=int(result["size"]), metadata=metadata)
+        sanitized_metadata = self.sanitize_metadata(metadata)
+        result = self._upload(upload, key, sanitized_metadata, extra_props, cache_control=cache_control)
+        self.notifier.object_created(key=key, size=int(result["size"]), metadata=sanitized_metadata)
         return result
 
     # pylint: disable=arguments-differ
@@ -404,21 +405,23 @@ class GoogleTransfer(BaseTransfer):
     ):
         mimetype = mimetype or "application/octet-stream"
         upload = MediaFileUpload(filepath, mimetype, chunksize=UPLOAD_CHUNK_SIZE, resumable=True)
-        result = self._upload(upload, key, self.sanitize_metadata(metadata), extra_props, cache_control=cache_control)
-        self.notifier.object_created(key=key, size=int(result["size"]), metadata=metadata)
+        sanitized_metadata = self.sanitize_metadata(metadata)
+        result = self._upload(upload, key, sanitized_metadata, extra_props, cache_control=cache_control)
+        self.notifier.object_created(key=key, size=int(result["size"]), metadata=sanitized_metadata)
         return result
 
     def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
         mimetype = mimetype or "application/octet-stream"
+        sanitized_metadata = self.sanitize_metadata(metadata)
         result = self._upload(
             MediaStreamUpload(fd, chunk_size=UPLOAD_CHUNK_SIZE, mime_type=mimetype, name=key),
             key,
-            self.sanitize_metadata(metadata),
+            sanitized_metadata,
             None,
             cache_control=cache_control,
             upload_progress_fn=upload_progress_fn,
         )
-        self.notifier.object_created(key=key, size=int(result["size"]), metadata=metadata)
+        self.notifier.object_created(key=key, size=int(result["size"]), metadata=sanitized_metadata)
         return result
 
     def get_or_create_bucket(self, bucket_name):

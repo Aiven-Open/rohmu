@@ -44,16 +44,19 @@ def test_store_file_from_disk(azure_module: ModuleType, get_blob_client: MagicMo
         notifier=notifier,
     )
     test_data = b"test-data"
+    metadata = {"Content-Length": len(test_data), "some-object": object()}
     upload_blob = MagicMock()
     get_blob_client.return_value = MagicMock(upload_blob=upload_blob)
 
     with NamedTemporaryFile() as tmpfile:
         tmpfile.write(test_data)
         tmpfile.flush()
-        transfer.store_file_from_disk(key="test_key1", filepath=tmpfile.name)
+        transfer.store_file_from_disk(key="test_key1", filepath=tmpfile.name, metadata=metadata)
 
     upload_blob.assert_called_once()
-    notifier.object_created.assert_called_once_with(key="test_key1", size=len(test_data), metadata=None)
+    notifier.object_created.assert_called_once_with(
+        key="test_key1", size=len(test_data), metadata=transfer.sanitize_metadata(metadata, replace_hyphen_with="_")
+    )
 
 
 def test_store_file_object(azure_module: ModuleType, get_blob_client: MagicMock) -> None:
@@ -65,6 +68,7 @@ def test_store_file_object(azure_module: ModuleType, get_blob_client: MagicMock)
         notifier=notifier,
     )
     test_data = b"test-data-2"
+    metadata = {"Content-Length": len(test_data), "some-object": object()}
     file_object = BytesIO(test_data)
 
     def upload_side_effect(*args, **kwargs):  # pylint: disable=unused-argument
@@ -75,7 +79,9 @@ def test_store_file_object(azure_module: ModuleType, get_blob_client: MagicMock)
     upload_blob = MagicMock(wraps=upload_side_effect)
     get_blob_client.return_value = MagicMock(upload_blob=upload_blob)
 
-    transfer.store_file_object(key="test_key2", fd=file_object)
+    transfer.store_file_object(key="test_key2", fd=file_object, metadata=metadata)
 
     upload_blob.assert_called_once()
-    notifier.object_created.assert_called_once_with(key="test_key2", size=len(test_data), metadata=None)
+    notifier.object_created.assert_called_once_with(
+        key="test_key2", size=len(test_data), metadata=transfer.sanitize_metadata(metadata, replace_hyphen_with="_")
+    )

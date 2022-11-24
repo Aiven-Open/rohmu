@@ -192,7 +192,7 @@ class LocalTransfer(BaseTransfer):
         with open(target_path, "wb") as fp:
             fp.write(memstring)
         self._save_metadata(target_path, metadata)
-        self.notifier.object_created(key=key, size=os.path.getsize(target_path), metadata=metadata)
+        self.notifier.object_created(key=key, size=os.path.getsize(target_path), metadata=self.sanitize_metadata(metadata))
 
     def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
         target_path = self.format_key_for_backend(key.strip("/"))
@@ -205,7 +205,7 @@ class LocalTransfer(BaseTransfer):
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
         shutil.copyfile(filepath, target_path)
         self._save_metadata(target_path, metadata)
-        self.notifier.object_created(key=key, size=os.path.getsize(target_path), metadata=metadata)
+        self.notifier.object_created(key=key, size=os.path.getsize(target_path), metadata=self.sanitize_metadata(metadata))
 
     def store_file_object(
         self,
@@ -231,7 +231,7 @@ class LocalTransfer(BaseTransfer):
                     upload_progress_fn(bytes_written)
 
         self._save_metadata(target_path, metadata)
-        self.notifier.object_created(key=key, size=os.path.getsize(target_path), metadata=metadata)
+        self.notifier.object_created(key=key, size=os.path.getsize(target_path), metadata=self.sanitize_metadata(metadata))
 
 
 @contextlib.contextmanager

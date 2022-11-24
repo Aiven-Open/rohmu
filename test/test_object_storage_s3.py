@@ -17,13 +17,16 @@ def test_store_file_from_disk() -> None:
             notifier=notifier,
         )
         test_data = b"test-data"
+        metadata = {"Content-Length": len(test_data), "some-object": object()}
         with NamedTemporaryFile() as tmpfile:
             tmpfile.write(test_data)
             tmpfile.flush()
-            transfer.store_file_from_disk(key="test_key1", filepath=tmpfile.name)
+            transfer.store_file_from_disk(key="test_key1", filepath=tmpfile.name, metadata=metadata)
 
         s3_client.put_object.assert_called()
-        notifier.object_created.assert_called_once_with(key="test_key1", size=len(test_data), metadata=None)
+        notifier.object_created.assert_called_once_with(
+            key="test_key1", size=len(test_data), metadata=transfer.sanitize_metadata(metadata)
+        )
 
 
 def test_store_file_object() -> None:
@@ -40,10 +43,13 @@ def test_store_file_object() -> None:
         test_data = b"test-data"
         file_object = BytesIO(test_data)
 
-        transfer.store_file_object(key="test_key2", fd=file_object)
+        metadata = {"Content-Length": len(test_data), "some-object": object()}
+        transfer.store_file_object(key="test_key2", fd=file_object, metadata=metadata)
 
         # store_file_object does a multipart upload
         s3_client.create_multipart_upload.assert_called()
         s3_client.upload_part.assert_called()
         s3_client.complete_multipart_upload.assert_called()
-        notifier.object_created.assert_called_once_with(key="test_key2", size=len(test_data), metadata=None)
+        notifier.object_created.assert_called_once_with(
+            key="test_key2", size=len(test_data), metadata=transfer.sanitize_metadata(metadata)
+        )

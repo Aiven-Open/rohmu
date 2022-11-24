@@ -187,18 +187,20 @@ class SFTPTransfer(BaseTransfer):
         bio = BytesIO(data)
         try:
             self._put_object(key=key, fd=bio, metadata=metadata)
-            self.notifier.object_created(key=key, size=len(data), metadata=metadata)
+            self.notifier.object_created(key=key, size=len(data), metadata=self.sanitize_metadata(metadata))
         except OSError as ex:
             raise StorageError(key) from ex
 
     def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
         with open(filepath, "rb") as fh:
             self._put_object(key=key, fd=fh, metadata=metadata)
-            self.notifier.object_created(key=key, size=os.fstat(fh.fileno()).st_size, metadata=metadata)
+            self.notifier.object_created(
+                key=key, size=os.fstat(fh.fileno()).st_size, metadata=self.sanitize_metadata(metadata)
+            )
 
     def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
         bytes_written = self._put_object(key, fd, metadata=metadata, upload_progress_fn=upload_progress_fn)
-        self.notifier.object_created(key=key, size=bytes_written, metadata=metadata)
+        self.notifier.object_created(key=key, size=bytes_written, metadata=self.sanitize_metadata(metadata))
 
     def _put_object(self, key, fd, *, metadata=None, upload_progress_fn=None) -> int:
         target_path = self.format_key_for_backend(key.strip("/"))

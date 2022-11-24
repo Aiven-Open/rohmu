@@ -251,10 +251,11 @@ class SwiftTransfer(BaseTransfer):
             raise NotImplementedError("SwiftTransfer: cache_control support not implemented")
 
         path = self.format_key_for_backend(key)
-        metadata_to_send = self._metadata_to_headers(self.sanitize_metadata(metadata))
+        sanitized_metadata = self.sanitize_metadata(metadata)
+        metadata_to_send = self._metadata_to_headers(sanitized_metadata)
         data = bytes(memstring)
         self.conn.put_object(self.container_name, path, contents=data, content_type=mimetype, headers=metadata_to_send)
-        self.notifier.object_created(key=key, size=len(data), metadata=metadata)
+        self.notifier.object_created(key=key, size=len(data), metadata=sanitized_metadata)
 
     def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
         obsz = os.path.getsize(filepath)
@@ -268,7 +269,7 @@ class SwiftTransfer(BaseTransfer):
                 mimetype=mimetype,
                 content_length=obsz,
             )
-        self.notifier.object_created(key=key, size=obsz, metadata=metadata)
+        self.notifier.object_created(key=key, size=obsz, metadata=self.sanitize_metadata(metadata))
 
     def get_or_create_container(self, container_name):
         start_time = time.monotonic()
@@ -289,11 +290,12 @@ class SwiftTransfer(BaseTransfer):
     def copy_file(self, *, source_key, destination_key, metadata=None, **_kwargs):
         source_key = self.format_key_for_backend(source_key)
         destination_key = "/".join((self.container_name, self.format_key_for_backend(destination_key)))
-        headers = self._metadata_to_headers(self.sanitize_metadata(metadata))
+        sanitized_metadata = self.sanitize_metadata(metadata)
+        headers = self._metadata_to_headers(sanitized_metadata)
         if metadata:
             headers["X-Fresh-Metadata"] = True
         self.conn.copy_object(self.container_name, source_key, destination=destination_key, headers=headers)
-        self.notifier.object_copied(key=destination_key, size=None, metadata=metadata)
+        self.notifier.object_copied(key=destination_key, size=None, metadata=sanitized_metadata)
 
     def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
         metadata = metadata or {}
@@ -309,7 +311,7 @@ class SwiftTransfer(BaseTransfer):
             multipart=True,
             content_length=content_length,
         )
-        self.notifier.object_created(key=key, size=content_length, metadata=metadata)
+        self.notifier.object_created(key=key, size=content_length, metadata=self.sanitize_metadata(metadata))
 
     def _store_file_contents(
         self,

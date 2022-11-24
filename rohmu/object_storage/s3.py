@@ -287,8 +287,9 @@ class S3Transfer(BaseTransfer):
             "Body": data,
             "Key": path,
         }
+        sanitized_metadata = metadata
         if metadata:
-            args["Metadata"] = self.sanitize_metadata(metadata)
+            sanitized_metadata = args["Metadata"] = self.sanitize_metadata(metadata)
         if self.encrypted:
             args["ServerSideEncryption"] = "AES256"
         if cache_control is not None:
@@ -296,7 +297,7 @@ class S3Transfer(BaseTransfer):
         if mimetype is not None:
             args["ContentType"] = mimetype
         self.s3_client.put_object(**args)
-        self.notifier.object_created(key=key, size=len(data), metadata=metadata)
+        self.notifier.object_created(key=key, size=len(data), metadata=sanitized_metadata)
 
     def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
         size = os.path.getsize(filepath)
@@ -310,7 +311,8 @@ class S3Transfer(BaseTransfer):
             self.multipart_upload_file_object(
                 cache_control=cache_control, fp=fp, key=key, metadata=metadata, mimetype=mimetype, size=size
             )
-            self.notifier.object_created(key=key, size=size, metadata=metadata)
+            sanitized_metadata = self.sanitize_metadata(metadata)
+            self.notifier.object_created(key=key, size=size, metadata=sanitized_metadata)
 
     def multipart_upload_file_object(self, *, cache_control, fp, key, metadata, mimetype, progress_fn=None, size=None):
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
@@ -329,8 +331,9 @@ class S3Transfer(BaseTransfer):
             "Bucket": self.bucket_name,
             "Key": path,
         }
+        sanitized_metadata = metadata
         if metadata:
-            args["Metadata"] = self.sanitize_metadata(metadata)
+            sanitized_metadata = args["Metadata"] = self.sanitize_metadata(metadata)
         if self.encrypted:
             args["ServerSideEncryption"] = "AES256"
         if cache_control is not None:
@@ -412,7 +415,7 @@ class S3Transfer(BaseTransfer):
             finally:
                 raise StorageError("Failed to complete multipart upload for {}".format(path)) from ex
 
-        self.notifier.object_created(key=key, size=bytes_sent, metadata=metadata)
+        self.notifier.object_created(key=key, size=bytes_sent, metadata=sanitized_metadata)
         self.log.info(
             "Multipart upload of %r complete, size: %r, took: %.2fs",
             path,

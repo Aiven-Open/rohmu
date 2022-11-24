@@ -16,14 +16,17 @@ def test_store_file_from_disk() -> None:
             notifier=notifier,
         )
         test_data = b"test-data"
+        metadata = {"Content-Length": len(test_data), "some-object": object()}
         upload.return_value = {"size": len(test_data)}  # server reports the size of the uploaded object
         with NamedTemporaryFile() as tmpfile:
             tmpfile.write(test_data)
             tmpfile.flush()
-            transfer.store_file_from_disk(key="test_key1", filepath=tmpfile.name)
+            transfer.store_file_from_disk(key="test_key1", filepath=tmpfile.name, metadata=metadata)
 
         upload.assert_called()
-        notifier.object_created.assert_called_once_with(key="test_key1", size=len(test_data), metadata=None)
+        notifier.object_created.assert_called_once_with(
+            key="test_key1", size=len(test_data), metadata=transfer.sanitize_metadata(metadata)
+        )
 
 
 def test_store_file_object() -> None:
@@ -37,10 +40,13 @@ def test_store_file_object() -> None:
             notifier=notifier,
         )
         test_data = b"test-data"
+        metadata = {"Content-Length": len(test_data), "some-object": object()}
         file_object = BytesIO(test_data)
         upload.return_value = {"size": len(test_data)}  # server reports the size of the uploaded object
 
-        transfer.store_file_object(key="test_key2", fd=file_object)
+        transfer.store_file_object(key="test_key2", fd=file_object, metadata=metadata)
 
         upload.assert_called()
-        notifier.object_created.assert_called_once_with(key="test_key2", size=len(test_data), metadata=None)
+        notifier.object_created.assert_called_once_with(
+            key="test_key2", size=len(test_data), metadata=transfer.sanitize_metadata(metadata)
+        )
