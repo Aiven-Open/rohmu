@@ -11,6 +11,7 @@ from ..notifier.interface import Notifier
 from azure.core.exceptions import HttpResponseError, ResourceExistsError
 from azure.storage.blob import BlobServiceClient, ContentSettings
 from io import BytesIO
+from typing import Optional
 
 import azure.common
 import logging
@@ -60,7 +61,7 @@ class AzureTransfer(BaseTransfer):
         prefix=None,
         azure_cloud=None,
         proxy_info=None,
-        notifier: Notifier = None,
+        notifier: Optional[Notifier] = None,
     ) -> None:
         prefix = "{}".format(prefix.lstrip("/") if prefix else "")
         super().__init__(prefix=prefix, notifier=notifier)
@@ -311,14 +312,15 @@ class AzureTransfer(BaseTransfer):
         blob_client = self.conn.get_blob_client(self.container_name, path)
         # Azure's client requires a bytes object
         data = bytes(memstring)
+        sanitized_metadata = self.sanitize_metadata(metadata, replace_hyphen_with="_")
         blob_client.upload_blob(
             data,
             blob_type=BlobType.BlockBlob,
             content_settings=content_settings,
-            metadata=self.sanitize_metadata(metadata, replace_hyphen_with="_"),
+            metadata=sanitized_metadata,
             overwrite=True,
         )
-        self.notifier.object_created(key=key, size=len(data), metadata=metadata)
+        self.notifier.object_created(key=key, size=len(data), metadata=sanitized_metadata)
 
     def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
         if cache_control is not None:
@@ -327,16 +329,17 @@ class AzureTransfer(BaseTransfer):
         content_settings = None
         if mimetype:
             content_settings = ContentSettings(content_type=mimetype)
+        sanitized_metadata = self.sanitize_metadata(metadata, replace_hyphen_with="_")
         with open(filepath, "rb") as data:
             blob_client = self.conn.get_blob_client(self.container_name, path)
             blob_client.upload_blob(
                 data,
                 blob_type=BlobType.BlockBlob,
                 content_settings=content_settings,
-                metadata=self.sanitize_metadata(metadata, replace_hyphen_with="_"),
+                metadata=sanitized_metadata,
                 overwrite=True,
             )
-            self.notifier.object_created(key=key, size=os.path.getsize(filepath), metadata=metadata)
+            self.notifier.object_created(key=key, size=os.path.getsize(filepath), metadata=sanitized_metadata)
 
     def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
         if cache_control is not None:
@@ -360,17 +363,18 @@ class AzureTransfer(BaseTransfer):
         if not seekable:
             original_tell = getattr(fd, "tell", None)
             fd.tell = lambda: None
+        sanitized_metadata = self.sanitize_metadata(metadata, replace_hyphen_with="_")
         try:
             blob_client = self.conn.get_blob_client(self.container_name, path)
             blob_client.upload_blob(
                 fd,
                 blob_type=BlobType.BlockBlob,
                 content_settings=content_settings,
-                metadata=self.sanitize_metadata(metadata, replace_hyphen_with="_"),
+                metadata=sanitized_metadata,
                 raw_response_hook=progress_callback,
                 overwrite=True,
             )
-            self.notifier.object_created(key=key, size=notify_size[0], metadata=metadata)
+            self.notifier.object_created(key=key, size=notify_size[0], metadata=sanitized_metadata)
         finally:
             if not seekable:
                 if original_tell is not None:
