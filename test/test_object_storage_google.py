@@ -1,4 +1,5 @@
 """Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
+from datetime import datetime
 from io import BytesIO
 from rohmu.object_storage.google import GoogleTransfer
 from tempfile import NamedTemporaryFile
@@ -16,7 +17,7 @@ def test_store_file_from_disk() -> None:
             notifier=notifier,
         )
         test_data = b"test-data"
-        metadata = {"Content-Length": len(test_data), "some-object": object()}
+        metadata = {"Content-Length": len(test_data), "some-date": datetime(2022, 11, 15, 18, 30, 58, 486644)}
         upload.return_value = {"size": len(test_data)}  # server reports the size of the uploaded object
         with NamedTemporaryFile() as tmpfile:
             tmpfile.write(test_data)
@@ -25,7 +26,7 @@ def test_store_file_from_disk() -> None:
 
         upload.assert_called()
         notifier.object_created.assert_called_once_with(
-            key="test_key1", size=len(test_data), metadata=transfer.sanitize_metadata(metadata)
+            key="test_key1", size=len(test_data), metadata={"Content-Length": "9", "some-date": "2022-11-15 18:30:58.486644"}
         )
 
 
@@ -40,7 +41,8 @@ def test_store_file_object() -> None:
             notifier=notifier,
         )
         test_data = b"test-data"
-        metadata = {"Content-Length": len(test_data), "some-object": object()}
+        metadata = {"Content-Length": len(test_data), "some-date": datetime(2022, 11, 15, 18, 30, 58, 486644)}
+
         file_object = BytesIO(test_data)
         upload.return_value = {"size": len(test_data)}  # server reports the size of the uploaded object
 
@@ -48,5 +50,5 @@ def test_store_file_object() -> None:
 
         upload.assert_called()
         notifier.object_created.assert_called_once_with(
-            key="test_key2", size=len(test_data), metadata=transfer.sanitize_metadata(metadata)
+            key="test_key2", size=len(test_data), metadata={"Content-Length": "9", "some-date": "2022-11-15 18:30:58.486644"}
         )

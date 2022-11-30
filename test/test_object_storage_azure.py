@@ -1,4 +1,5 @@
 """Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
+from datetime import datetime
 from io import BytesIO
 from tempfile import NamedTemporaryFile
 from types import ModuleType
@@ -44,7 +45,7 @@ def test_store_file_from_disk(azure_module: ModuleType, get_blob_client: MagicMo
         notifier=notifier,
     )
     test_data = b"test-data"
-    metadata = {"Content-Length": len(test_data), "some-object": object()}
+    metadata = {"Content-Length": len(test_data), "some-date": datetime(2022, 11, 15, 18, 30, 58, 486644)}
     upload_blob = MagicMock()
     get_blob_client.return_value = MagicMock(upload_blob=upload_blob)
 
@@ -55,7 +56,7 @@ def test_store_file_from_disk(azure_module: ModuleType, get_blob_client: MagicMo
 
     upload_blob.assert_called_once()
     notifier.object_created.assert_called_once_with(
-        key="test_key1", size=len(test_data), metadata=transfer.sanitize_metadata(metadata, replace_hyphen_with="_")
+        key="test_key1", size=len(test_data), metadata={"Content_Length": "9", "some_date": "2022-11-15 18:30:58.486644"}
     )
 
 
@@ -67,8 +68,8 @@ def test_store_file_object(azure_module: ModuleType, get_blob_client: MagicMock)
         account_key="test_key2",
         notifier=notifier,
     )
-    test_data = b"test-data-2"
-    metadata = {"Content-Length": len(test_data), "some-object": object()}
+    test_data = b"test-data"
+    metadata = {"Content-Length": len(test_data), "some-date": datetime(2022, 11, 15, 18, 30, 58, 486644)}
     file_object = BytesIO(test_data)
 
     def upload_side_effect(*args, **kwargs):  # pylint: disable=unused-argument
@@ -83,5 +84,5 @@ def test_store_file_object(azure_module: ModuleType, get_blob_client: MagicMock)
 
     upload_blob.assert_called_once()
     notifier.object_created.assert_called_once_with(
-        key="test_key2", size=len(test_data), metadata=transfer.sanitize_metadata(metadata, replace_hyphen_with="_")
+        key="test_key2", size=len(test_data), metadata={"Content_Length": "9", "some_date": "2022-11-15 18:30:58.486644"}
     )
