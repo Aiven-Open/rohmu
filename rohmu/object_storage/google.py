@@ -226,7 +226,8 @@ class GoogleTransfer(BaseTransfer):
                 sourceObject=source_object,
             )
             result = self._retry_on_reset(request, request.execute)
-            self.notifier.object_copied(key=destination_key, size=int(result["size"]), metadata=metadata)
+            if result.get("size", None) is not None:
+                self.notifier.object_copied(key=destination_key, size=int(result["size"]), metadata=metadata)
 
     def get_metadata_for_key(self, key):
         path = self.format_key_for_backend(key)
@@ -389,7 +390,7 @@ class GoogleTransfer(BaseTransfer):
         upload = MediaIoBaseUpload(data, mimetype or "application/octet-stream", chunksize=UPLOAD_CHUNK_SIZE, resumable=True)
         sanitized_metadata = self.sanitize_metadata(metadata)
         result = self._upload(upload, key, sanitized_metadata, extra_props, cache_control=cache_control)
-        self.notifier.object_created(key=key, size=int(result["size"]), metadata=sanitized_metadata)
+        self.notifier.object_created(key=key, size=int(result.get("size", len(data))), metadata=sanitized_metadata)
         return result
 
     # pylint: disable=arguments-differ
@@ -408,7 +409,8 @@ class GoogleTransfer(BaseTransfer):
         upload = MediaFileUpload(filepath, mimetype, chunksize=UPLOAD_CHUNK_SIZE, resumable=True)
         sanitized_metadata = self.sanitize_metadata(metadata)
         result = self._upload(upload, key, sanitized_metadata, extra_props, cache_control=cache_control)
-        self.notifier.object_created(key=key, size=int(result["size"]), metadata=sanitized_metadata)
+        size = result.get("size", os.path.getsize(filepath))
+        self.notifier.object_created(key=key, size=int(size), metadata=sanitized_metadata)
         return result
 
     def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
