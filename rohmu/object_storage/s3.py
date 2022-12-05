@@ -68,6 +68,7 @@ class S3Transfer(BaseTransfer):
         connect_timeout=None,
         read_timeout=None,
         notifier: Optional[Notifier] = None,
+        aws_session_token: Optional[str] = None,
     ) -> None:
         super().__init__(prefix=prefix, notifier=notifier)
         botocore_session = botocore.session.get_session()
@@ -89,6 +90,7 @@ class S3Transfer(BaseTransfer):
                 config=botocore.config.Config(**custom_config),
                 aws_access_key_id=aws_access_key_id,
                 aws_secret_access_key=aws_secret_access_key,
+                aws_session_token=aws_session_token,
                 region_name=region,
             )
             if self.region and self.region != "us-east-1":
@@ -114,6 +116,7 @@ class S3Transfer(BaseTransfer):
                 "s3",
                 aws_access_key_id=aws_access_key_id,
                 aws_secret_access_key=aws_secret_access_key,
+                aws_session_token=aws_session_token,
                 config=boto_config,
                 endpoint_url=custom_url,
                 region_name=region,
