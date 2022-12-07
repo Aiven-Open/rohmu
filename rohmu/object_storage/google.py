@@ -390,7 +390,7 @@ class GoogleTransfer(BaseTransfer):
         upload = MediaIoBaseUpload(data, mimetype or "application/octet-stream", chunksize=UPLOAD_CHUNK_SIZE, resumable=True)
         sanitized_metadata = self.sanitize_metadata(metadata)
         result = self._upload(upload, key, sanitized_metadata, extra_props, cache_control=cache_control)
-        self.notifier.object_created(key=key, size=int(result.get("size", len(data))), metadata=sanitized_metadata)
+        self.notifier.object_created(key=key, size=int(result.get("size", len(memstring))), metadata=sanitized_metadata)
         return result
 
     # pylint: disable=arguments-differ
