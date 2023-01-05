@@ -180,12 +180,22 @@ class GoogleTransfer(BaseTransfer):
         while True:
             try:
                 return action()
-            except (IncompleteRead, HttpError, ssl.SSLEOFError, socket.timeout, OSError, socket.gaierror) as ex:
+            except (
+                IncompleteRead,
+                HttpError,
+                ssl.SSLEOFError,
+                httplib2.ServerNotFoundError,
+                socket.timeout,
+                OSError,
+                socket.gaierror,
+            ) as ex:
                 # Note that socket.timeout and ssl.SSLEOFError inherit from OSError
                 # and the order of handling the errors here needs to be correct
                 if not retries:
                     raise
-                elif isinstance(ex, (IncompleteRead, socket.timeout, ssl.SSLEOFError, BrokenPipeError)):
+                elif isinstance(
+                    ex, (IncompleteRead, socket.timeout, ssl.SSLEOFError, BrokenPipeError, httplib2.ServerNotFoundError)
+                ):
                     pass  # just retry with the same sleep amount
                 elif isinstance(ex, HttpError):
                     # https://cloud.google.com/storage/docs/json_api/v1/status-codes
