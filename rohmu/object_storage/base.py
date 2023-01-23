@@ -9,7 +9,7 @@ from ..errors import StorageError
 from ..notifier.interface import Notifier
 from ..notifier.null import NullNotifier
 from collections import namedtuple
-from typing import Optional
+from typing import Callable, Optional
 
 import logging
 import platform
@@ -18,6 +18,12 @@ KEY_TYPE_OBJECT = "object"
 KEY_TYPE_PREFIX = "prefix"
 
 IterKeyItem = namedtuple("IterKeyItem", ["type", "value"])
+
+# Percent complete is the ratio of the first argument to the second
+ProgressProportionCallbackType = Optional[Callable[[int, int], None]]
+
+# Argument is the additional number of bytes transferred
+IncrementalProgressCallbackType = Optional[Callable[[int], None]]
 
 
 class BaseTransfer:
@@ -29,6 +35,38 @@ class BaseTransfer:
             prefix += "/"
         self.prefix = prefix
         self.notifier = notifier or NullNotifier()
+
+    @staticmethod
+    def _incremental_to_proportional_progress(
+        *, size: int, cb: ProgressProportionCallbackType
+    ) -> IncrementalProgressCallbackType:
+        if cb is None:
+            return None
+
+        progress_so_far: int = 0
+
+        def wrapper(progress: int) -> None:
+            nonlocal progress_so_far
+            progress_so_far += progress
+            if cb is not None:
+                cb(progress_so_far, size)
+
+        return wrapper
+
+    @staticmethod
+    def _proportional_to_incremental_progress(cb: IncrementalProgressCallbackType) -> ProgressProportionCallbackType:
+        if cb is None:
+            return cb
+        last_progress: int = 0
+
+        def wrapper(progress: int, _: int) -> None:
+            nonlocal last_progress
+            if progress > last_progress:
+                if cb is not None:
+                    cb(progress - last_progress)
+                last_progress = progress
+
+        return wrapper
 
     def copy_file(self, *, source_key, destination_key, metadata=None, **_kwargs):
         """Performs remote copy from source key name to destination key name. Key must identify a file, trees
@@ -68,7 +106,7 @@ class BaseTransfer:
         for name in names:
             self.delete_key(name)
 
-    def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback=None):
+    def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         """Write key contents to file pointed by `path` and return metadata.  If `progress_callback` is
         provided it must be a function which accepts two numeric arguments: current state of progress and the
         expected maximum value.  The actual values and value ranges differ per storage provider, some (S3)
@@ -77,7 +115,7 @@ class BaseTransfer:
         100 as the second value."""
         raise NotImplementedError
 
-    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback=None):
+    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         """Like `get_contents_to_file()` but writes to an open file-like object."""
         raise NotImplementedError
 
@@ -120,10 +158,28 @@ class BaseTransfer:
     def store_file_from_memory(self, key, memstring, metadata=None, cache_control=None, mimetype=None):
         raise NotImplementedError
 
-    def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
+    def store_file_from_disk(
+        self,
+        key,
+        filepath,
+        metadata=None,
+        multipart=None,
+        cache_control=None,
+        mimetype=None,
+        progress_fn: ProgressProportionCallbackType = None,
+    ):
         raise NotImplementedError
 
-    def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
+    def store_file_object(
+        self,
+        key,
+        fd,
+        *,
+        cache_control=None,
+        metadata=None,
+        mimetype=None,
+        upload_progress_fn: IncrementalProgressCallbackType = None,
+    ):
         raise NotImplementedError
 
 

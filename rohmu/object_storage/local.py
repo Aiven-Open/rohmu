@@ -7,7 +7,14 @@ See LICENSE for details
 """
 from ..errors import FileNotFoundFromStorageError, LocalFileIsRemoteFileError
 from ..notifier.interface import Notifier
-from .base import BaseTransfer, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
+from .base import (
+    BaseTransfer,
+    IncrementalProgressCallbackType,
+    IterKeyItem,
+    KEY_TYPE_OBJECT,
+    KEY_TYPE_PREFIX,
+    ProgressProportionCallbackType,
+)
 from io import BytesIO
 from typing import Optional
 
@@ -139,7 +146,7 @@ class LocalTransfer(BaseTransfer):
                     with_metadata=with_metadata,
                 )
 
-    def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback=None):
+    def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         source_path = self.format_key_for_backend(key.strip("/"))
         try:
             src_stat = os.stat(source_path)
@@ -152,7 +159,7 @@ class LocalTransfer(BaseTransfer):
         with open(filepath_to_store_to, "wb") as fileobj_to_store_to:
             return self.get_contents_to_fileobj(key, fileobj_to_store_to, progress_callback=progress_callback)
 
-    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback=None):
+    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         source_path = self.format_key_for_backend(key.strip("/"))
         if not os.path.exists(source_path):
             raise FileNotFoundFromStorageError(key)
@@ -195,7 +202,16 @@ class LocalTransfer(BaseTransfer):
         self._save_metadata(target_path, metadata)
         self.notifier.object_created(key=key, size=os.path.getsize(target_path), metadata=self.sanitize_metadata(metadata))
 
-    def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
+    def store_file_from_disk(
+        self,
+        key,
+        filepath,
+        metadata=None,
+        multipart=None,
+        cache_control=None,
+        mimetype=None,
+        progress_fn: ProgressProportionCallbackType = None,
+    ):
         target_path = self.format_key_for_backend(key.strip("/"))
         src_stat = os.stat(filepath)
         with contextlib.suppress(FileNotFoundError):
@@ -206,7 +222,10 @@ class LocalTransfer(BaseTransfer):
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
         shutil.copyfile(filepath, target_path)
         self._save_metadata(target_path, metadata)
-        self.notifier.object_created(key=key, size=os.path.getsize(target_path), metadata=self.sanitize_metadata(metadata))
+        size = os.path.getsize(target_path)
+        self.notifier.object_created(key=key, size=size, metadata=self.sanitize_metadata(metadata))
+        if progress_fn:
+            progress_fn(size, size)
 
     def store_file_object(
         self,
@@ -216,7 +235,7 @@ class LocalTransfer(BaseTransfer):
         cache_control=None,  # pylint: disable=unused-argument
         metadata=None,
         mimetype=None,
-        upload_progress_fn=None
+        upload_progress_fn: IncrementalProgressCallbackType = None,
     ):  # pylint: disable=unused-argument
         target_path = self.format_key_for_backend(key.strip("/"))
         os.makedirs(os.path.dirname(target_path), exist_ok=True)

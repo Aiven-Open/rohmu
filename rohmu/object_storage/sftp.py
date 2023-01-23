@@ -8,7 +8,14 @@ See LICENSE for details
 
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
 from ..notifier.interface import Notifier
-from .base import BaseTransfer, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
+from .base import (
+    BaseTransfer,
+    IncrementalProgressCallbackType,
+    IterKeyItem,
+    KEY_TYPE_OBJECT,
+    KEY_TYPE_PREFIX,
+    ProgressProportionCallbackType,
+)
 from io import BytesIO, StringIO
 from stat import S_ISDIR
 from typing import cast, Optional
@@ -59,11 +66,11 @@ class SFTPTransfer(BaseTransfer):
 
         self.log.debug("SFTPTransfer initialized")
 
-    def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback=None):
+    def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         with open(filepath_to_store_to, "wb") as fh:
             return self.get_contents_to_fileobj(key, fh, progress_callback=progress_callback)
 
-    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback=None):
+    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         self._get_contents_to_fileobj(key, fileobj_to_store_to, progress_callback)
         return self.get_metadata_for_key(key)
 
@@ -191,27 +198,49 @@ class SFTPTransfer(BaseTransfer):
         except OSError as ex:
             raise StorageError(key) from ex
 
-    def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
+    def store_file_from_disk(
+        self,
+        key,
+        filepath,
+        metadata=None,
+        multipart=None,
+        cache_control=None,
+        mimetype=None,
+        progress_fn: ProgressProportionCallbackType = None,
+    ):
         with open(filepath, "rb") as fh:
-            self._put_object(key=key, fd=fh, metadata=metadata)
-            self.notifier.object_created(
-                key=key, size=os.fstat(fh.fileno()).st_size, metadata=self.sanitize_metadata(metadata)
-            )
+            self._put_object(key=key, fd=fh, metadata=metadata, upload_progress_fn=progress_fn)
+            size = os.fstat(fh.fileno()).st_size
+            self.notifier.object_created(key=key, size=size, metadata=self.sanitize_metadata(metadata))
+        if progress_fn:
+            progress_fn(size, size)
 
-    def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
-        bytes_written = self._put_object(key, fd, metadata=metadata, upload_progress_fn=upload_progress_fn)
+    def store_file_object(
+        self,
+        key,
+        fd,
+        *,
+        cache_control=None,
+        metadata=None,
+        mimetype=None,
+        upload_progress_fn: IncrementalProgressCallbackType = None,
+    ):
+        bytes_written = self._put_object(
+            key, fd, metadata=metadata, upload_progress_fn=self._proportional_to_incremental_progress(upload_progress_fn)
+        )
         self.notifier.object_created(key=key, size=bytes_written, metadata=self.sanitize_metadata(metadata))
 
-    def _put_object(self, key, fd, *, metadata=None, upload_progress_fn=None) -> int:
+    def _put_object(self, key, fd, *, metadata=None, upload_progress_fn: ProgressProportionCallbackType = None) -> int:
         target_path = self.format_key_for_backend(key.strip("/"))
-        total_bytes_written = [0]
+        total_bytes_written = 0
 
         self.log.debug("Store path: %r", target_path)
 
-        def wrapper_upload_progress_fn(bytes_written, total_bytes):  # pylint: disable=unused-argument
-            total_bytes_written[0] = bytes_written
+        def wrapper_upload_progress_fn(bytes_written, total_bytes):
+            nonlocal total_bytes_written
+            total_bytes_written = bytes_written
             if upload_progress_fn:
-                upload_progress_fn(bytes_written)
+                upload_progress_fn(bytes_written, total_bytes)
 
         self._mkdir_p(os.path.dirname(target_path))
         self.client.putfo(fl=fd, remotepath=target_path, callback=wrapper_upload_progress_fn)
@@ -219,7 +248,7 @@ class SFTPTransfer(BaseTransfer):
         # metadata is saved last, because we ignore data files until the metadata file exists
         # see iter_key above
         self._save_metadata(target_path, metadata)
-        return total_bytes_written[0]
+        return total_bytes_written
 
     def _save_metadata(self, target_path, metadata):
         metadata_path = target_path + ".metadata"

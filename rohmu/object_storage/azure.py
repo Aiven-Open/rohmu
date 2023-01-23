@@ -6,6 +6,7 @@ Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
 from ..notifier.interface import Notifier
+from .base import IncrementalProgressCallbackType, ProgressProportionCallbackType
 
 # pylint: disable=import-error, no-name-in-module
 from azure.core.exceptions import HttpResponseError, ResourceExistsError
@@ -216,7 +217,7 @@ class AzureTransfer(BaseTransfer):
 
         return result
 
-    def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback=None):
+    def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
 
         self.log.debug("Starting to fetch the contents of: %r to: %r", path, filepath_to_store_to)
@@ -270,7 +271,7 @@ class AzureTransfer(BaseTransfer):
                     return
                 raise FileNotFoundFromStorageError(key) from ex
 
-    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback=None):
+    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
 
         self.log.debug("Starting to fetch the contents of: %r", path)
@@ -322,7 +323,16 @@ class AzureTransfer(BaseTransfer):
         )
         self.notifier.object_created(key=key, size=len(data), metadata=sanitized_metadata)
 
-    def store_file_from_disk(self, key, filepath, metadata=None, multipart=None, cache_control=None, mimetype=None):
+    def store_file_from_disk(
+        self,
+        key,
+        filepath,
+        metadata=None,
+        multipart=None,
+        cache_control=None,
+        mimetype=None,
+        progress_fn: ProgressProportionCallbackType = None,
+    ):
         if cache_control is not None:
             raise NotImplementedError("AzureTransfer: cache_control support not implemented")
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
@@ -330,6 +340,7 @@ class AzureTransfer(BaseTransfer):
         if mimetype:
             content_settings = ContentSettings(content_type=mimetype)
         sanitized_metadata = self.sanitize_metadata(metadata, replace_hyphen_with="_")
+        size = os.path.getsize(filepath)
         with open(filepath, "rb") as data:
             blob_client = self.conn.get_blob_client(self.container_name, path)
             blob_client.upload_blob(
@@ -339,9 +350,20 @@ class AzureTransfer(BaseTransfer):
                 metadata=sanitized_metadata,
                 overwrite=True,
             )
-            self.notifier.object_created(key=key, size=os.path.getsize(filepath), metadata=sanitized_metadata)
+            self.notifier.object_created(key=key, size=size, metadata=sanitized_metadata)
+            if progress_fn:
+                progress_fn(size, size)
 
-    def store_file_object(self, key, fd, *, cache_control=None, metadata=None, mimetype=None, upload_progress_fn=None):
+    def store_file_object(
+        self,
+        key,
+        fd,
+        *,
+        cache_control=None,
+        metadata=None,
+        mimetype=None,
+        upload_progress_fn: IncrementalProgressCallbackType = None,
+    ):
         if cache_control is not None:
             raise NotImplementedError("AzureTransfer: cache_control support not implemented")
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
