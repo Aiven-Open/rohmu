@@ -25,7 +25,7 @@ class Snapshotter:
     """Snapshotter keeps track of files on disk, and their hashes.
 
     The hash on disk MAY change, which may require subsequent
-    incremential snapshot and-or ignoring the files which have changed.
+    incremental snapshot and-or ignoring the files which have changed.
 
     The output to outside is just root object's hash, as well as list
     of other hashes which correspond to files referred to within the

@@ -545,7 +545,7 @@ class MediaStreamUpload(MediaUpload):
     # second parameter is length but baseclass incorrectly names it end
     def getbytes(self, begin, length):  # pylint: disable=arguments-differ
         if begin < (self._position or 0):
-            msg = "Requested position {} for {!r} preceeds already fulfilled position {}".format(
+            msg = "Requested position {} for {!r} precedes already fulfilled position {}".format(
                 begin, self._name, self._position
             )
             raise IndexError(msg)
