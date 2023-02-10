@@ -119,8 +119,8 @@ def test_background_http_request() -> None:
     _join_queue_with_timeout(queue, timeout=5)
 
     assert len(session.post_called) == 1, "data must be POSTed"
-    assert session.post_called[0][0][0] == url, "URL didnt match expected value"
-    assert session.post_called[0][0][1] == data, "data didnt match expected value"
+    assert session.post_called[0][0][0] == url, "URL didn't match expected value"
+    assert session.post_called[0][0][1] == data, "data didn't match expected value"
 
     assert thread.is_alive()
     stop_event.set()
