@@ -16,8 +16,6 @@ from .base import (
     KEY_TYPE_PREFIX,
     ProgressProportionCallbackType,
 )
-from mypy_boto3_s3.client import S3Client
-from mypy_boto3_s3.type_defs import CompletedPartTypeDef
 from typing import Dict, Optional
 
 import boto3
@@ -62,8 +60,6 @@ READ_BLOCK_SIZE = 1024 * 1024 * 1
 
 
 class S3Transfer(BaseTransfer):
-    s3_client: S3Client
-
     def __init__(
         self,
         region,
@@ -361,7 +357,7 @@ class S3Transfer(BaseTransfer):
             chunks = math.ceil(size / self.multipart_chunk_size)
         self.log.debug("Starting to upload multipart file: %r, size: %s, chunks: %s", path, size, chunks)
 
-        parts: list[CompletedPartTypeDef] = []
+        parts = []
         part_number = 1
 
         args = {
@@ -439,7 +435,7 @@ class S3Transfer(BaseTransfer):
             self.s3_client.complete_multipart_upload(
                 Bucket=self.bucket_name,
                 Key=path,
-                MultipartUpload={"Parts": parts},
+                MultipartUpload={"Parts": parts},  # type: ignore
                 UploadId=mp_id,
             )
         except botocore.exceptions.ClientError as ex:
