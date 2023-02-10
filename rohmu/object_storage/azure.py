@@ -345,7 +345,7 @@ class AzureTransfer(BaseTransfer):
             blob_client = self.conn.get_blob_client(self.container_name, path)
             blob_client.upload_blob(
                 data,
-                blob_type=BlobType.BlockBlob,
+                blob_type=BlobType.BlockBlob,  # type: ignore
                 content_settings=content_settings,
                 metadata=sanitized_metadata,
                 overwrite=True,
@@ -390,7 +390,7 @@ class AzureTransfer(BaseTransfer):
             blob_client = self.conn.get_blob_client(self.container_name, path)
             blob_client.upload_blob(
                 fd,
-                blob_type=BlobType.BlockBlob,
+                blob_type=BlobType.BlockBlob,  # type: ignore
                 content_settings=content_settings,
                 metadata=sanitized_metadata,
                 raw_response_hook=progress_callback,
