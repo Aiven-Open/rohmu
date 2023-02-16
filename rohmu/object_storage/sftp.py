@@ -7,6 +7,7 @@ See LICENSE for details
 """
 
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
+from ..models import StorageModel
 from ..notifier.interface import Notifier
 from .base import (
     BaseTransfer,
@@ -28,7 +29,18 @@ import paramiko
 import warnings
 
 
-class SFTPTransfer(BaseTransfer):
+class Config(StorageModel):
+    server: str
+    port: int
+    username: str
+    password: Optional[str] = None
+    private_key: Optional[str] = None
+    prefix: Optional[str] = None
+
+
+class SFTPTransfer(BaseTransfer[Config]):
+    config_model = Config
+
     def __init__(
         self,
         server,

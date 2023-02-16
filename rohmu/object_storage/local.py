@@ -6,6 +6,7 @@ Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
 from ..errors import FileNotFoundFromStorageError, LocalFileIsRemoteFileError
+from ..models import StorageModel
 from ..notifier.interface import Notifier
 from .base import (
     BaseTransfer,
@@ -28,7 +29,14 @@ import tempfile
 CHUNK_SIZE = 1024 * 1024
 
 
-class LocalTransfer(BaseTransfer):
+class Config(StorageModel):
+    directory: str
+    prefix: Optional[str] = None
+
+
+class LocalTransfer(BaseTransfer[Config]):
+    config_model = Config
+
     def __init__(
         self,
         directory,
