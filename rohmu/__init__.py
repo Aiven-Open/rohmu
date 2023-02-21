@@ -6,6 +6,7 @@ Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
 from .errors import InvalidConfigurationError
+from .models import StorageModel
 from .notifier.interface import Notifier
 from .object_storage.base import BaseTransfer
 from typing import Any, Dict, Mapping, Type
@@ -62,7 +63,7 @@ def get_notifier(notifier_config: dict) -> Notifier:
     return notificer_class(**notifier_config)
 
 
-def get_transfer(storage_config: Config) -> BaseTransfer:
+def get_transfer_model(storage_config: Config) -> Type[StorageModel]:
     storage_class = get_class_for_transfer(storage_config)
     storage_config = dict(storage_config)
     storage_config.pop(STORAGE_TYPE)
@@ -71,4 +72,11 @@ def get_transfer(storage_config: Config) -> BaseTransfer:
     if notifier_config is not None:
         notifier = get_notifier(notifier_config)
 
-    return storage_class(**storage_config, notifier=notifier)
+    model = storage_class.config_model(**storage_config, notifier=notifier)
+    return model
+
+
+def get_transfer(storage_config: Config) -> BaseTransfer:
+    storage_class = get_class_for_transfer(storage_config)
+    model = get_transfer_model(storage_config)
+    return storage_class.from_model(model)

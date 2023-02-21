@@ -9,6 +9,7 @@ See LICENSE for details
 
 from ..dates import parse_timestamp
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError
+from ..models import ProxyInfo, StorageModel
 from ..notifier.interface import Notifier
 from .base import (
     BaseTransfer,
@@ -107,7 +108,18 @@ def base64_to_hex(b64val):
     return hexval.decode("ascii")
 
 
-class GoogleTransfer(BaseTransfer):
+class Config(StorageModel):
+    project_id: str
+    bucket_name: str
+    credential_file: Optional[str] = None
+    credentials: Optional[dict] = None
+    proxy_info: Optional[ProxyInfo] = None
+    prefix: Optional[str] = None
+
+
+class GoogleTransfer(BaseTransfer[Config]):
+    config_model = Config
+
     def __init__(
         self,
         project_id,
