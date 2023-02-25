@@ -229,17 +229,21 @@ class S3Transfer(BaseTransfer[Config]):
             response = self.s3_client.list_objects_v2(**args)
 
             for item in response.get("Contents", []):
-                if with_metadata:
+                try:
                     metadata = {k.lower(): v for k, v in self._metadata_for_key(item["Key"]).items()}
-                else:
-                    metadata = None
+                except FileNotFoundFromStorageError:
+                    # This can happen when there is an issue with the cloud provider
+                    # where it lists the object, but it doesn't exist.  It happened
+                    # in OVH, for example
+                    self.log.warning(f"Object {key} does not exit.  Let's ignore for now")
+                    continue
                 name = self.format_key_from_backend(item["Key"])
                 yield IterKeyItem(
                     type=KEY_TYPE_OBJECT,
                     value={
                         "last_modified": item["LastModified"],
                         "md5": item["ETag"].strip('"'),
-                        "metadata": metadata,
+                        "metadata": metadata if with_metadata else None,
                         "name": name,
                         "size": item["Size"],
                     },
