@@ -16,6 +16,7 @@ Requires:       python3-pydantic
 Requires:       python3-requests
 Requires:       python3-snappy
 Requires:       python3-zstandard
+BuildRequires:  python3-boto3
 BuildRequires:  python3-devel
 BuildRequires:  python3-flake8
 BuildRequires:  python3-pylint
