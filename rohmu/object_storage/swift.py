@@ -5,9 +5,9 @@ Copyright (c) 2016 Ohmu Ltd
 Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
+from ..common.models import StorageModel
 from ..dates import parse_timestamp
 from ..errors import FileNotFoundFromStorageError
-from ..models import StorageModel
 from ..notifier.interface import Notifier
 from .base import (
     BaseTransfer,
