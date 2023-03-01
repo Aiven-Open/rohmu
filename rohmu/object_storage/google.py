@@ -7,9 +7,9 @@ See LICENSE for details
 """
 # pylint: disable=import-error, no-name-in-module
 
+from ..common.models import ProxyInfo, StorageModel
 from ..dates import parse_timestamp
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError
-from ..models import ProxyInfo, StorageModel
 from ..notifier.interface import Notifier
 from .base import (
     BaseTransfer,

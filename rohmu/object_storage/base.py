@@ -5,8 +5,8 @@ Copyright (c) 2016 Ohmu Ltd
 Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
+from ..common.models import StorageModel
 from ..errors import StorageError
-from ..models import StorageModel
 from ..notifier.interface import Notifier
 from ..notifier.null import NullNotifier
 from collections import namedtuple

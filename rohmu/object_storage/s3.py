@@ -5,8 +5,8 @@ Copyright (c) 2016 Ohmu Ltd
 Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
+from ..common.models import ProxyInfo, StorageModel
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
-from ..models import ProxyInfo, StorageModel
 from ..notifier.interface import Notifier
 from .base import (
     BaseTransfer,
