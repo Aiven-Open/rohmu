@@ -1,6 +1,7 @@
 # Copyright (c) 2023 Aiven, Helsinki, Finland. https://aiven.io/
 
 
+from rohmu.common.statsd import StatsdConfig
 from rohmu.notifier.interface import Notifier
 from typing import Optional
 
@@ -45,6 +46,7 @@ class ProxyInfo(RohmuModel):
 
 class StorageModel(pydantic.BaseModel):
     notifier: Optional[Notifier] = None
+    statsd_info: Optional[StatsdConfig] = None
 
     class Config:
         use_enum_values = True

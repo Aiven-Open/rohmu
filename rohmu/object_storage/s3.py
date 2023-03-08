@@ -6,6 +6,7 @@ Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
 from ..common.models import ProxyInfo, StorageModel
+from ..common.statsd import StatsdConfig
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
 from ..notifier.interface import Notifier
 from .base import (
@@ -99,8 +100,9 @@ class S3Transfer(BaseTransfer[Config]):
         read_timeout=None,
         notifier: Optional[Notifier] = None,
         aws_session_token: Optional[str] = None,
+        statsd_info: Optional[StatsdConfig] = None,
     ) -> None:
-        super().__init__(prefix=prefix, notifier=notifier)
+        super().__init__(prefix=prefix, notifier=notifier, statsd_info=statsd_info)
         session = boto3.Session()
         self.bucket_name = bucket_name
         self.location = ""

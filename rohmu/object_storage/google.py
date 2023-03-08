@@ -8,6 +8,7 @@ See LICENSE for details
 # pylint: disable=import-error, no-name-in-module
 
 from ..common.models import ProxyInfo, StorageModel
+from ..common.statsd import StatsdConfig
 from ..dates import parse_timestamp
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError
 from ..notifier.interface import Notifier
@@ -129,8 +130,9 @@ class GoogleTransfer(BaseTransfer[Config]):
         prefix=None,
         proxy_info=None,
         notifier: Optional[Notifier] = None,
+        statsd_info: Optional[StatsdConfig] = None,
     ) -> None:
-        super().__init__(prefix=prefix, notifier=notifier)
+        super().__init__(prefix=prefix, notifier=notifier, statsd_info=statsd_info)
         self.project_id = project_id
         self.proxy_info = proxy_info
         self.google_creds = get_credentials(credential_file=credential_file, credentials=credentials)

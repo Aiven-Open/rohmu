@@ -16,29 +16,34 @@ This is combination of:
 """
 from contextlib import asynccontextmanager, contextmanager
 from enum import Enum
-from rohmu.common.models import RohmuModel
 from typing import Dict, Optional, Union
 
+import pydantic
 import socket
 import time
 
 
-class MessageFormat(Enum):
+class MessageFormat(str, Enum):
     datadog = "datadog"
     telegraf = "telegraf"
 
     def __str__(self):
-        return self.value
+        return str(self.value)
 
 
 Tags = Dict[str, Union[int, str, None]]
 
 
-class StatsdConfig(RohmuModel):
+class StatsdConfig(pydantic.BaseModel):
     host: str = "127.0.0.1"
     port: int = 8125
     message_format: MessageFormat = MessageFormat.telegraf
     tags: Tags = {}
+
+    class Config:
+        use_enum_values = True
+        extra = "forbid"
+        validate_all = True
 
 
 class StatsClient:
@@ -48,6 +53,8 @@ class StatsClient:
         if not config:
             self._enabled = False
             return
+        if not isinstance(config, StatsdConfig):
+            config = StatsdConfig.parse_obj(config)
         self._dest_addr = (config.host, config.port)
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._tags = config.tags

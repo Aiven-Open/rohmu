@@ -6,6 +6,7 @@ Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
 from ..common.models import StorageModel
+from ..common.statsd import StatsClient, StatsdConfig
 from ..errors import StorageError
 from ..notifier.interface import Notifier
 from ..notifier.null import NullNotifier
@@ -41,7 +42,7 @@ StorageModelT = TypeVar("StorageModelT", bound=StorageModel)
 class BaseTransfer(Generic[StorageModelT]):
     config_model: Type[StorageModelT]
 
-    def __init__(self, prefix, notifier: Optional[Notifier] = None) -> None:
+    def __init__(self, prefix, notifier: Optional[Notifier] = None, statsd_info: Optional[StatsdConfig] = None) -> None:
         self.log = logging.getLogger(self.__class__.__name__)
         if not prefix:
             prefix = ""
@@ -49,6 +50,7 @@ class BaseTransfer(Generic[StorageModelT]):
             prefix += "/"
         self.prefix = prefix
         self.notifier = notifier or NullNotifier()
+        self.stats = StatsClient(statsd_info)
 
     @staticmethod
     def _incremental_to_proportional_progress(

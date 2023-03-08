@@ -6,6 +6,7 @@ Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
 from ..common.models import StorageModel
+from ..common.statsd import StatsdConfig
 from ..errors import FileNotFoundFromStorageError, LocalFileIsRemoteFileError
 from ..notifier.interface import Notifier
 from .base import (
@@ -42,9 +43,10 @@ class LocalTransfer(BaseTransfer[Config]):
         directory,
         prefix=None,
         notifier: Optional[Notifier] = None,
+        statsd_info: Optional[StatsdConfig] = None,
     ) -> None:
         prefix = os.path.join(directory, (prefix or "").strip("/"))
-        super().__init__(prefix=prefix, notifier=notifier)
+        super().__init__(prefix=prefix, notifier=notifier, statsd_info=statsd_info)
         self.log.debug("LocalTransfer initialized")
 
     def copy_file(self, *, source_key, destination_key, metadata=None, **_kwargs):

@@ -6,6 +6,7 @@ Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
 from ..common.models import StorageModel
+from ..common.statsd import StatsdConfig
 from ..dates import parse_timestamp
 from ..errors import FileNotFoundFromStorageError
 from ..notifier.interface import Notifier
@@ -97,9 +98,10 @@ class SwiftTransfer(BaseTransfer[Config]):
         service_type=None,
         endpoint_type=None,
         notifier: Optional[Notifier] = None,
+        statsd_info: Optional[StatsdConfig] = None,
     ) -> None:
         prefix = prefix.lstrip("/") if prefix else ""
-        super().__init__(prefix=prefix, notifier=notifier)
+        super().__init__(prefix=prefix, notifier=notifier, statsd_info=statsd_info)
         self.container_name = container_name
 
         if auth_version == "3.0":
