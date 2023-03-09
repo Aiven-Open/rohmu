@@ -84,7 +84,7 @@ class BaseTransfer(Generic[StorageModelT]):
 
     @classmethod
     def from_model(cls, model: StorageModelT):
-        return cls(**model.dict())
+        return cls(**model.dict(by_alias=True))
 
     def copy_file(self, *, source_key, destination_key, metadata=None, **_kwargs):
         """Performs remote copy from source key name to destination key name. Key must identify a file, trees
