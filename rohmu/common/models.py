@@ -8,12 +8,9 @@ import enum
 import pydantic
 
 
-class ProxyType(enum.Enum):
+class ProxyType(str, enum.Enum):
     socks5 = "socks5"
     http = "http"
-
-    def __str__(self) -> str:
-        return str(self.value)
 
 
 class RohmuModel(pydantic.BaseModel):

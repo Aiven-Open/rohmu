@@ -65,7 +65,7 @@ def _create_local_server() -> Iterator[Tuple[HTTPServer, List[Any]]]:
 
     class _TestServerRequestHandler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:
-            content_length = int(self.headers.get("Content-Length"))
+            content_length = int(self.headers.get("Content-Length") or 0)
             data = self.rfile.read(content_length)
             post_called.append((self.command, self.path, data))
             self.send_response(200)

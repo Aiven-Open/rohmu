@@ -144,7 +144,7 @@ class SnapshotFile(DeltaModel):
     stored_file_size: int
     mtime_ns: int
     hexdigest: str = ""
-    content_b64: Optional[str]
+    content_b64: Optional[str] = None
     # Indicator if a file should be part of a chunk/bundle - useful for the files which are small to be treated as
     # separate delta hash files, but not small enough to be embedded into a manifest file, so better to group them
     # together when e.g. uploading to the object storage
