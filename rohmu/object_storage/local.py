@@ -5,7 +5,6 @@ Copyright (c) 2016 Ohmu Ltd
 Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
-from ..common.models import StorageModel
 from ..errors import FileNotFoundFromStorageError, LocalFileIsRemoteFileError
 from ..notifier.interface import Notifier
 from .base import (
@@ -29,14 +28,7 @@ import tempfile
 CHUNK_SIZE = 1024 * 1024
 
 
-class Config(StorageModel):
-    directory: str
-    prefix: Optional[str] = None
-
-
-class LocalTransfer(BaseTransfer[Config]):
-    config_model = Config
-
+class LocalTransfer(BaseTransfer):
     def __init__(
         self,
         directory,

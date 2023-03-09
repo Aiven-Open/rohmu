@@ -5,7 +5,6 @@ Copyright (c) 2016 Ohmu Ltd
 Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
-from ..common.models import ProxyInfo, StorageModel
 from ..notifier.interface import Notifier
 from .base import IncrementalProgressCallbackType, ProgressProportionCallbackType
 
@@ -53,19 +52,7 @@ MAX_BLOCK_SIZE = calculate_max_block_size()
 logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
 
 
-class Config(StorageModel):
-    bucket_name: str
-    account_name: str
-    account_key: Optional[str] = None
-    sas_token: Optional[str] = None
-    prefix: Optional[str] = None
-    azure_cloud: Optional[str] = None
-    proxy_info: Optional[ProxyInfo] = None
-
-
-class AzureTransfer(BaseTransfer[Config]):
-    config_model = Config
-
+class AzureTransfer(BaseTransfer):
     def __init__(
         self,
         bucket_name,

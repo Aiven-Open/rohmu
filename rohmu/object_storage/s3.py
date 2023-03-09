@@ -5,7 +5,6 @@ Copyright (c) 2016 Ohmu Ltd
 Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
-from ..common.models import ProxyInfo, StorageModel
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
 from ..notifier.interface import Notifier
 from .base import (
@@ -60,27 +59,7 @@ MULTIPART_CHUNK_SIZE = calculate_chunk_size()
 READ_BLOCK_SIZE = 1024 * 1024 * 1
 
 
-class Config(StorageModel):
-    region: str
-    bucket_name: str
-    aws_access_key_id: Optional[str] = None
-    aws_secret_access_key: Optional[str] = None
-    prefix: Optional[str] = None
-    host: Optional[str] = None
-    port: Optional[str] = None
-    is_secure: bool = False
-    is_verify_tls: bool = False
-    segment_size: int = MULTIPART_CHUNK_SIZE
-    encrypted: bool = False
-    proxy_info: Optional[ProxyInfo] = None
-    connect_timeout: Optional[str] = None
-    read_timeout: Optional[str] = None
-    aws_session_token: Optional[str] = None
-
-
-class S3Transfer(BaseTransfer[Config]):
-    config_model = Config
-
+class S3Transfer(BaseTransfer):
     def __init__(
         self,
         region,

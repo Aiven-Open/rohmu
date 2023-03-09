@@ -6,7 +6,6 @@ Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
 
-from ..common.models import StorageModel
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
 from ..notifier.interface import Notifier
 from .base import (
@@ -29,18 +28,7 @@ import paramiko
 import warnings
 
 
-class Config(StorageModel):
-    server: str
-    port: int
-    username: str
-    password: Optional[str] = None
-    private_key: Optional[str] = None
-    prefix: Optional[str] = None
-
-
-class SFTPTransfer(BaseTransfer[Config]):
-    config_model = Config
-
+class SFTPTransfer(BaseTransfer):
     def __init__(
         self,
         server,

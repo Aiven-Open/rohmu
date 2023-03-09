@@ -5,7 +5,6 @@ Copyright (c) 2016 Ohmu Ltd
 Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
-from ..common.models import StorageModel
 from ..dates import parse_timestamp
 from ..errors import FileNotFoundFromStorageError
 from ..notifier.interface import Notifier
@@ -50,30 +49,7 @@ client.logger.exception = swift_exception_logger
 logging.getLogger("swiftclient").setLevel(logging.WARNING)
 
 
-class Config(StorageModel):
-    user: str
-    key: str
-    container_name: str
-    auth_url: str
-    auth_version: str = "2.0"
-    tenant_name: Optional[str] = None
-    segment_size: int = SEGMENT_SIZE
-    region_name: Optional[str] = None
-    user_id: Optional[str] = None
-    user_domain_id: Optional[str] = None
-    user_domain_name: Optional[str] = None
-    tenant_id: Optional[str] = None
-    project_id: Optional[str] = None
-    project_name: Optional[str] = None
-    project_domain_id: Optional[str] = None
-    project_domain_name: Optional[str] = None
-    service_type: Optional[str] = None
-    endpoint_type: Optional[str] = None
-
-
-class SwiftTransfer(BaseTransfer[Config]):
-    config_model = Config
-
+class SwiftTransfer(BaseTransfer):
     def __init__(
         self,
         *,

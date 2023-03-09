@@ -5,12 +5,11 @@ Copyright (c) 2016 Ohmu Ltd
 Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
-from ..common.models import StorageModel
 from ..errors import StorageError
 from ..notifier.interface import Notifier
 from ..notifier.null import NullNotifier
 from collections import namedtuple
-from typing import Callable, Generic, Optional, Type, TypeVar
+from typing import Callable, Optional
 
 import logging
 import platform
@@ -27,20 +26,7 @@ ProgressProportionCallbackType = Optional[Callable[[int, int], None]]
 IncrementalProgressCallbackType = Optional[Callable[[int], None]]
 
 
-class Config(StorageModel):
-    prefix: str
-    notifier: Optional[Notifier] = None
-
-    class Config:
-        arbitrary_types_allowed = True
-
-
-StorageModelT = TypeVar("StorageModelT", bound=StorageModel)
-
-
-class BaseTransfer(Generic[StorageModelT]):
-    config_model: Type[StorageModelT]
-
+class BaseTransfer:
     def __init__(self, prefix, notifier: Optional[Notifier] = None) -> None:
         self.log = logging.getLogger(self.__class__.__name__)
         if not prefix:
@@ -81,10 +67,6 @@ class BaseTransfer(Generic[StorageModelT]):
                 last_progress = progress
 
         return wrapper
-
-    @classmethod
-    def from_model(cls, model: StorageModelT):
-        return cls(**model.dict())
 
     def copy_file(self, *, source_key, destination_key, metadata=None, **_kwargs):
         """Performs remote copy from source key name to destination key name. Key must identify a file, trees
