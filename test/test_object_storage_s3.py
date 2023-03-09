@@ -1,6 +1,7 @@
 """Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
 from datetime import datetime
 from io import BytesIO
+from rohmu.common.models import StorageOperation
 from rohmu.object_storage.s3 import S3Transfer
 from tempfile import NamedTemporaryFile
 from unittest.mock import MagicMock, patch
@@ -54,3 +55,18 @@ def test_store_file_object() -> None:
         notifier.object_created.assert_called_once_with(
             key="test_key2", size=len(test_data), metadata={"Content-Length": "9", "some-date": "2022-11-15 18:30:58.486644"}
         )
+
+
+@patch("rohmu.object_storage.base.StatsClient.operation")
+def test_operations_reporting(mock_operation) -> None:
+    notifier = MagicMock()
+    with patch("botocore.session.get_session") as get_session:
+        s3_client = MagicMock()
+        create_client = MagicMock(return_value=s3_client)
+        get_session.return_value = MagicMock(create_client=create_client)
+        S3Transfer(
+            region="test-region",
+            bucket_name="test-bucket",
+            notifier=notifier,
+        )
+        mock_operation.assert_called_once_with(StorageOperation.head_request)  # pylint: disable=no-member
