@@ -6,6 +6,7 @@ Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
 from ..common.models import ProxyInfo, StorageModel
+from ..common.statsd import StatsdConfig
 from ..notifier.interface import Notifier
 from .base import IncrementalProgressCallbackType, ProgressProportionCallbackType
 
@@ -76,9 +77,10 @@ class AzureTransfer(BaseTransfer[Config]):
         azure_cloud=None,
         proxy_info=None,
         notifier: Optional[Notifier] = None,
+        statsd_info: Optional[StatsdConfig] = None,
     ) -> None:
         prefix = "{}".format(prefix.lstrip("/") if prefix else "")
-        super().__init__(prefix=prefix, notifier=notifier)
+        super().__init__(prefix=prefix, notifier=notifier, statsd_info=statsd_info)
         if not account_key and not sas_token:
             raise InvalidConfigurationError("One of account_key or sas_token must be specified to authenticate")
 

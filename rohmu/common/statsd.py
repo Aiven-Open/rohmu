@@ -16,42 +16,52 @@ This is combination of:
 """
 from contextlib import asynccontextmanager, contextmanager
 from enum import Enum
-from rohmu.common.models import RohmuModel
 from typing import Dict, Optional, Union
 
+import pydantic
 import socket
 import time
 
 
-class MessageFormat(Enum):
+class MessageFormat(str, Enum):
     datadog = "datadog"
     telegraf = "telegraf"
 
     def __str__(self):
-        return self.value
+        return str(self.value)
 
 
 Tags = Dict[str, Union[int, str, None]]
 
 
-class StatsdConfig(RohmuModel):
+class StatsdConfig(pydantic.BaseModel):
     host: str = "127.0.0.1"
     port: int = 8125
     message_format: MessageFormat = MessageFormat.telegraf
     tags: Tags = {}
+    operation_map: Dict[str, str] = {}
+
+    class Config:
+        use_enum_values = True
+        extra = "forbid"
+        validate_all = True
 
 
 class StatsClient:
     _enabled = True
 
     def __init__(self, config: Optional[StatsdConfig]):
+        self._operation_map = {}
         if not config:
             self._enabled = False
             return
+        if not isinstance(config, StatsdConfig):
+            config = StatsdConfig.parse_obj(config)
         self._dest_addr = (config.host, config.port)
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._tags = config.tags
         self._message_format = config.message_format
+        self._operation_map = config.operation_map
 
     @asynccontextmanager
     async def async_timing_manager(self, metric: str, tags: Optional[Tags] = None):
@@ -87,6 +97,13 @@ class StatsClient:
         }
         all_tags.update(tags or {})
         self.increase("exception", tags=all_tags)
+
+    def operation(self, operation, size: Union[None, int, float] = None):
+        tags: Tags = {"operation": self._operation_map.get(str(operation), str(operation))}
+        if size is None:
+            self.increase("rohmu_operation", tags=tags)
+        else:
+            self.gauge(metric="rohmu_operation", value=size, tags=tags)
 
     def _send(self, metric: str, metric_type: bytes, value: Union[int, float], tags: Optional[Tags]) -> None:
         if not self._enabled:

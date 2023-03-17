@@ -5,7 +5,8 @@ Copyright (c) 2016 Ohmu Ltd
 Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
-from ..common.models import ProxyInfo, StorageModel
+from ..common.models import ProxyInfo, StorageModel, StorageOperation
+from ..common.statsd import StatsdConfig
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
 from ..notifier.interface import Notifier
 from .base import (
@@ -99,8 +100,9 @@ class S3Transfer(BaseTransfer[Config]):
         read_timeout=None,
         notifier: Optional[Notifier] = None,
         aws_session_token: Optional[str] = None,
+        statsd_info: Optional[StatsdConfig] = None,
     ) -> None:
-        super().__init__(prefix=prefix, notifier=notifier)
+        super().__init__(prefix=prefix, notifier=notifier, statsd_info=statsd_info)
         session = boto3.Session()
         self.bucket_name = bucket_name
         self.location = ""
@@ -162,6 +164,7 @@ class S3Transfer(BaseTransfer[Config]):
     def copy_file(self, *, source_key, destination_key, metadata=None, **_kwargs):
         source_path = self.bucket_name + "/" + self.format_key_for_backend(source_key, remove_slash_prefix=True)
         destination_path = self.format_key_for_backend(destination_key, remove_slash_prefix=True)
+        self.stats.operation(StorageOperation.copy_file)
         try:
             self.s3_client.copy_object(
                 Bucket=self.bucket_name,
@@ -183,6 +186,7 @@ class S3Transfer(BaseTransfer[Config]):
         return self._metadata_for_key(path)
 
     def _metadata_for_key(self, key):
+        self.stats.operation(StorageOperation.metadata_for_key)
         try:
             response = self.s3_client.head_object(Bucket=self.bucket_name, Key=key)
         except botocore.exceptions.ClientError as ex:
@@ -198,15 +202,18 @@ class S3Transfer(BaseTransfer[Config]):
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
         self.log.debug("Deleting key: %r", path)
         self._metadata_for_key(path)  # check that key exists
+        self.stats.operation(StorageOperation.delete_key)
         self.s3_client.delete_object(Bucket=self.bucket_name, Key=path)
         self.notifier.object_deleted(key=key)
 
     def delete_tree(self, key):
         path = self.format_key_for_backend(key, remove_slash_prefix=True, trailing_slash=True)
         self.log.debug("Deleting tree: %r", path)
+        self.stats.operation(StorageOperation.iter_key)
         objects_to_delete = self.s3_client.list_objects(Bucket=self.bucket_name, Prefix=path)
         delete_keys = [{"Key": key} for key in [obj["Key"] for obj in objects_to_delete.get("Contents", [])]]
         if delete_keys:
+            self.stats.operation(StorageOperation.delete_key)
             self.s3_client.delete_objects(Bucket=self.bucket_name, Delete={"Objects": delete_keys})
             # Note: `tree_deleted` is not used here because the operation on S3 is not atomic, i.e.
             # it is possible for a new object to be created after `list_objects` above
@@ -226,6 +233,7 @@ class S3Transfer(BaseTransfer[Config]):
                 args["Delimiter"] = "/"
             if continuation_token:
                 args["ContinuationToken"] = continuation_token
+            self.stats.operation(StorageOperation.iter_key)
             response = self.s3_client.list_objects_v2(**args)
 
             for item in response.get("Contents", []):
@@ -271,7 +279,9 @@ class S3Transfer(BaseTransfer[Config]):
                 raise StorageError("Fetching the remote object {} failed".format(path)) from ex
         return response["Body"], response["ContentLength"], response["Metadata"]
 
-    def _read_object_to_fileobj(self, fileobj, streaming_body, body_length, cb: ProgressProportionCallbackType = None):
+    def _read_object_to_fileobj(
+        self, fileobj, streaming_body, body_length, operation: StorageOperation, cb: ProgressProportionCallbackType = None
+    ):
         data_read = 0
         while data_read < body_length:
             read_amount = body_length - data_read
@@ -282,27 +292,34 @@ class S3Transfer(BaseTransfer[Config]):
             data_read += len(data)
             if cb:
                 cb(data_read, body_length)
+            self.stats.operation(operation=operation, size=len(data))
         if cb:
             cb(data_read, body_length)
 
     def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         with open(filepath_to_store_to, "wb") as fh:
             stream, length, metadata = self._get_object_stream(key)
-            self._read_object_to_fileobj(fh, stream, length, cb=progress_callback)
+            self._read_object_to_fileobj(
+                fh, stream, length, cb=progress_callback, operation=StorageOperation.get_contents_to_file
+            )
         return metadata
 
     def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         stream, length, metadata = self._get_object_stream(key)
-        self._read_object_to_fileobj(fileobj_to_store_to, stream, length, cb=progress_callback)
+        self._read_object_to_fileobj(
+            fileobj_to_store_to, stream, length, cb=progress_callback, operation=StorageOperation.get_contents_to_fileobj
+        )
         return metadata
 
     def get_contents_to_string(self, key):
         stream, _, metadata = self._get_object_stream(key)
         data = stream.read()
+        self.stats.operation(StorageOperation.get_contents_to_string, size=len(data))
         return data, metadata
 
     def get_file_size(self, key):
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
+        self.stats.operation(StorageOperation.get_file_size)
         try:
             response = self.s3_client.head_object(Bucket=self.bucket_name, Key=path)
             return int(response["ContentLength"])
@@ -329,6 +346,7 @@ class S3Transfer(BaseTransfer[Config]):
             args["CacheControl"] = cache_control
         if mimetype is not None:
             args["ContentType"] = mimetype
+        self.stats.operation(StorageOperation.store_file_from_memory, size=len(data))
         self.s3_client.put_object(**args)
         self.notifier.object_created(key=key, size=len(data), metadata=sanitized_metadata)
 
@@ -394,6 +412,7 @@ class S3Transfer(BaseTransfer[Config]):
             args["CacheControl"] = cache_control
         if mimetype is not None:
             args["ContentType"] = mimetype
+        self.stats.operation(StorageOperation.create_multipart_upload)
         try:
             cmu_response = self.s3_client.create_multipart_upload(**args)
         except botocore.exceptions.ClientError as ex:
@@ -410,6 +429,7 @@ class S3Transfer(BaseTransfer[Config]):
             start_of_part_upload = time.monotonic()
             while True:
                 attempts -= 1
+                self.stats.operation(StorageOperation.store_multipart_chunk_from_memory, size=len(data))
                 try:
                     cup_response = self.s3_client.upload_part(
                         Body=data,
@@ -421,6 +441,7 @@ class S3Transfer(BaseTransfer[Config]):
                 except botocore.exceptions.ClientError as ex:
                     self.log.exception("Uploading part %d for %s failed, attempts left: %d", part_number, path, attempts)
                     if attempts <= 0:
+                        self.stats.operation(StorageOperation.multipart_complete)
                         try:
                             self.s3_client.abort_multipart_upload(
                                 Bucket=self.bucket_name,
@@ -452,6 +473,7 @@ class S3Transfer(BaseTransfer[Config]):
                         progress_fn(bytes_sent, size)
                     break
 
+        self.stats.operation(StorageOperation.multipart_complete)
         try:
             self.s3_client.complete_multipart_upload(
                 Bucket=self.bucket_name,
@@ -498,6 +520,7 @@ class S3Transfer(BaseTransfer[Config]):
 
     def check_or_create_bucket(self):
         create_bucket = False
+        self.stats.operation(StorageOperation.head_request)
         try:
             self.s3_client.head_bucket(Bucket=self.bucket_name)
         except botocore.exceptions.ClientError as ex:
@@ -521,6 +544,7 @@ class S3Transfer(BaseTransfer[Config]):
                     "LocationConstraint": self.location,
                 }
 
+            self.stats.operation(StorageOperation.create_bucket)
             self.s3_client.create_bucket(**args)
 
     @classmethod

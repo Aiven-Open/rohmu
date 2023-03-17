@@ -7,6 +7,7 @@ See LICENSE for details
 """
 
 from ..common.models import StorageModel
+from ..common.statsd import StatsdConfig
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
 from ..notifier.interface import Notifier
 from .base import (
@@ -50,8 +51,9 @@ class SFTPTransfer(BaseTransfer[Config]):
         private_key=None,
         prefix=None,
         notifier: Optional[Notifier] = None,
+        statsd_info: Optional[StatsdConfig] = None,
     ) -> None:
-        super().__init__(prefix=prefix, notifier=notifier)
+        super().__init__(prefix=prefix, notifier=notifier, statsd_info=statsd_info)
         self.server = server
         self.port = port
         self.username = username
