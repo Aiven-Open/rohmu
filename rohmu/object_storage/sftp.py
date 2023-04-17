@@ -8,7 +8,7 @@ See LICENSE for details
 
 from ..common.models import StorageModel
 from ..common.statsd import StatsdConfig
-from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
+from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError
 from ..notifier.interface import Notifier
 from .base import (
     BaseTransfer,
@@ -20,7 +20,7 @@ from .base import (
 )
 from io import BytesIO, StringIO
 from stat import S_ISDIR
-from typing import cast, Optional
+from typing import cast, Optional, Union
 
 import datetime
 import json
@@ -80,10 +80,6 @@ class SFTPTransfer(BaseTransfer[Config]):
 
         self.log.debug("SFTPTransfer initialized")
 
-    def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
-        with open(filepath_to_store_to, "wb") as fh:
-            return self.get_contents_to_fileobj(key, fh, progress_callback=progress_callback)
-
     def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         self._get_contents_to_fileobj(key, fileobj_to_store_to, progress_callback)
         return self.get_metadata_for_key(key)
@@ -97,11 +93,6 @@ class SFTPTransfer(BaseTransfer[Config]):
             return self.client.getfo(remotepath=target_path, fl=fileobj_to_store_to, callback=progress_callback)
         except FileNotFoundError as ex:
             raise FileNotFoundFromStorageError(key) from ex
-
-    def get_contents_to_string(self, key):
-        bio = BytesIO()
-        metadata = self.get_contents_to_fileobj(key, bio)
-        return bio.getvalue(), metadata
 
     def get_file_size(self, key):
         target_path = self.format_key_for_backend(key.strip("/"))
@@ -202,47 +193,23 @@ class SFTPTransfer(BaseTransfer[Config]):
         except FileNotFoundError as ex:
             raise FileNotFoundFromStorageError(key) from ex
 
-    # pylint: disable=unused-argument
-    def store_file_from_memory(self, key, memstring, metadata=None, cache_control=None, mimetype=None):
-        data = bytes(memstring)
-        bio = BytesIO(data)
-        try:
-            self._put_object(key=key, fd=bio, metadata=metadata)
-            self.notifier.object_created(key=key, size=len(data), metadata=self.sanitize_metadata(metadata))
-        except OSError as ex:
-            raise StorageError(key) from ex
-
-    def store_file_from_disk(
-        self,
-        key,
-        filepath,
-        metadata=None,
-        multipart=None,
-        cache_control=None,
-        mimetype=None,
-        progress_fn: ProgressProportionCallbackType = None,
-    ):
-        with open(filepath, "rb") as fh:
-            self._put_object(key=key, fd=fh, metadata=metadata, upload_progress_fn=progress_fn)
-            size = os.fstat(fh.fileno()).st_size
-            self.notifier.object_created(key=key, size=size, metadata=self.sanitize_metadata(metadata))
-        if progress_fn:
-            progress_fn(size, size)
-
     def store_file_object(
         self,
         key,
         fd,
+        metadata=None,
         *,
         cache_control=None,
-        metadata=None,
         mimetype=None,
+        multipart: Union[bool, None] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
-    ):
+    ):  # pylint: disable=unused-argument
         bytes_written = self._put_object(
             key, fd, metadata=metadata, upload_progress_fn=self._proportional_to_incremental_progress(upload_progress_fn)
         )
         self.notifier.object_created(key=key, size=bytes_written, metadata=self.sanitize_metadata(metadata))
+        if upload_progress_fn:
+            upload_progress_fn(bytes_written)
 
     def _put_object(self, key, fd, *, metadata=None, upload_progress_fn: ProgressProportionCallbackType = None) -> int:
         target_path = self.format_key_for_backend(key.strip("/"))

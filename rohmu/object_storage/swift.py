@@ -20,7 +20,7 @@ from .base import (
 )
 from contextlib import suppress
 from swiftclient import client, exceptions  # pylint: disable=import-error
-from typing import Optional
+from typing import Optional, Union
 
 import logging
 import os
@@ -228,17 +228,6 @@ class SwiftTransfer(BaseTransfer[Config]):
             self._delete_object_plain(path)
         self.notifier.object_deleted(key=key)
 
-    def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
-        temp_filepath = "{}~".format(filepath_to_store_to)
-        try:
-            with open(temp_filepath, "wb") as fp:
-                metadata = self.get_contents_to_fileobj(key, fp, progress_callback=progress_callback)
-                os.rename(temp_filepath, filepath_to_store_to)
-        finally:
-            with suppress(FileNotFoundError):
-                os.unlink(temp_filepath)
-        return metadata
-
     def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         path = self.format_key_for_backend(key)
         try:
@@ -262,58 +251,10 @@ class SwiftTransfer(BaseTransfer[Config]):
 
         return self._headers_to_metadata(headers)
 
-    def get_contents_to_string(self, key):
-        path = self.format_key_for_backend(key)
-        self.log.debug("Starting to fetch the contents of: %r", path)
-        try:
-            headers, data = self.conn.get_object(self.container_name, path)
-        except exceptions.ClientException as ex:
-            if ex.http_status == 404:
-                raise FileNotFoundFromStorageError(path)
-            raise
-
-        metadata = self._headers_to_metadata(headers)
-        return data, metadata
-
     def get_file_size(self, key):
         # Not implemented due to lack of environment where to test this. This method is not required by
         # PGHoard itself, this is only called by external apps that utilize PGHoard's object storage abstraction.
         raise NotImplementedError
-
-    def store_file_from_memory(self, key, memstring, metadata=None, cache_control=None, mimetype=None):
-        if cache_control is not None:
-            raise NotImplementedError("SwiftTransfer: cache_control support not implemented")
-
-        path = self.format_key_for_backend(key)
-        sanitized_metadata = self.sanitize_metadata(metadata)
-        metadata_to_send = self._metadata_to_headers(sanitized_metadata)
-        data = bytes(memstring)
-        self.conn.put_object(self.container_name, path, contents=data, content_type=mimetype, headers=metadata_to_send)
-        self.notifier.object_created(key=key, size=len(data), metadata=sanitized_metadata)
-
-    def store_file_from_disk(
-        self,
-        key,
-        filepath,
-        metadata=None,
-        multipart=None,
-        cache_control=None,
-        mimetype=None,
-        progress_fn: ProgressProportionCallbackType = None,
-    ):
-        obsz = os.path.getsize(filepath)
-        with open(filepath, "rb") as fp:
-            self._store_file_contents(
-                key,
-                fp,
-                metadata=metadata,
-                multipart=multipart,
-                cache_control=cache_control,
-                mimetype=mimetype,
-                content_length=obsz,
-                upload_progress_fn=self._incremental_to_proportional_progress(cb=progress_fn, size=obsz),
-            )
-        self.notifier.object_created(key=key, size=obsz, metadata=self.sanitize_metadata(metadata))
 
     def get_or_create_container(self, container_name):
         start_time = time.monotonic()
@@ -345,15 +286,18 @@ class SwiftTransfer(BaseTransfer[Config]):
         self,
         key,
         fd,
+        metadata=None,
         *,
         cache_control=None,
-        metadata=None,
         mimetype=None,
+        multipart: Union[bool, None] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
-    ):
+    ):  # pylint: disable=unused-argument
         metadata = metadata or {}
         content_length = metadata.get("Content-Length")
-
+        multipart = self._should_multipart(
+            chunk_size=self.segment_size, default=True, metadata=metadata, multipart=multipart
+        )
         self._store_file_contents(
             key,
             fd,
@@ -361,7 +305,7 @@ class SwiftTransfer(BaseTransfer[Config]):
             metadata=metadata,
             mimetype=mimetype,
             upload_progress_fn=upload_progress_fn,
-            multipart=True,
+            multipart=multipart,
             content_length=content_length,
         )
         self.notifier.object_created(key=key, size=content_length, metadata=self.sanitize_metadata(metadata))
@@ -382,8 +326,7 @@ class SwiftTransfer(BaseTransfer[Config]):
 
         if multipart:
             # Start by trying to delete the file - if it's a potential multipart file we need to manually
-            # delete it, otherwise old segments won't be cleaned up by anything.  Note that we only issue
-            # deletes with the store_file_from_disk functions, store_file_from_memory is used to upload smaller
+            # delete it, otherwise old segments won't be cleaned up by anything.
             # chunks.
             with suppress(FileNotFoundFromStorageError):
                 self.delete_key(key)

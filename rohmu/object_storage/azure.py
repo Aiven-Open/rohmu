@@ -13,12 +13,10 @@ from .base import IncrementalProgressCallbackType, ProgressProportionCallbackTyp
 # pylint: disable=import-error, no-name-in-module
 from azure.core.exceptions import HttpResponseError, ResourceExistsError
 from azure.storage.blob import BlobServiceClient, ContentSettings
-from io import BytesIO
-from typing import Optional
+from typing import Optional, Union
 
 import azure.common
 import logging
-import os
 import time
 
 try:
@@ -232,21 +230,6 @@ class AzureTransfer(BaseTransfer[Config]):
 
         return result
 
-    def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
-        path = self.format_key_for_backend(key, remove_slash_prefix=True)
-
-        self.log.debug("Starting to fetch the contents of: %r to: %r", path, filepath_to_store_to)
-        try:
-            with open(filepath_to_store_to, "wb") as f:
-                container_client = self.conn.get_container_client(self.container_name)
-                container_client.download_blob(path).readinto(f)
-        except azure.core.exceptions.ResourceNotFoundError as ex:  # pylint: disable=no-member
-            raise FileNotFoundFromStorageError(path) from ex
-
-        if progress_callback:
-            progress_callback(1, 1)
-        return self._metadata_for_key(path)
-
     @classmethod
     def _parse_length_from_content_range(cls, content_range):
         """Parses the blob length from the content range header: bytes 1-3/65537"""
@@ -299,17 +282,6 @@ class AzureTransfer(BaseTransfer[Config]):
             progress_callback(1, 1)
         return self._metadata_for_key(path)
 
-    def get_contents_to_string(self, key):
-        path = self.format_key_for_backend(key, remove_slash_prefix=True)
-        self.log.debug("Starting to fetch the contents of: %r", path)
-        try:
-            container_client = self.conn.get_container_client(self.container_name)
-            blob = BytesIO()
-            container_client.download_blob(path).download_to_stream(blob)
-            return blob.getvalue(), self._metadata_for_key(path)
-        except azure.core.exceptions.ResourceNotFoundError as ex:  # pylint: disable=no-member
-            raise FileNotFoundFromStorageError(path) from ex
-
     def get_file_size(self, key):
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
         try:
@@ -318,74 +290,24 @@ class AzureTransfer(BaseTransfer[Config]):
         except azure.core.exceptions.ResourceNotFoundError as ex:  # pylint: disable=no-member
             raise FileNotFoundFromStorageError(path) from ex
 
-    def store_file_from_memory(self, key, memstring, metadata=None, cache_control=None, mimetype=None):
-        if cache_control is not None:
-            raise NotImplementedError("AzureTransfer: cache_control support not implemented")
-        path = self.format_key_for_backend(key, remove_slash_prefix=True)
-        content_settings = None
-        if mimetype:
-            content_settings = ContentSettings(content_type=mimetype)
-        blob_client = self.conn.get_blob_client(self.container_name, path)
-        # Azure's client requires a bytes object
-        data = bytes(memstring)
-        sanitized_metadata = self.sanitize_metadata(metadata, replace_hyphen_with="_")
-        blob_client.upload_blob(
-            data,
-            blob_type=BlobType.BlockBlob,
-            content_settings=content_settings,
-            metadata=sanitized_metadata,
-            overwrite=True,
-        )
-        self.notifier.object_created(key=key, size=len(data), metadata=sanitized_metadata)
-
-    def store_file_from_disk(
-        self,
-        key,
-        filepath,
-        metadata=None,
-        multipart=None,
-        cache_control=None,
-        mimetype=None,
-        progress_fn: ProgressProportionCallbackType = None,
-    ):
-        if cache_control is not None:
-            raise NotImplementedError("AzureTransfer: cache_control support not implemented")
-        path = self.format_key_for_backend(key, remove_slash_prefix=True)
-        content_settings = None
-        if mimetype:
-            content_settings = ContentSettings(content_type=mimetype)
-        sanitized_metadata = self.sanitize_metadata(metadata, replace_hyphen_with="_")
-        size = os.path.getsize(filepath)
-        with open(filepath, "rb") as data:
-            blob_client = self.conn.get_blob_client(self.container_name, path)
-            blob_client.upload_blob(
-                data,
-                blob_type=BlobType.BlockBlob,  # type: ignore
-                content_settings=content_settings,
-                metadata=sanitized_metadata,
-                overwrite=True,
-            )
-            self.notifier.object_created(key=key, size=size, metadata=sanitized_metadata)
-            if progress_fn:
-                progress_fn(size, size)
-
     def store_file_object(
         self,
         key,
         fd,
+        metadata=None,
         *,
         cache_control=None,
-        metadata=None,
         mimetype=None,
+        multipart: Union[bool, None] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
-    ):
+    ):  # pylint: disable=unused-argument
         if cache_control is not None:
             raise NotImplementedError("AzureTransfer: cache_control support not implemented")
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
         content_settings = None
         if mimetype:
             content_settings = ContentSettings(content_type=mimetype)
-        notify_size = [0]
+        notify_size = [(metadata or {}).get("Content-Length", 0)]
 
         def progress_callback(pipeline_response):
             bytes_sent = pipeline_response.context["upload_stream_current"]

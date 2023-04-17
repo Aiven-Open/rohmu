@@ -110,13 +110,13 @@ def test_upload_size_unknown_to_reporter() -> None:
             metadata={},
             extra_props=None,
             cache_control=None,
-            reporter=Reporter(StorageOperation.store_file_object),
+            reporter=Reporter(StorageOperation.store_file),
         )
         assert mock_operation.call_count == 3
         mock_operation.assert_has_calls(
             [
-                call(operation=StorageOperation.store_file_object, size=1),
-                call(operation=StorageOperation.store_file_object, size=4),
-                call(operation=StorageOperation.store_file_object, size=995),
+                call(operation=StorageOperation.store_file, size=1),
+                call(operation=StorageOperation.store_file, size=4),
+                call(operation=StorageOperation.store_file, size=995),
             ]
         )

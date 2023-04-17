@@ -7,13 +7,16 @@ See LICENSE for details
 """
 from ..common.models import StorageModel
 from ..common.statsd import StatsClient, StatsdConfig
-from ..errors import StorageError
+from ..errors import FileNotFoundFromStorageError, StorageError
 from ..notifier.interface import Notifier
 from ..notifier.null import NullNotifier
 from collections import namedtuple
-from typing import Callable, Generic, Optional, Type, TypeVar
+from contextlib import suppress
+from io import BytesIO
+from typing import Callable, Generic, Optional, Type, TypeVar, Union
 
 import logging
+import os
 import platform
 
 KEY_TYPE_OBJECT = "object"
@@ -84,6 +87,19 @@ class BaseTransfer(Generic[StorageModelT]):
 
         return wrapper
 
+    @staticmethod
+    def _should_multipart(*, metadata, chunk_size: int, multipart: Union[bool, None] = None, default: bool):
+        if multipart is not None:
+            return multipart
+
+        # multipart = None; up to us
+        size = (metadata or {}).get("Content-Length")
+        if size is None:
+            # We could actually sniff from fd if it is seekable; left TODO for now.
+            return default
+
+        return size > chunk_size
+
     @classmethod
     def from_model(cls, model: StorageModelT):
         return cls(**model.dict(by_alias=True))
@@ -118,13 +134,17 @@ class BaseTransfer(Generic[StorageModelT]):
     def delete_key(self, key):
         raise NotImplementedError
 
+    def delete_keys(self, keys):
+        """Delete specified keys"""
+        for key in keys:
+            self.delete_key(key)
+
     def delete_tree(self, key):
         """Delete all keys under given root key. Basic implementation works by just listing all available
         keys and deleting them individually but storage providers can implement more efficient logic."""
         self.log.debug("Deleting tree: %r", key)
         names = [item["name"] for item in self.list_path(key, with_metadata=False, deep=True)]
-        for name in names:
-            self.delete_key(name)
+        self.delete_keys(names)
 
     def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         """Write key contents to file pointed by `path` and return metadata.  If `progress_callback` is
@@ -133,7 +153,16 @@ class BaseTransfer(Generic[StorageModelT]):
         reporting the number of bytes transmitted as the first argument and the total number of expected bytes
         as the second argument, while others (Google) report the progress in percentage as the first value and
         100 as the second value."""
-        raise NotImplementedError
+        try:
+            with open(filepath_to_store_to, "wb") as fd:
+                metadata = self.get_contents_to_fileobj(key, fd, progress_callback=progress_callback)
+                return metadata
+        except FileNotFoundError as ex:
+            raise FileNotFoundFromStorageError from ex
+        except:
+            with suppress(FileNotFoundError):
+                os.unlink(filepath_to_store_to)
+            raise
 
     def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         """Like `get_contents_to_file()` but writes to an open file-like object."""
@@ -141,7 +170,9 @@ class BaseTransfer(Generic[StorageModelT]):
 
     def get_contents_to_string(self, key):
         """Returns a tuple (content-byte-string, metadata)"""
-        raise NotImplementedError
+        with BytesIO() as buf:
+            metadata = self.get_contents_to_fileobj(key, buf)
+            return buf.getvalue(), metadata
 
     def get_file_size(self, key):
         """Returns an int indicating the size of the file in bytes"""
@@ -175,29 +206,71 @@ class BaseTransfer(Generic[StorageModelT]):
         """Convert non-string metadata values to strings and drop null values"""
         return {str(k).replace("-", replace_hyphen_with): str(v) for k, v in (metadata or {}).items() if v is not None}
 
-    def store_file_from_memory(self, key, memstring, metadata=None, cache_control=None, mimetype=None):
-        raise NotImplementedError
+    def store_file_from_memory(
+        self,
+        key,
+        memstring,
+        metadata=None,
+        *,
+        cache_control=None,
+        mimetype=None,
+        multipart: Union[bool, None] = None,
+        progress_fn: ProgressProportionCallbackType = None,
+    ):
+        with BytesIO(memstring) as buf:
+            size = len(memstring)
+            if metadata is None:
+                metadata = {"Content-Length": size}
+            elif metadata.get("Content-Length") is None:
+                metadata = metadata.copy()
+                metadata["Content-Length"] = size
+            self.store_file_object(
+                key,
+                buf,
+                cache_control=cache_control,
+                metadata=metadata,
+                mimetype=mimetype,
+                multipart=multipart,
+                upload_progress_fn=self._incremental_to_proportional_progress(cb=progress_fn, size=size),
+            )
 
     def store_file_from_disk(
         self,
         key,
         filepath,
         metadata=None,
-        multipart=None,
+        *,
         cache_control=None,
         mimetype=None,
+        multipart: Union[bool, None] = None,
         progress_fn: ProgressProportionCallbackType = None,
     ):
-        raise NotImplementedError
+        size = os.path.getsize(filepath)
+        with open(filepath, "rb") as fd:
+            if metadata is None:
+                metadata = {"Content-Length": size}
+            elif metadata.get("Content-Length") is None:
+                metadata = metadata.copy()
+                metadata["Content-Length"] = size
+            self.store_file_object(
+                key,
+                fd,
+                cache_control=cache_control,
+                metadata=metadata,
+                mimetype=mimetype,
+                multipart=multipart,
+                upload_progress_fn=self._incremental_to_proportional_progress(cb=progress_fn, size=size),
+            )
 
     def store_file_object(
         self,
         key,
         fd,
+        metadata=None,
         *,
         cache_control=None,
-        metadata=None,
         mimetype=None,
+        multipart: Union[bool, None] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
     ):
         raise NotImplementedError

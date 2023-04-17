@@ -18,7 +18,7 @@ from .base import (
     KEY_TYPE_PREFIX,
     ProgressProportionCallbackType,
 )
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 
 import boto3
 import botocore.client
@@ -26,7 +26,6 @@ import botocore.config
 import botocore.exceptions
 import botocore.session
 import math
-import os
 import time
 
 
@@ -206,19 +205,13 @@ class S3Transfer(BaseTransfer[Config]):
         self.s3_client.delete_object(Bucket=self.bucket_name, Key=path)
         self.notifier.object_deleted(key=key)
 
-    def delete_tree(self, key):
-        path = self.format_key_for_backend(key, remove_slash_prefix=True, trailing_slash=True)
-        self.log.debug("Deleting tree: %r", path)
-        self.stats.operation(StorageOperation.iter_key)
-        objects_to_delete = self.s3_client.list_objects(Bucket=self.bucket_name, Prefix=path)
-        delete_keys = [{"Key": key} for key in [obj["Key"] for obj in objects_to_delete.get("Contents", [])]]
-        if delete_keys:
-            self.stats.operation(StorageOperation.delete_key)
-            self.s3_client.delete_objects(Bucket=self.bucket_name, Delete={"Objects": delete_keys})
-            # Note: `tree_deleted` is not used here because the operation on S3 is not atomic, i.e.
-            # it is possible for a new object to be created after `list_objects` above
-            for obj in delete_keys:
-                self.notifier.object_deleted(key=obj["Key"])
+    def delete_keys(self, keys):
+        self.stats.operation(StorageOperation.delete_key, count=len(keys))
+        self.s3_client.delete_objects(Bucket=self.bucket_name, Delete={"Objects": keys})
+        # Note: `tree_deleted` is not used here because the operation on S3 is not atomic, i.e.
+        # it is possible for a new object to be created after `list_objects` above
+        for obj in keys:
+            self.notifier.object_deleted(key=obj["Key"])
 
     def iter_key(self, key, *, with_metadata=True, deep=False, include_key=False):
         path = self.format_key_for_backend(key, remove_slash_prefix=True, trailing_slash=not include_key)
@@ -267,6 +260,9 @@ class S3Transfer(BaseTransfer[Config]):
     def _get_object_stream(self, key):
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
         try:
+            # Actual usage is accounted for in
+            # _read_object_to_fileobj, although that omits the initial
+            # get_object call if it fails.
             response = self.s3_client.get_object(
                 Bucket=self.bucket_name,
                 Key=path,
@@ -279,9 +275,7 @@ class S3Transfer(BaseTransfer[Config]):
                 raise StorageError("Fetching the remote object {} failed".format(path)) from ex
         return response["Body"], response["ContentLength"], response["Metadata"]
 
-    def _read_object_to_fileobj(
-        self, fileobj, streaming_body, body_length, operation: StorageOperation, cb: ProgressProportionCallbackType = None
-    ):
+    def _read_object_to_fileobj(self, fileobj, streaming_body, body_length, cb: ProgressProportionCallbackType = None):
         data_read = 0
         while data_read < body_length:
             read_amount = body_length - data_read
@@ -292,30 +286,14 @@ class S3Transfer(BaseTransfer[Config]):
             data_read += len(data)
             if cb:
                 cb(data_read, body_length)
-            self.stats.operation(operation=operation, size=len(data))
+            self.stats.operation(operation=StorageOperation.get_file, size=len(data))
         if cb:
             cb(data_read, body_length)
 
-    def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
-        with open(filepath_to_store_to, "wb") as fh:
-            stream, length, metadata = self._get_object_stream(key)
-            self._read_object_to_fileobj(
-                fh, stream, length, cb=progress_callback, operation=StorageOperation.get_contents_to_file
-            )
-        return metadata
-
     def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         stream, length, metadata = self._get_object_stream(key)
-        self._read_object_to_fileobj(
-            fileobj_to_store_to, stream, length, cb=progress_callback, operation=StorageOperation.get_contents_to_fileobj
-        )
+        self._read_object_to_fileobj(fileobj_to_store_to, stream, length, cb=progress_callback)
         return metadata
-
-    def get_contents_to_string(self, key):
-        stream, _, metadata = self._get_object_stream(key)
-        data = stream.read()
-        self.stats.operation(StorageOperation.get_contents_to_string, size=len(data))
-        return data, metadata
 
     def get_file_size(self, key):
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
@@ -328,61 +306,6 @@ class S3Transfer(BaseTransfer[Config]):
                 raise FileNotFoundFromStorageError(path)
             else:
                 raise StorageError("File size lookup failed for {}".format(path)) from ex
-
-    def store_file_from_memory(self, key, memstring, metadata=None, cache_control=None, mimetype=None):
-        path = self.format_key_for_backend(key, remove_slash_prefix=True)
-        data = bytes(memstring)  # make sure Body is of type bytes as memoryview's not allowed, only bytes/bytearrays
-        args = {
-            "Bucket": self.bucket_name,
-            "Body": data,
-            "Key": path,
-        }
-        sanitized_metadata = metadata
-        if metadata:
-            sanitized_metadata = args["Metadata"] = self.sanitize_metadata(metadata)
-        if self.encrypted:
-            args["ServerSideEncryption"] = "AES256"
-        if cache_control is not None:
-            args["CacheControl"] = cache_control
-        if mimetype is not None:
-            args["ContentType"] = mimetype
-        self.stats.operation(StorageOperation.store_file_from_memory, size=len(data))
-        self.s3_client.put_object(**args)
-        self.notifier.object_created(key=key, size=len(data), metadata=sanitized_metadata)
-
-    def store_file_from_disk(
-        self,
-        key,
-        filepath,
-        metadata=None,
-        multipart=None,
-        cache_control=None,
-        mimetype=None,
-        progress_fn: ProgressProportionCallbackType = None,
-    ):
-        size = os.path.getsize(filepath)
-        if not multipart or size <= self.multipart_chunk_size:
-            with open(filepath, "rb") as fh:
-                data = fh.read()
-                self.store_file_from_memory(key, data, metadata, cache_control=cache_control)
-            if progress_fn:
-                progress_fn(size, size)
-            return
-
-        with open(filepath, "rb") as fp:
-            self.multipart_upload_file_object(
-                cache_control=cache_control,
-                fp=fp,
-                key=key,
-                metadata=metadata,
-                mimetype=mimetype,
-                size=size,
-                progress_fn=progress_fn,
-            )
-            sanitized_metadata = self.sanitize_metadata(metadata)
-            self.notifier.object_created(key=key, size=size, metadata=sanitized_metadata)
-        if progress_fn:
-            progress_fn(size, size)
 
     def multipart_upload_file_object(
         self, *, cache_control, fp, key, metadata, mimetype, progress_fn: ProgressProportionCallbackType = None, size=None
@@ -429,7 +352,7 @@ class S3Transfer(BaseTransfer[Config]):
             start_of_part_upload = time.monotonic()
             while True:
                 attempts -= 1
-                self.stats.operation(StorageOperation.store_multipart_chunk_from_memory, size=len(data))
+                self.stats.operation(StorageOperation.store_file, size=len(data))
                 try:
                     cup_response = self.s3_client.upload_part(
                         Body=data,
@@ -441,7 +364,7 @@ class S3Transfer(BaseTransfer[Config]):
                 except botocore.exceptions.ClientError as ex:
                     self.log.exception("Uploading part %d for %s failed, attempts left: %d", part_number, path, attempts)
                     if attempts <= 0:
-                        self.stats.operation(StorageOperation.multipart_complete)
+                        self.stats.operation(StorageOperation.multipart_aborted)
                         try:
                             self.s3_client.abort_multipart_upload(
                                 Bucket=self.bucket_name,
@@ -483,6 +406,7 @@ class S3Transfer(BaseTransfer[Config]):
             )
         except botocore.exceptions.ClientError as ex:
             try:
+                self.stats.operation(StorageOperation.multipart_aborted)
                 self.s3_client.abort_multipart_upload(
                     Bucket=self.bucket_name,
                     Key=path,
@@ -499,16 +423,57 @@ class S3Transfer(BaseTransfer[Config]):
             time.monotonic() - start_of_multipart_upload,
         )
 
+    def store_file_from_memory(
+        self,
+        key,
+        memstring,
+        metadata=None,
+        *,
+        cache_control=None,
+        mimetype=None,
+        multipart: Union[bool, None] = None,
+        progress_fn: ProgressProportionCallbackType = None,
+    ):  # pylint: disable=unused-argument
+        path = self.format_key_for_backend(key, remove_slash_prefix=True)
+        data = bytes(memstring)  # make sure Body is of type bytes as memoryview's not allowed, only bytes/bytearrays
+        args = {
+            "Bucket": self.bucket_name,
+            "Body": data,
+            "Key": path,
+        }
+        sanitized_metadata = metadata
+        if metadata:
+            sanitized_metadata = args["Metadata"] = self.sanitize_metadata(metadata)
+        if self.encrypted:
+            args["ServerSideEncryption"] = "AES256"
+        if cache_control is not None:
+            args["CacheControl"] = cache_control
+        if mimetype is not None:
+            args["ContentType"] = mimetype
+        self.stats.operation(StorageOperation.store_file, size=len(data))
+        self.s3_client.put_object(**args)
+        self.notifier.object_created(key=key, size=len(data), metadata=sanitized_metadata)
+
     def store_file_object(
         self,
         key,
         fd,
+        metadata=None,
         *,
         cache_control=None,
-        metadata=None,
         mimetype=None,
+        multipart: Union[bool, None] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
-    ):
+    ):  # pylint: disable=unused-argument
+        if not self._should_multipart(
+            chunk_size=self.multipart_chunk_size, default=True, metadata=metadata, multipart=multipart
+        ):
+            data = fd.read()
+            self.store_file_from_memory(key, data, metadata, cache_control=cache_control, mimetype=mimetype)
+            if upload_progress_fn:
+                upload_progress_fn(len(data))
+            return
+
         self.multipart_upload_file_object(
             cache_control=cache_control,
             fp=fd,

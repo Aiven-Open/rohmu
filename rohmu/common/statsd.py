@@ -98,12 +98,11 @@ class StatsClient:
         all_tags.update(tags or {})
         self.increase("exception", tags=all_tags)
 
-    def operation(self, operation, size: Union[None, int, float] = None):
+    def operation(self, operation, *, count: int = 1, size: Union[int, None] = None):
         tags: Tags = {"operation": self._operation_map.get(str(operation), str(operation))}
-        if size is None:
-            self.increase("rohmu_operation", tags=tags)
-        else:
-            self.gauge(metric="rohmu_operation", value=size, tags=tags)
+        self.increase("rohmu_operation_count", tags=tags, inc_value=count)
+        if size is not None:
+            self.increase("rohmu_operation_size", tags=tags, inc_value=size)
 
     def _send(self, metric: str, metric_type: bytes, value: Union[int, float], tags: Optional[Tags]) -> None:
         if not self._enabled:
