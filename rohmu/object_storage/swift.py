@@ -24,7 +24,7 @@ from .base import (
 )
 from contextlib import suppress
 from swiftclient import client, exceptions  # pylint: disable=import-error
-from typing import Any, BinaryIO, Iterator, Optional
+from typing import Any, BinaryIO, Iterator, Optional, Tuple
 
 import logging
 import os
@@ -235,8 +235,17 @@ class SwiftTransfer(BaseTransfer[Config]):
         self.notifier.object_deleted(key=key)
 
     def get_contents_to_fileobj(
-        self, key: str, fileobj_to_store_to: BinaryIO, *, progress_callback: ProgressProportionCallbackType = None
+        self,
+        key: str,
+        fileobj_to_store_to: BinaryIO,
+        *,
+        byte_range: Optional[Tuple[int, int]] = None,
+        progress_callback: ProgressProportionCallbackType = None,
     ) -> Metadata:
+        if byte_range:
+            # TODO if someday relevant. swift API itself implements it,
+            # c.f. https://docs.openstack.org/api-ref/object-store/
+            raise NotImplementedError("byte range fetching not supported")
         path = self.format_key_for_backend(key)
         try:
             headers, data_gen = self.conn.get_object(self.container_name, path, resp_chunk_size=CHUNK_SIZE)

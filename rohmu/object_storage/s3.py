@@ -24,7 +24,7 @@ from .base import (
 )
 from botocore.response import StreamingBody
 from rohmu.util import batched
-from typing import Any, BinaryIO, Collection, Iterator, Optional, Union
+from typing import Any, BinaryIO, Collection, Iterator, Optional, Tuple, Union
 
 import boto3
 import botocore.client
@@ -274,16 +274,16 @@ class S3Transfer(BaseTransfer[Config]):
             else:
                 break
 
-    def _get_object_stream(self, key: str) -> tuple[StreamingBody, int, Metadata]:
+    def _get_object_stream(self, key: str, byte_range: Optional[tuple[int, int]]) -> tuple[StreamingBody, int, Metadata]:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
+        kwargs = {}
+        if byte_range:
+            kwargs["Range"] = f"bytes {byte_range[0]}-{byte_range[1]}"
         try:
             # Actual usage is accounted for in
             # _read_object_to_fileobj, although that omits the initial
             # get_object call if it fails.
-            response = self.s3_client.get_object(
-                Bucket=self.bucket_name,
-                Key=path,
-            )
+            response = self.s3_client.get_object(Bucket=self.bucket_name, Key=path, **kwargs)
         except botocore.exceptions.ClientError as ex:
             status_code = ex.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
             if status_code == 404:
@@ -310,9 +310,14 @@ class S3Transfer(BaseTransfer[Config]):
             cb(data_read, body_length)
 
     def get_contents_to_fileobj(
-        self, key: str, fileobj_to_store_to: BinaryIO, *, progress_callback: ProgressProportionCallbackType = None
+        self,
+        key: str,
+        fileobj_to_store_to: BinaryIO,
+        *,
+        byte_range: Optional[Tuple[int, int]] = None,
+        progress_callback: ProgressProportionCallbackType = None,
     ) -> Metadata:
-        stream, length, metadata = self._get_object_stream(key)
+        stream, length, metadata = self._get_object_stream(key, byte_range)
         self._read_object_to_fileobj(fileobj_to_store_to, stream, length, cb=progress_callback)
         return metadata
 
