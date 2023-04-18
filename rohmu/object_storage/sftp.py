@@ -20,7 +20,7 @@ from .base import (
 )
 from io import BytesIO, StringIO
 from stat import S_ISDIR
-from typing import cast, Optional, Union
+from typing import cast, Optional, Tuple, Union
 
 import datetime
 import json
@@ -80,7 +80,16 @@ class SFTPTransfer(BaseTransfer[Config]):
 
         self.log.debug("SFTPTransfer initialized")
 
-    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
+    def get_contents_to_fileobj(
+        self,
+        key,
+        fileobj_to_store_to,
+        *,
+        byte_range: Optional[Tuple[int, int]] = None,
+        progress_callback: ProgressProportionCallbackType = None,
+    ):
+        if byte_range:
+            raise NotImplementedError("byte range fetching not supported")
         self._get_contents_to_fileobj(key, fileobj_to_store_to, progress_callback)
         return self.get_metadata_for_key(key)
 

@@ -13,7 +13,7 @@ from ..notifier.null import NullNotifier
 from collections import namedtuple
 from contextlib import suppress
 from io import BytesIO
-from typing import Callable, Collection, Generic, Optional, Type, TypeVar, Union
+from typing import Callable, Collection, Generic, Optional, Tuple, Type, TypeVar, Union
 
 import logging
 import os
@@ -164,14 +164,26 @@ class BaseTransfer(Generic[StorageModelT]):
                 os.unlink(filepath_to_store_to)
             raise
 
-    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
+    def get_contents_to_fileobj(
+        self,
+        key,
+        fileobj_to_store_to,
+        *,
+        byte_range: Optional[Tuple[int, int]] = None,
+        progress_callback: ProgressProportionCallbackType = None,
+    ):
         """Like `get_contents_to_file()` but writes to an open file-like object."""
         raise NotImplementedError
 
-    def get_contents_to_string(self, key):
-        """Returns a tuple (content-byte-string, metadata)"""
+    def get_contents_to_string(self, key, *, byte_range: Optional[Tuple[int, int]] = None):
+        """Returns a tuple (content-byte-string, metadata).
+
+        byte_range can be used to limit the content requested (as per RFC9110 section 14.1.2):
+        it defines range of bytes to fetch (inclusive), so e.g. [0, 499] means first 500 bytes.
+        If it is not supported for specific storage backend, NotImplementedError will be raised.
+        """
         with BytesIO() as buf:
-            metadata = self.get_contents_to_fileobj(key, buf)
+            metadata = self.get_contents_to_fileobj(key, buf, byte_range=byte_range)
             return buf.getvalue(), metadata
 
     def get_file_size(self, key):

@@ -128,7 +128,7 @@ class Reporter:
     """
 
     operation: StorageOperation
-    size: Union[None, int] = None
+    size: Optional[int] = None
     progress_prev: int = 0
 
     def report(self, stats: StatsClient):
@@ -377,7 +377,20 @@ class GoogleTransfer(BaseTransfer[Config]):
             reporter.report(self.stats)
             self.notifier.object_deleted(key)
 
-    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
+    def get_contents_to_fileobj(
+        self,
+        key,
+        fileobj_to_store_to,
+        *,
+        byte_range: Optional[Tuple[int, int]] = None,
+        progress_callback: ProgressProportionCallbackType = None,
+    ):
+        if byte_range:
+            # TODO. The MediaIoBaseDownload has to be copied (it
+            # doesn't expose offset handling logic, or alternatively
+            # more recent Google client should be used.
+            raise NotImplementedError("byte range fetching not supported")
+
         path = self.format_key_for_backend(key)
         self.log.debug("Starting to fetch the contents of: %r to %r", path, fileobj_to_store_to)
         next_prog_report = 0.0

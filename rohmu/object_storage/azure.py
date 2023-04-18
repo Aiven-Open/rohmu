@@ -13,7 +13,7 @@ from .base import IncrementalProgressCallbackType, ProgressProportionCallbackTyp
 # pylint: disable=import-error, no-name-in-module
 from azure.core.exceptions import HttpResponseError, ResourceExistsError
 from azure.storage.blob import BlobServiceClient, ContentSettings
-from typing import Optional, Union
+from typing import Optional, Tuple, Union
 
 import azure.common
 import logging
@@ -214,6 +214,7 @@ class AzureTransfer(BaseTransfer[Config]):
                         "metadata": metadata,
                         "name": self.format_key_from_backend(item.name),
                         "size": item.size,
+                        "md5": item.etag.strip('"'),
                     },
                 )
 
@@ -238,21 +239,27 @@ class AzureTransfer(BaseTransfer[Config]):
 
         return int(content_range.split(" ", 1)[1].split("/", 1)[1])
 
-    def _stream_blob(self, key, fileobj, progress_callback):
+    def _stream_blob(self, key, fileobj, byte_range, progress_callback):
         """Streams contents of given key to given fileobj. Data is read sequentially in chunks
         without any seeks. This requires duplicating some functionality of the Azure SDK, which only
         allows reading entire blob into memory at once or returning data from random offsets"""
         file_size = None
-        start_range = 0
+        start_range = byte_range[0] if byte_range else 0
         chunk_size = self.conn._config.max_chunk_get_size  # pylint: disable=protected-access
         end_range = chunk_size - 1
         blob = self.conn.get_blob_client(self.container_name, key)
         while True:
             try:
                 # pylint: disable=protected-access
-                download_stream = blob.download_blob(offset=start_range, length=chunk_size)
+                if byte_range:
+                    length = min(byte_range[1] - start_range + 1, chunk_size)
+                else:
+                    length = chunk_size
+                download_stream = blob.download_blob(offset=start_range, length=length)
                 if file_size is None:
                     file_size = download_stream._file_size
+                    if byte_range:
+                        file_size = min(file_size, byte_range[1] + 1)
                 download_stream.readinto(fileobj)
                 start_range += download_stream.size
                 if start_range >= file_size:
@@ -269,12 +276,19 @@ class AzureTransfer(BaseTransfer[Config]):
                     return
                 raise FileNotFoundFromStorageError(key) from ex
 
-    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
+    def get_contents_to_fileobj(
+        self,
+        key,
+        fileobj_to_store_to,
+        *,
+        byte_range: Optional[Tuple[int, int]] = None,
+        progress_callback: ProgressProportionCallbackType = None,
+    ):
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
 
         self.log.debug("Starting to fetch the contents of: %r", path)
         try:
-            self._stream_blob(path, fileobj_to_store_to, progress_callback)
+            self._stream_blob(path, fileobj_to_store_to, byte_range, progress_callback)
         except azure.core.exceptions.ResourceNotFoundError as ex:  # pylint: disable=no-member
             raise FileNotFoundFromStorageError(path) from ex
 

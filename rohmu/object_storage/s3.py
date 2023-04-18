@@ -18,7 +18,7 @@ from .base import (
     KEY_TYPE_PREFIX,
     ProgressProportionCallbackType,
 )
-from typing import Collection, Dict, Optional, Union
+from typing import Collection, Dict, Optional, Tuple, Union
 
 import boto3
 import botocore.client
@@ -263,16 +263,16 @@ class S3Transfer(BaseTransfer[Config]):
             else:
                 break
 
-    def _get_object_stream(self, key):
+    def _get_object_stream(self, key, byte_range):
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
+        kwargs = {}
+        if byte_range:
+            kwargs["Range"] = f"bytes {byte_range[0]}-{byte_range[1]}"
         try:
             # Actual usage is accounted for in
             # _read_object_to_fileobj, although that omits the initial
             # get_object call if it fails.
-            response = self.s3_client.get_object(
-                Bucket=self.bucket_name,
-                Key=path,
-            )
+            response = self.s3_client.get_object(Bucket=self.bucket_name, Key=path, **kwargs)
         except botocore.exceptions.ClientError as ex:
             status_code = ex.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
             if status_code == 404:
@@ -296,9 +296,16 @@ class S3Transfer(BaseTransfer[Config]):
         if cb:
             cb(data_read, body_length)
 
-    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
-        stream, length, metadata = self._get_object_stream(key)
-        self._read_object_to_fileobj(fileobj_to_store_to, stream, length, cb=progress_callback)
+    def get_contents_to_fileobj(
+        self,
+        key,
+        fileobj_to_store_to,
+        *,
+        byte_range: Optional[Tuple[int, int]] = None,
+        progress_callback: ProgressProportionCallbackType = None,
+    ):
+        stream, length, metadata = self._get_object_stream(key, byte_range)
+        self._read_object_to_fileobj(fileobj_to_store_to, stream, length, progress_callback)
         return metadata
 
     def get_file_size(self, key):
