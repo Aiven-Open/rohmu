@@ -7,7 +7,7 @@ See LICENSE for details
 """
 from ..common.models import StorageModel
 from ..common.statsd import StatsdConfig
-from ..errors import FileNotFoundFromStorageError, LocalFileIsRemoteFileError
+from ..errors import FileNotFoundFromStorageError
 from ..notifier.interface import Notifier
 from .base import (
     BaseTransfer,
@@ -17,8 +17,7 @@ from .base import (
     KEY_TYPE_PREFIX,
     ProgressProportionCallbackType,
 )
-from io import BytesIO
-from typing import Optional
+from typing import Optional, Union
 
 import contextlib
 import datetime
@@ -156,19 +155,6 @@ class LocalTransfer(BaseTransfer[Config]):
                     with_metadata=with_metadata,
                 )
 
-    def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
-        source_path = self.format_key_for_backend(key.strip("/"))
-        try:
-            src_stat = os.stat(source_path)
-        except FileNotFoundError:
-            raise FileNotFoundFromStorageError(key)
-        with contextlib.suppress(FileNotFoundError):
-            dst_stat = os.stat(filepath_to_store_to)
-            if dst_stat.st_dev == src_stat.st_dev and dst_stat.st_ino == src_stat.st_ino:
-                raise LocalFileIsRemoteFileError(source_path)
-        with open(filepath_to_store_to, "wb") as fileobj_to_store_to:
-            return self.get_contents_to_fileobj(key, fileobj_to_store_to, progress_callback=progress_callback)
-
     def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         source_path = self.format_key_for_backend(key.strip("/"))
         if not os.path.exists(source_path):
@@ -188,11 +174,6 @@ class LocalTransfer(BaseTransfer[Config]):
 
         return self.get_metadata_for_key(key)
 
-    def get_contents_to_string(self, key):
-        bio = BytesIO()
-        metadata = self.get_contents_to_fileobj(key, bio)
-        return bio.getvalue(), metadata
-
     def get_file_size(self, key):
         source_path = self.format_key_for_backend(key.strip("/"))
         if not os.path.exists(source_path):
@@ -204,47 +185,15 @@ class LocalTransfer(BaseTransfer[Config]):
         with atomic_create_file(metadata_path) as fp:
             json.dump(self.sanitize_metadata(metadata), fp)
 
-    def store_file_from_memory(self, key, memstring, metadata=None, cache_control=None, mimetype=None):
-        target_path = self.format_key_for_backend(key.strip("/"))
-        os.makedirs(os.path.dirname(target_path), exist_ok=True)
-        with open(target_path, "wb") as fp:
-            fp.write(memstring)
-        self._save_metadata(target_path, metadata)
-        self.notifier.object_created(key=key, size=os.path.getsize(target_path), metadata=self.sanitize_metadata(metadata))
-
-    def store_file_from_disk(
-        self,
-        key,
-        filepath,
-        metadata=None,
-        multipart=None,
-        cache_control=None,
-        mimetype=None,
-        progress_fn: ProgressProportionCallbackType = None,
-    ):
-        target_path = self.format_key_for_backend(key.strip("/"))
-        src_stat = os.stat(filepath)
-        with contextlib.suppress(FileNotFoundError):
-            dst_stat = os.stat(target_path)
-            if dst_stat.st_dev == src_stat.st_dev and dst_stat.st_ino == src_stat.st_ino:
-                self._save_metadata(target_path, metadata)
-                raise LocalFileIsRemoteFileError(target_path)
-        os.makedirs(os.path.dirname(target_path), exist_ok=True)
-        shutil.copyfile(filepath, target_path)
-        self._save_metadata(target_path, metadata)
-        size = os.path.getsize(target_path)
-        self.notifier.object_created(key=key, size=size, metadata=self.sanitize_metadata(metadata))
-        if progress_fn:
-            progress_fn(size, size)
-
     def store_file_object(
         self,
         key,
         fd,
-        *,
-        cache_control=None,  # pylint: disable=unused-argument
         metadata=None,
+        *,
+        cache_control=None,
         mimetype=None,
+        multipart: Union[bool, None] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
     ):  # pylint: disable=unused-argument
         target_path = self.format_key_for_backend(key.strip("/"))

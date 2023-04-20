@@ -13,22 +13,20 @@ class StorageOperation(str, enum.Enum):
     iter_key = "iter_key"
     copy_file = "copy_file"
     delete_key = "delete_key"
-    get_contents_to_string = "get_contents_to_string"
-    get_contents_to_file = "get_contents_to_file"
-    get_contents_to_fileobj = "get_contents_to_fileobj"
+    get_file = "get_file"
     get_file_size = "get_file_size"
     get_metadata_for_key = "get_metadata_for_key"
     list_path = "list_path"
     list_iter = "list_iter"
-    store_file_from_memory = "store_file_from_memory"
-    store_multipart_chunk_from_memory = "store_multipart_chunk_from_memory"
-    store_file_from_disk = "store_file_from_disk"
-    store_file_object = "store_file_object"
+    store_file = "store_file"
     metadata_for_key = "metadata_for_key"
-    create_multipart_upload = "create_multipart_upload"
-    multipart_complete = "multipart_complete"
     head_request = "head_request"
     create_bucket = "create_bucket"
+
+    # These are S3-only but their use (and especially failures) are interesting
+    create_multipart_upload = "create_multipart_upload"
+    multipart_aborted = "multipart_aborted"
+    multipart_complete = "multipart_complete"
 
     def __str__(self):
         return str(self.value)

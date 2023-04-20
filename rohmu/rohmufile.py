@@ -147,7 +147,6 @@ def write_file(
         compression_level=compression_level,
         rsa_public_key=rsa_public_key,
     ) as fp_out:
-
         header_block = True
         while True:
             input_data = input_obj.read(IO_BLOCK_SIZE)

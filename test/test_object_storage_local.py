@@ -21,7 +21,9 @@ def test_store_file_from_disk() -> None:
             transfer.store_file_from_disk(key="test_key1", filepath=tmpfile.name)
 
         assert open(os.path.join(destdir, "test_key1"), "rb").read() == test_data
-        notifier.object_created.assert_called_once_with(key="test_key1", size=len(test_data), metadata={})
+        notifier.object_created.assert_called_once_with(
+            key="test_key1", size=len(test_data), metadata={"Content-Length": "9"}
+        )
 
 
 def test_store_file_object() -> None:

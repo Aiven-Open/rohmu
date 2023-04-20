@@ -24,17 +24,8 @@ from .base import (
 from contextlib import contextmanager
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from googleapiclient.http import (
-    build_http,
-    MediaDownloadProgress,
-    MediaFileUpload,
-    MediaIoBaseDownload,
-    MediaIoBaseUpload,
-    MediaUpload,
-    MediaUploadProgress,
-)
+from googleapiclient.http import build_http, MediaDownloadProgress, MediaIoBaseDownload, MediaUpload, MediaUploadProgress
 from http.client import IncompleteRead
-from io import BytesIO, FileIO
 from oauth2client import GOOGLE_TOKEN_URI
 from oauth2client.client import GoogleCredentials
 from typing import Optional, Tuple, Union
@@ -137,7 +128,7 @@ class Reporter:
     """
 
     operation: StorageOperation
-    size: Union[None, int, float] = None
+    size: Union[None, int] = None
     progress_prev: int = 0
 
     def report(self, stats: StatsClient):
@@ -147,11 +138,8 @@ class Reporter:
         # and if the operation eventually succeeds then report_status() or this will take care
         # of it.
         SIZED_OPERATIONS = {
-            StorageOperation.store_file_from_memory: UPLOAD_CHUNK_SIZE,
-            StorageOperation.store_file_from_disk: UPLOAD_CHUNK_SIZE,
-            StorageOperation.store_file_object: UPLOAD_CHUNK_SIZE,
-            StorageOperation.get_contents_to_file: DOWNLOAD_CHUNK_SIZE,
-            StorageOperation.get_contents_to_fileobj: DOWNLOAD_CHUNK_SIZE,
+            StorageOperation.store_file: UPLOAD_CHUNK_SIZE,
+            StorageOperation.get_file: DOWNLOAD_CHUNK_SIZE,
         }
 
         if self.operation in SIZED_OPERATIONS:
@@ -305,10 +293,13 @@ class GoogleTransfer(BaseTransfer[Config]):
                 sourceBucket=self.bucket_name,
                 sourceObject=source_object,
             )
-            reporter.report(self.stats)
             result = self._retry_on_reset(request, request.execute, retry_reporter=reporter)
+            size = None
             if result.get("size", None) is not None:
-                self.notifier.object_copied(key=destination_key, size=int(result["size"]), metadata=metadata)
+                size = int(result["size"])
+                reporter.size = size
+                self.notifier.object_copied(key=destination_key, size=size, metadata=metadata)
+            reporter.report(self.stats)
 
     def get_metadata_for_key(self, key):
         path = self.format_key_for_backend(key)
@@ -320,8 +311,8 @@ class GoogleTransfer(BaseTransfer[Config]):
         req = clob.get(bucket=self.bucket_name, object=key)
 
         reporter = Reporter(StorageOperation.get_metadata_for_key)
-        reporter.report(self.stats)
         obj = self._retry_on_reset(req, req.execute, retry_reporter=reporter)
+        reporter.report(self.stats)
         return obj.get("metadata", {}), int(obj["size"])
 
     def _unpaginate(self, domain, initial_op, *, on_properties):
@@ -329,8 +320,8 @@ class GoogleTransfer(BaseTransfer[Config]):
         request = initial_op(domain)
         while request is not None:
             reporter = Reporter(StorageOperation.iter_key)
-            reporter.report(self.stats)
             result = self._retry_on_reset(request, request.execute, retry_reporter=reporter)
+            reporter.report(self.stats)
             for on_property in on_properties:
                 items = result.get(on_property)
                 if items is not None:
@@ -353,7 +344,6 @@ class GoogleTransfer(BaseTransfer[Config]):
                 return domain.list(bucket=self.bucket_name, prefix=path, **kwargs)
 
             for property_name, items in self._unpaginate(clob, initial_op, on_properties=["items", "prefixes"]):
-
                 if property_name == "items":
                     for item in items:
                         if item["name"].endswith("/"):
@@ -383,22 +373,9 @@ class GoogleTransfer(BaseTransfer[Config]):
             # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.objects.html#delete
             req = clob.delete(bucket=self.bucket_name, object=path)
             reporter = Reporter(StorageOperation.delete_key)
-            reporter.report(self.stats)
             self._retry_on_reset(req, req.execute, retry_reporter=reporter)
+            reporter.report(self.stats)
             self.notifier.object_deleted(key)
-
-    def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
-        fileobj = FileIO(filepath_to_store_to, mode="wb")
-        done = False
-        metadata = {}
-        try:
-            metadata = self.get_contents_to_fileobj(key, fileobj, progress_callback=progress_callback)
-            done = True
-        finally:
-            fileobj.close()
-            if not done:
-                os.unlink(filepath_to_store_to)
-        return metadata
 
     def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
         path = self.format_key_for_backend(key)
@@ -407,7 +384,7 @@ class GoogleTransfer(BaseTransfer[Config]):
         last_log_output = 0.0
         with self._object_client(not_found=path) as clob:
             metadata, obj_size = self._metadata_for_key(clob, path)
-            reporter = Reporter(StorageOperation.get_contents_to_fileobj, size=min(obj_size, DOWNLOAD_CHUNK_SIZE))
+            reporter = Reporter(StorageOperation.get_file, size=min(obj_size, DOWNLOAD_CHUNK_SIZE))
             # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.objects.html#get_media
             req = clob.get_media(bucket=self.bucket_name, object=path)
             download = MediaIoBaseDownload(fileobj_to_store_to, req, chunksize=DOWNLOAD_CHUNK_SIZE)
@@ -436,18 +413,6 @@ class GoogleTransfer(BaseTransfer[Config]):
             if progress_callback:
                 progress_callback(100, 100)
             return metadata
-
-    def get_contents_to_string(self, key):
-        path = self.format_key_for_backend(key)
-        self.log.debug("Starting to fetch the contents of: %r", path)
-        with self._object_client(not_found=path) as clob:
-            metadata, size = self._metadata_for_key(clob, path)
-            reporter = Reporter(StorageOperation.get_contents_to_string, size=size)
-            # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.objects.html#get_media
-            req = clob.get_media(bucket=self.bucket_name, object=path)
-            reporter.report(self.stats)
-            data = self._retry_on_reset(req, req.execute, retry_reporter=reporter)
-            return data, metadata
 
     def get_file_size(self, key):
         path = self.format_key_for_backend(key)
@@ -506,72 +471,58 @@ class GoogleTransfer(BaseTransfer[Config]):
         return response
 
     # pylint: disable=arguments-differ
-    def store_file_from_memory(self, key, memstring, metadata=None, extra_props=None, cache_control=None, mimetype=None):
-        data = BytesIO(memstring)
-        reporter = Reporter(StorageOperation.store_file_from_memory, size=min(len(memstring), UPLOAD_CHUNK_SIZE))
-        upload = MediaIoBaseUpload(data, mimetype or "application/octet-stream", chunksize=UPLOAD_CHUNK_SIZE, resumable=True)
-        sanitized_metadata = self.sanitize_metadata(metadata)
-        result = self._upload(
-            upload,
-            key,
-            sanitized_metadata,
-            extra_props,
-            cache_control=cache_control,
-            reporter=reporter,
-        )
-        self.notifier.object_created(key=key, size=int(result.get("size", len(memstring))), metadata=sanitized_metadata)
-        return result
-
-    # pylint: disable=arguments-differ
     def store_file_from_disk(
         self,
         key,
         filepath,
-        metadata=None,  # pylint: disable=arguments-differ, unused-variable
-        multipart=None,
+        metadata=None,
+        *,
         cache_control=None,
         mimetype=None,
+        multipart: Union[bool, None] = None,
         progress_fn: ProgressProportionCallbackType = None,
-        *,
-        extra_props=None,  # pylint: disable=arguments-differ, unused-variable
-    ):
+        extra_props=None,  # pylint: disable=arguments-differ
+    ):  # pylint: disable=unused-argument
+        # TODO: extra_props seems to be used only to set cacheControl in pghoard tests.
+        #
+        # When that is gone (.. long enough ..), we could get rid of
+        # this whole function and use the superclass default which
+        # falls back to store_file_object.
         size = os.path.getsize(filepath)
-        reporter = Reporter(StorageOperation.store_file_from_memory, size=min(size, UPLOAD_CHUNK_SIZE))
-        mimetype = mimetype or "application/octet-stream"
-        upload = MediaFileUpload(filepath, mimetype, chunksize=UPLOAD_CHUNK_SIZE, resumable=True)
-        sanitized_metadata = self.sanitize_metadata(metadata)
-        result = self._upload(
-            upload,
-            key,
-            sanitized_metadata,
-            extra_props,
-            cache_control=cache_control,
-            upload_progress_fn=self._incremental_to_proportional_progress(cb=progress_fn, size=size),
-            reporter=reporter,
-        )
-        self.notifier.object_created(key=key, size=size, metadata=sanitized_metadata)
-        if progress_fn:
-            progress_fn(size, size)
-        return result
+        with open(filepath, "rb") as fd:
+            metadata = metadata or {}
+            metadata.setdefault("Content-Length", size)
+            self.store_file_object(
+                key,
+                fd,
+                cache_control=cache_control,
+                metadata=metadata,
+                mimetype=mimetype,
+                multipart=multipart,
+                upload_progress_fn=self._incremental_to_proportional_progress(cb=progress_fn, size=size),
+                extra_props=extra_props,
+            )
 
     def store_file_object(
         self,
         key,
         fd,
+        metadata=None,
         *,
         cache_control=None,
-        metadata=None,
         mimetype=None,
+        multipart: Union[bool, None] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
-    ):
+        extra_props=None,  # pylint: disable=arguments-differ
+    ):  # pylint: disable=unused-argument
         mimetype = mimetype or "application/octet-stream"
         sanitized_metadata = self.sanitize_metadata(metadata)
-        reporter = Reporter(StorageOperation.store_file_object)
+        reporter = Reporter(StorageOperation.store_file)
         result = self._upload(
             MediaStreamUpload(fd, chunk_size=UPLOAD_CHUNK_SIZE, mime_type=mimetype, name=key),
             key,
             sanitized_metadata,
-            None,
+            extra_props,
             cache_control=cache_control,
             upload_progress_fn=upload_progress_fn,
             reporter=reporter,
@@ -595,8 +546,8 @@ class GoogleTransfer(BaseTransfer[Config]):
         try:
             request = gs_buckets.get(bucket=bucket_name)
             reporter = Reporter(StorageOperation.head_request)
-            reporter.report(self.stats)
             self._retry_on_reset(request, request.execute, retry_reporter=reporter)
+            reporter.report(self.stats)
             self.log.debug("Bucket: %r already exists, took: %.3fs", bucket_name, time.time() - start_time)
         except HttpError as ex:
             if ex.resp["status"] == "404":
@@ -611,8 +562,8 @@ class GoogleTransfer(BaseTransfer[Config]):
         try:
             req = gs_buckets.insert(project=self.project_id, body={"name": bucket_name})
             reporter = Reporter(StorageOperation.create_bucket)
-            reporter.report(self.stats)
             self._retry_on_reset(req, req.execute, retry_reporter=reporter)
+            reporter.report(self.stats)
             self.log.debug("Created bucket: %r successfully, took: %.3fs", bucket_name, time.time() - start_time)
         except HttpError as ex:
             error = json.loads(ex.content.decode("utf-8"))["error"]

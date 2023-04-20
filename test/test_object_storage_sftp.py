@@ -9,7 +9,19 @@ from unittest.mock import MagicMock, patch
 def test_store_file_from_disk() -> None:
     notifier = MagicMock()
     with patch("paramiko.Transport") as _, patch("paramiko.SFTPClient") as sftp_client:
+
+        def _putfo():
+            return 42
+
         client = MagicMock()
+
+        # Size reporting relies on the progress callback from paramiko
+        def upload_side_effect(*args, **kwargs):  # pylint: disable=unused-argument
+            if kwargs.get("callback"):
+                kwargs["callback"](len(test_data), len(test_data))
+
+        client.putfo = MagicMock(wraps=upload_side_effect)
+
         sftp_client.from_transport.return_value = client
         transfer = SFTPTransfer(
             server="sftp.example.com",
