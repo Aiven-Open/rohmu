@@ -18,3 +18,5 @@ types-botocore
 types-httplib2
 types-mock
 types-requests
+# Extra stubs
+google-api-python-client-stubs
