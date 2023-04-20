@@ -18,7 +18,7 @@ import socket
 
 
 class _Protocol(asyncio.DatagramProtocol):
-    def __init__(self, queue: asyncio.Queue):
+    def __init__(self, queue: asyncio.Queue[bytes]):
         self.received_queue = queue
 
     def datagram_received(self, data: bytes, addr: tuple[str | Any, int]) -> None:

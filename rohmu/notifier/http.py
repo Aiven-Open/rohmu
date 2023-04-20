@@ -85,7 +85,7 @@ def background_http_request(
 
 
 def initialize_background_thread(
-    queue: Queue,
+    queue: "Queue[HTTPNotifyJob]",
     stop_event: threading.Event,
     stop_event_check_timeout: float = _CHECK_STOP_EVENT_TIMEOUT,
     session: Optional[requests.Session] = None,
@@ -130,7 +130,7 @@ class BackgroundHTTPNotifier(Notifier):
         self._stop_event.set()
         self._thread.join(_THREAD_JOIN_TIMEOUT)
 
-    def object_created(self, key: str, size: Optional[int], metadata: Optional[dict]) -> None:
+    def object_created(self, key: str, size: Optional[int], metadata: Optional[dict[str, str]]) -> None:
         self._queue.put(
             HTTPNotifyJob(
                 self._url,

@@ -28,7 +28,7 @@ from googleapiclient.http import build_http, MediaDownloadProgress, MediaIoBaseD
 from http.client import IncompleteRead
 from oauth2client import GOOGLE_TOKEN_URI
 from oauth2client.client import GoogleCredentials
-from typing import Optional, Tuple, Union
+from typing import Any, Optional, Tuple, Union
 
 import codecs
 import dataclasses
@@ -157,7 +157,7 @@ class Config(StorageModel):
     project_id: str
     bucket_name: str
     credential_file: Optional[str] = None
-    credentials: Optional[dict] = None
+    credentials: Optional[dict[str, Any]] = None
     proxy_info: Optional[ProxyInfo] = None
     prefix: Optional[str] = None
 
@@ -306,7 +306,7 @@ class GoogleTransfer(BaseTransfer[Config]):
         with self._object_client(not_found=path) as clob:
             return self._metadata_for_key(clob, path)[0]
 
-    def _metadata_for_key(self, clob, key) -> Tuple[dict, int]:
+    def _metadata_for_key(self, clob, key) -> Tuple[dict[str, Any], int]:
         # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.objects.html#get
         req = clob.get(bucket=self.bucket_name, object=key)
 

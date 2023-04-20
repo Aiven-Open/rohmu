@@ -8,7 +8,7 @@ class LoggerNotifier(Notifier):
     def __init__(self, log: Logger) -> None:
         self._log = log
 
-    def object_created(self, key: str, size: Optional[int], metadata: Optional[dict]) -> None:
+    def object_created(self, key: str, size: Optional[int], metadata: Optional[dict[str, str]]) -> None:
         self._log.info("Object created key %r size %r", key, size)
 
     def object_deleted(self, key: str) -> None:

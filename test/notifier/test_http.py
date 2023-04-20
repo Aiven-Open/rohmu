@@ -32,7 +32,7 @@ class _TestSession:
         pass
 
 
-def _join_queue_with_timeout(queue: Queue, *, timeout: float, iteration: float = 0.1) -> None:
+def _join_queue_with_timeout(queue: "Queue[HTTPNotifyJob]", *, timeout: float, iteration: float = 0.1) -> None:
     while queue.unfinished_tasks and timeout > 0.0:
         time.sleep(iteration)
         timeout -= iteration

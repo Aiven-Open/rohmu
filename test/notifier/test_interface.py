@@ -1,6 +1,6 @@
 """Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
 from rohmu.notifier.interface import Notifier
-from typing import Optional
+from typing import Any, Optional
 
 
 class _TestNotifier(Notifier):
@@ -10,7 +10,7 @@ class _TestNotifier(Notifier):
         self.object_deleted_called = 0
         self.tree_deleted_called = 0
 
-    def object_created(self, key: str, size: Optional[int], metadata: Optional[dict]) -> None:
+    def object_created(self, key: str, size: Optional[int], metadata: Optional[dict[str, str]]) -> None:
         self.object_created_called += 1
 
     def object_deleted(self, key: str) -> None:
