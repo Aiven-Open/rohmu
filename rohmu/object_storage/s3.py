@@ -207,7 +207,10 @@ class S3Transfer(BaseTransfer[Config]):
 
     def delete_keys(self, keys: Collection[str]) -> None:
         self.stats.operation(StorageOperation.delete_key, count=len(keys))
-        self.s3_client.delete_objects(Bucket=self.bucket_name, Delete={"Objects": [{"Key": key} for key in keys]})
+        self.s3_client.delete_objects(
+            Bucket=self.bucket_name,
+            Delete={"Objects": [{"Key": self.format_key_for_backend(key, remove_slash_prefix=True)} for key in keys]},
+        )
         # Note: `tree_deleted` is not used here because the operation on S3 is not atomic, i.e.
         # it is possible for a new object to be created after `list_objects` above
         for key in keys:
