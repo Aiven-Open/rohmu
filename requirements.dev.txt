@@ -9,6 +9,7 @@ boto3-stubs[essential]
 pylint-quotes
 pytest
 pytest-cov
+pytest-mock
 # Same version from pghoard
 isort==5.10.1
 types-python-dateutil
