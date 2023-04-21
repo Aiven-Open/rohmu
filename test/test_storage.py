@@ -119,3 +119,26 @@ def test_hidden_local_files(local_transfer):
     files = local_transfer.list_path("")
     assert len(files) == 1
     assert files[0]["name"] == "somefile"
+
+
+@pytest.mark.parametrize("transfer", ["local_transfer"])
+def test_delete(transfer, request):
+    transfer = request.getfixturevalue(transfer)
+
+    def setup():
+        assert transfer.list_path("") == []
+        transfer.store_file_from_memory("shallow", b"1")
+        transfer.store_file_from_memory("something/quite/deep", b"2")
+        assert len(transfer.list_path("", deep=True)) == 2
+
+    setup()
+    transfer.delete_tree("")
+
+    setup()
+    transfer.delete_keys(["shallow", "something/quite/deep"])
+
+    setup()
+    transfer.delete_key("shallow")
+    transfer.delete_key("something/quite/deep")
+
+    assert transfer.list_path("") == []
