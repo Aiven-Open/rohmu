@@ -213,7 +213,7 @@ class SwiftTransfer(BaseTransfer[Config]):
                 with suppress(FileNotFoundFromStorageError):
                     self._delete_object_plain(item["name"])
 
-    def delete_key(self, key):
+    def delete_key(self, key: str) -> None:
         path = self.format_key_for_backend(key)
         self.log.debug("Deleting key: %r", path)
         try:

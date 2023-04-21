@@ -13,7 +13,7 @@ from ..notifier.null import NullNotifier
 from collections import namedtuple
 from contextlib import suppress
 from io import BytesIO
-from typing import Callable, Generic, Optional, Type, TypeVar, Union
+from typing import Callable, Collection, Generic, Optional, Type, TypeVar, Union
 
 import logging
 import os
@@ -131,10 +131,10 @@ class BaseTransfer(Generic[StorageModelT]):
             raise StorageError("Key {!r} does not start with expected prefix {!r}".format(key, self.prefix))
         return key[len(self.prefix) :]
 
-    def delete_key(self, key):
+    def delete_key(self, key: str) -> None:
         raise NotImplementedError
 
-    def delete_keys(self, keys):
+    def delete_keys(self, keys: Collection[str]) -> None:
         """Delete specified keys"""
         for key in keys:
             self.delete_key(key)

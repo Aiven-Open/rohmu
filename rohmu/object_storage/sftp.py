@@ -182,7 +182,7 @@ class SFTPTransfer(BaseTransfer[Config]):
     def copy_file(self, *, source_key, destination_key, metadata=None, **_kwargs):
         raise NotImplementedError
 
-    def delete_key(self, key):
+    def delete_key(self, key: str) -> None:
         target_path = self.format_key_for_backend(key.strip("/"))
         self.log.info("Removing path: %r", target_path)
 

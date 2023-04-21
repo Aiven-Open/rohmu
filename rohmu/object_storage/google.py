@@ -366,7 +366,7 @@ class GoogleTransfer(BaseTransfer[Config]):
                 else:
                     raise NotImplementedError(property_name)
 
-    def delete_key(self, key):
+    def delete_key(self, key: str) -> None:
         path = self.format_key_for_backend(key)
         self.log.debug("Deleting key: %r", path)
         with self._object_client(not_found=path) as clob:

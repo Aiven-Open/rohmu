@@ -18,7 +18,7 @@ from .base import (
     KEY_TYPE_PREFIX,
     ProgressProportionCallbackType,
 )
-from typing import Dict, Optional, Union
+from typing import Collection, Dict, Optional, Union
 
 import boto3
 import botocore.client
@@ -197,7 +197,7 @@ class S3Transfer(BaseTransfer[Config]):
 
         return response["Metadata"]
 
-    def delete_key(self, key):
+    def delete_key(self, key: str) -> None:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
         self.log.debug("Deleting key: %r", path)
         self._metadata_for_key(path)  # check that key exists
@@ -205,13 +205,13 @@ class S3Transfer(BaseTransfer[Config]):
         self.s3_client.delete_object(Bucket=self.bucket_name, Key=path)
         self.notifier.object_deleted(key=key)
 
-    def delete_keys(self, keys):
+    def delete_keys(self, keys: Collection[str]) -> None:
         self.stats.operation(StorageOperation.delete_key, count=len(keys))
-        self.s3_client.delete_objects(Bucket=self.bucket_name, Delete={"Objects": keys})
+        self.s3_client.delete_objects(Bucket=self.bucket_name, Delete={"Objects": [{"Key": key} for key in keys]})
         # Note: `tree_deleted` is not used here because the operation on S3 is not atomic, i.e.
         # it is possible for a new object to be created after `list_objects` above
-        for obj in keys:
-            self.notifier.object_deleted(key=obj["Key"])
+        for key in keys:
+            self.notifier.object_deleted(key=key)
 
     def iter_key(self, key, *, with_metadata=True, deep=False, include_key=False):
         path = self.format_key_for_backend(key, remove_slash_prefix=True, trailing_slash=not include_key)
