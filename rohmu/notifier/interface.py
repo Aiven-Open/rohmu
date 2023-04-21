@@ -1,6 +1,6 @@
 """Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Optional
 
 
 class Notifier(ABC):

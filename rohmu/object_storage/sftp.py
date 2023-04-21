@@ -10,6 +10,7 @@ from ..common.models import StorageModel
 from ..common.statsd import StatsdConfig
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError
 from ..notifier.interface import Notifier
+from ..typing import Metadata
 from .base import (
     BaseTransfer,
     IncrementalProgressCallbackType,
@@ -20,7 +21,7 @@ from .base import (
 )
 from io import BytesIO, StringIO
 from stat import S_ISDIR
-from typing import cast, Optional, Union
+from typing import BinaryIO, cast, Optional, Union
 
 import datetime
 import json
@@ -44,12 +45,12 @@ class SFTPTransfer(BaseTransfer[Config]):
 
     def __init__(
         self,
-        server,
-        port,
-        username,
-        password=None,
-        private_key=None,
-        prefix=None,
+        server: str,
+        port: int,
+        username: str,
+        password: Optional[str] = None,
+        private_key: Optional[str] = None,
+        prefix: Optional[str] = None,
         notifier: Optional[Notifier] = None,
         statsd_info: Optional[StatsdConfig] = None,
     ) -> None:
@@ -70,7 +71,7 @@ class SFTPTransfer(BaseTransfer[Config]):
 
         transport = paramiko.Transport((self.server, self.port))
 
-        if private_key:
+        if self.private_key:
             pkey = paramiko.RSAKey.from_private_key_file(self.private_key)
             transport.connect(username=self.username, pkey=pkey)
         else:  # password must be defined due to previous check above
@@ -80,7 +81,9 @@ class SFTPTransfer(BaseTransfer[Config]):
 
         self.log.debug("SFTPTransfer initialized")
 
-    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
+    def get_contents_to_fileobj(
+        self, key: str, fileobj_to_store_to: BinaryIO, *, progress_callback: ProgressProportionCallbackType = None
+    ) -> Metadata:
         self._get_contents_to_fileobj(key, fileobj_to_store_to, progress_callback)
         return self.get_metadata_for_key(key)
 
@@ -195,15 +198,15 @@ class SFTPTransfer(BaseTransfer[Config]):
 
     def store_file_object(
         self,
-        key,
-        fd,
-        metadata=None,
+        key: str,
+        fd: BinaryIO,
+        metadata: Optional[Metadata] = None,
         *,
-        cache_control=None,
-        mimetype=None,
-        multipart: Union[bool, None] = None,
+        cache_control: Optional[str] = None,
+        mimetype: Optional[str] = None,
+        multipart: Optional[bool] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
-    ):  # pylint: disable=unused-argument
+    ) -> None:  # pylint: disable=unused-argument
         bytes_written = self._put_object(
             key, fd, metadata=metadata, upload_progress_fn=self._proportional_to_incremental_progress(upload_progress_fn)
         )
@@ -211,7 +214,14 @@ class SFTPTransfer(BaseTransfer[Config]):
         if upload_progress_fn:
             upload_progress_fn(bytes_written)
 
-    def _put_object(self, key, fd, *, metadata=None, upload_progress_fn: ProgressProportionCallbackType = None) -> int:
+    def _put_object(
+        self,
+        key: str,
+        fd: BinaryIO,
+        *,
+        metadata: Optional[Metadata] = None,
+        upload_progress_fn: ProgressProportionCallbackType = None,
+    ) -> int:
         target_path = self.format_key_for_backend(key.strip("/"))
         total_bytes_written = 0
 

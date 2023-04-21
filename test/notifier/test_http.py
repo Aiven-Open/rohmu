@@ -10,7 +10,8 @@ from rohmu.notifier.http import (
     initialize_background_thread,
     Operation,
 )
-from typing import Any, Iterator, List, Tuple
+from types import TracebackType
+from typing import Any, Iterator, List, Tuple, Type
 
 import json
 import requests
@@ -19,16 +20,18 @@ import time
 
 
 class _TestSession:
-    def __init__(self, *args, **kwargs) -> None:  # pylint: disable=super-init-not-called,unused-argument
+    def __init__(self, *args: Any, **kwargs: Any) -> None:  # pylint: disable=super-init-not-called,unused-argument
         self.post_called: List[Tuple[Any, ...]] = list()
 
-    def post(self, *args, **kwargs) -> None:
+    def post(self, *args: Any, **kwargs: Any) -> None:
         self.post_called.append((args, kwargs))
 
     def __enter__(self) -> None:
         pass
 
-    def __exit__(self, type, value, traceback) -> None:  # pylint: disable=redefined-builtin
+    def __exit__(
+        self, type: Type[BaseException], value: BaseException, traceback: TracebackType
+    ) -> None:  # pylint: disable=redefined-builtin
         pass
 
 

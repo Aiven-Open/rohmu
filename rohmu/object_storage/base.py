@@ -10,10 +10,11 @@ from ..common.statsd import StatsClient, StatsdConfig
 from ..errors import FileNotFoundFromStorageError, StorageError
 from ..notifier.interface import Notifier
 from ..notifier.null import NullNotifier
+from ..typing import AnyPath, Metadata
 from collections import namedtuple
 from contextlib import suppress
 from io import BytesIO
-from typing import Callable, Collection, Generic, Optional, Type, TypeVar, Union
+from typing import Any, BinaryIO, Callable, Collection, Generic, Optional, Type, TypeVar, Union
 
 import logging
 import os
@@ -45,7 +46,9 @@ StorageModelT = TypeVar("StorageModelT", bound=StorageModel)
 class BaseTransfer(Generic[StorageModelT]):
     config_model: Type[StorageModelT]
 
-    def __init__(self, prefix, notifier: Optional[Notifier] = None, statsd_info: Optional[StatsdConfig] = None) -> None:
+    def __init__(
+        self, prefix: Optional[str], notifier: Optional[Notifier] = None, statsd_info: Optional[StatsdConfig] = None
+    ) -> None:
         self.log = logging.getLogger(self.__class__.__name__)
         if not prefix:
             prefix = ""
@@ -88,7 +91,9 @@ class BaseTransfer(Generic[StorageModelT]):
         return wrapper
 
     @staticmethod
-    def _should_multipart(*, metadata, chunk_size: int, multipart: Union[bool, None] = None, default: bool):
+    def _should_multipart(
+        *, metadata: Optional[Metadata], chunk_size: int, multipart: Union[bool, None] = None, default: bool
+    ) -> bool:
         if multipart is not None:
             return multipart
 
@@ -101,7 +106,7 @@ class BaseTransfer(Generic[StorageModelT]):
         return size > chunk_size
 
     @classmethod
-    def from_model(cls, model: StorageModelT):
+    def from_model(cls, model: StorageModelT) -> "BaseTransfer[StorageModelT]":
         return cls(**model.dict(by_alias=True))
 
     def copy_file(self, *, source_key, destination_key, metadata=None, **_kwargs):
@@ -146,7 +151,9 @@ class BaseTransfer(Generic[StorageModelT]):
         names = [item["name"] for item in self.list_path(key, with_metadata=False, deep=True)]
         self.delete_keys(names)
 
-    def get_contents_to_file(self, key, filepath_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
+    def get_contents_to_file(
+        self, key: str, filepath_to_store_to: AnyPath, *, progress_callback: ProgressProportionCallbackType = None
+    ) -> Metadata:
         """Write key contents to file pointed by `path` and return metadata.  If `progress_callback` is
         provided it must be a function which accepts two numeric arguments: current state of progress and the
         expected maximum value.  The actual values and value ranges differ per storage provider, some (S3)
@@ -164,7 +171,9 @@ class BaseTransfer(Generic[StorageModelT]):
                 os.unlink(filepath_to_store_to)
             raise
 
-    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
+    def get_contents_to_fileobj(
+        self, key: str, fileobj_to_store_to: BinaryIO, *, progress_callback: ProgressProportionCallbackType = None
+    ) -> Metadata:
         """Like `get_contents_to_file()` but writes to an open file-like object."""
         raise NotImplementedError
 
@@ -208,15 +217,15 @@ class BaseTransfer(Generic[StorageModelT]):
 
     def store_file_from_memory(
         self,
-        key,
-        memstring,
-        metadata=None,
+        key: str,
+        memstring: bytes,
+        metadata: Optional[Metadata] = None,
         *,
-        cache_control=None,
-        mimetype=None,
-        multipart: Union[bool, None] = None,
+        cache_control: Optional[str] = None,
+        mimetype: Optional[str] = None,
+        multipart: Optional[bool] = None,
         progress_fn: ProgressProportionCallbackType = None,
-    ):
+    ) -> None:
         with BytesIO(memstring) as buf:
             size = len(memstring)
             if metadata is None:
@@ -236,15 +245,15 @@ class BaseTransfer(Generic[StorageModelT]):
 
     def store_file_from_disk(
         self,
-        key,
-        filepath,
-        metadata=None,
+        key: str,
+        filepath: AnyPath,
+        metadata: Optional[Metadata] = None,
         *,
-        cache_control=None,
-        mimetype=None,
-        multipart: Union[bool, None] = None,
+        cache_control: Optional[str] = None,
+        mimetype: Optional[str] = None,
+        multipart: Optional[bool] = None,
         progress_fn: ProgressProportionCallbackType = None,
-    ):
+    ) -> None:
         size = os.path.getsize(filepath)
         with open(filepath, "rb") as fd:
             if metadata is None:
@@ -264,15 +273,15 @@ class BaseTransfer(Generic[StorageModelT]):
 
     def store_file_object(
         self,
-        key,
-        fd,
-        metadata=None,
+        key: str,
+        fd: BinaryIO,
+        metadata: Optional[Metadata] = None,
         *,
-        cache_control=None,
-        mimetype=None,
-        multipart: Union[bool, None] = None,
+        cache_control: Optional[str] = None,
+        mimetype: Optional[str] = None,
+        multipart: Optional[bool] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
-    ):
+    ) -> Any:
         raise NotImplementedError
 
 

@@ -5,15 +5,19 @@ Copyright (c) 2016 Ohmu Ltd
 Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
+
+from __future__ import annotations
+
 from ..common.models import ProxyInfo, StorageModel
 from ..common.statsd import StatsdConfig
 from ..notifier.interface import Notifier
+from ..typing import Metadata
 from .base import IncrementalProgressCallbackType, ProgressProportionCallbackType
 
 # pylint: disable=import-error, no-name-in-module
 from azure.core.exceptions import HttpResponseError, ResourceExistsError
 from azure.storage.blob import BlobServiceClient, ContentSettings
-from typing import Optional, Union
+from typing import Any, BinaryIO, cast, Dict, Iterator, Optional, Union
 
 import azure.common
 import logging
@@ -36,7 +40,7 @@ ENDPOINT_SUFFIXES = {
 }
 
 
-def calculate_max_block_size():
+def calculate_max_block_size() -> int:
     total_mem_mib = get_total_memory() or 0
     # At least 4 MiB, at most 100 MiB. Max block size used for hosts with ~100+ GB of memory
     return max(min(int(total_mem_mib / 1000), 100), 4) * 1024 * 1024
@@ -67,13 +71,13 @@ class AzureTransfer(BaseTransfer[Config]):
 
     def __init__(
         self,
-        bucket_name,
-        account_name,
-        account_key=None,
-        sas_token=None,
-        prefix=None,
-        azure_cloud=None,
-        proxy_info=None,
+        bucket_name: str,
+        account_name: str,
+        account_key: Optional[str] = None,
+        sas_token: Optional[str] = None,
+        prefix: Optional[str] = None,
+        azure_cloud: Optional[str] = None,
+        proxy_info: Optional[dict[str, Union[str, int]]] = None,
         notifier: Optional[Notifier] = None,
         statsd_info: Optional[StatsdConfig] = None,
     ) -> None:
@@ -97,7 +101,7 @@ class AzureTransfer(BaseTransfer[Config]):
             f"AccountKey={self.account_key};"
             f"EndpointSuffix={endpoint_suffix}"
         )
-        config = {"max_block_size": MAX_BLOCK_SIZE}
+        config: dict[str, Any] = {"max_block_size": MAX_BLOCK_SIZE}
         if proxy_info:
             username = proxy_info.get("user")
             password = proxy_info.get("pass")
@@ -121,7 +125,9 @@ class AzureTransfer(BaseTransfer[Config]):
         self.container = self.get_or_create_container(self.container_name)
         self.log.debug("AzureTransfer initialized, %r", self.container_name)
 
-    def copy_file(self, *, source_key, destination_key, metadata=None, **kwargs):
+    def copy_file(
+        self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **kwargs: Any
+    ) -> None:
         timeout = kwargs.get("timeout") or 15
         source_path = self.format_key_for_backend(source_key, remove_slash_prefix=True, trailing_slash=False)
         destination_path = self.format_key_for_backend(destination_key, remove_slash_prefix=True, trailing_slash=False)
@@ -156,36 +162,40 @@ class AzureTransfer(BaseTransfer[Config]):
                     )
                 )
 
-    def get_metadata_for_key(self, key):
+    def get_metadata_for_key(self, key: str) -> Metadata:
         path = self.format_key_for_backend(key, remove_slash_prefix=True, trailing_slash=False)
         items = list(self._iter_key(path=path, with_metadata=True, deep=False))
         if not items:
             raise FileNotFoundFromStorageError(path)
         expected_name = path.rsplit("/", 1)[-1]
+        item: IterKeyItem
         for item in items:
             # We expect single result but Azure listing is prefix match so we need to explicitly
             # look up the matching result
+            item_name: str
             if item.type == KEY_TYPE_OBJECT:
-                item_name = item.value["name"]
+                item_name = cast(Dict[str, str], item.value)["name"]
             else:
-                item_name = item.value
+                item_name = cast(str, item.value)
             if item_name.rstrip("/").rsplit("/", 1)[-1] == expected_name:
                 break
         else:
-            item = None
-        if not item or item.type != KEY_TYPE_OBJECT:
+            raise FileNotFoundFromStorageError(path)
+        if item.type != KEY_TYPE_OBJECT:
             raise FileNotFoundFromStorageError(path)  # not found or prefix
-        return item.value["metadata"]
+        return cast(Dict[str, Any], item.value)["metadata"]
 
-    def _metadata_for_key(self, path):
-        return list(self._iter_key(path=path, with_metadata=True, deep=False))[0].value["metadata"]
+    def _metadata_for_key(self, path: str) -> Metadata:
+        return cast(Dict[str, Any], list(self._iter_key(path=path, with_metadata=True, deep=False))[0].value)["metadata"]
 
-    def iter_key(self, key, *, with_metadata=True, deep=False, include_key=False):
+    def iter_key(
+        self, key: str, *, with_metadata: bool = True, deep: bool = False, include_key: bool = False
+    ) -> Iterator[IterKeyItem]:
         path = self.format_key_for_backend(key, remove_slash_prefix=True, trailing_slash=not include_key)
         self.log.debug("Listing path %r", path)
         yield from self._iter_key(path=path, with_metadata=with_metadata, deep=deep)
 
-    def _iter_key(self, *, path, with_metadata, deep):
+    def _iter_key(self, *, path: str, with_metadata: bool, deep: bool) -> Iterator[IterKeyItem]:
         include = "metadata" if with_metadata else None
         container_client = self.conn.get_container_client(self.container_name)
         name_starts_with = None
@@ -231,20 +241,20 @@ class AzureTransfer(BaseTransfer[Config]):
         return result
 
     @classmethod
-    def _parse_length_from_content_range(cls, content_range):
+    def _parse_length_from_content_range(cls, content_range: str) -> int:
         """Parses the blob length from the content range header: bytes 1-3/65537"""
         if not content_range:
             raise ValueError("File size unavailable")
 
         return int(content_range.split(" ", 1)[1].split("/", 1)[1])
 
-    def _stream_blob(self, key, fileobj, progress_callback):
+    def _stream_blob(self, key: str, fileobj: BinaryIO, progress_callback: ProgressProportionCallbackType) -> None:
         """Streams contents of given key to given fileobj. Data is read sequentially in chunks
         without any seeks. This requires duplicating some functionality of the Azure SDK, which only
         allows reading entire blob into memory at once or returning data from random offsets"""
         file_size = None
         start_range = 0
-        chunk_size = self.conn._config.max_chunk_get_size  # pylint: disable=protected-access
+        chunk_size = self.conn._config.max_chunk_get_size  # type: ignore [attr-defined] # pylint: disable=protected-access
         end_range = chunk_size - 1
         blob = self.conn.get_blob_client(self.container_name, key)
         while True:
@@ -269,7 +279,9 @@ class AzureTransfer(BaseTransfer[Config]):
                     return
                 raise FileNotFoundFromStorageError(key) from ex
 
-    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
+    def get_contents_to_fileobj(
+        self, key: str, fileobj_to_store_to: BinaryIO, *, progress_callback: ProgressProportionCallbackType = None
+    ) -> Metadata:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
 
         self.log.debug("Starting to fetch the contents of: %r", path)
@@ -282,7 +294,7 @@ class AzureTransfer(BaseTransfer[Config]):
             progress_callback(1, 1)
         return self._metadata_for_key(path)
 
-    def get_file_size(self, key):
+    def get_file_size(self, key: str) -> int:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
         try:
             blob_client = self.conn.get_blob_client(self.container_name, path)
@@ -292,15 +304,15 @@ class AzureTransfer(BaseTransfer[Config]):
 
     def store_file_object(
         self,
-        key,
-        fd,
-        metadata=None,
+        key: str,
+        fd: BinaryIO,
+        metadata: Optional[Metadata] = None,
         *,
-        cache_control=None,
-        mimetype=None,
-        multipart: Union[bool, None] = None,
+        cache_control: Optional[str] = None,
+        mimetype: Optional[str] = None,
+        multipart: Optional[bool] = None,  # pylint: disable=unused-argument
         upload_progress_fn: IncrementalProgressCallbackType = None,
-    ):  # pylint: disable=unused-argument
+    ) -> None:
         if cache_control is not None:
             raise NotImplementedError("AzureTransfer: cache_control support not implemented")
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
@@ -309,7 +321,7 @@ class AzureTransfer(BaseTransfer[Config]):
             content_settings = ContentSettings(content_type=mimetype)
         notify_size = [(metadata or {}).get("Content-Length", 0)]
 
-        def progress_callback(pipeline_response):
+        def progress_callback(pipeline_response: Any) -> None:
             bytes_sent = pipeline_response.context["upload_stream_current"]
             if bytes_sent:
                 notify_size[0] = bytes_sent
@@ -321,13 +333,13 @@ class AzureTransfer(BaseTransfer[Config]):
         seekable = hasattr(fd, "seekable") and fd.seekable()
         if not seekable:
             original_tell = getattr(fd, "tell", None)
-            fd.tell = lambda: None
+            fd.tell = lambda: None  # type: ignore [assignment,method-assign,return-value]
         sanitized_metadata = self.sanitize_metadata(metadata, replace_hyphen_with="_")
         try:
             blob_client = self.conn.get_blob_client(self.container_name, path)
             blob_client.upload_blob(
                 fd,
-                blob_type=BlobType.BlockBlob,  # type: ignore
+                blob_type=BlobType.BlockBlob,  # type: ignore [arg-type]
                 content_settings=content_settings,
                 metadata=sanitized_metadata,
                 raw_response_hook=progress_callback,
@@ -337,11 +349,11 @@ class AzureTransfer(BaseTransfer[Config]):
         finally:
             if not seekable:
                 if original_tell is not None:
-                    fd.tell = original_tell
+                    fd.tell = original_tell  # type: ignore [method-assign]
                 else:
                     delattr(fd, "tell")
 
-    def get_or_create_container(self, container_name):
+    def get_or_create_container(self, container_name: str) -> str:
         start_time = time.monotonic()
         try:
             self.conn.create_container(container_name)

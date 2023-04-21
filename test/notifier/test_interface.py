@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 
 class _TestNotifier(Notifier):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.object_created_called = 0
         self.object_deleted_called = 0

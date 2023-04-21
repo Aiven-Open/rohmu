@@ -5,10 +5,14 @@ Copyright (c) 2016 Ohmu Ltd
 Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
+
+from __future__ import annotations
+
 from ..common.models import ProxyInfo, StorageModel, StorageOperation
 from ..common.statsd import StatsdConfig
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
 from ..notifier.interface import Notifier
+from ..typing import Metadata
 from .base import (
     BaseTransfer,
     get_total_memory,
@@ -18,7 +22,8 @@ from .base import (
     KEY_TYPE_PREFIX,
     ProgressProportionCallbackType,
 )
-from typing import Collection, Dict, Optional, Union
+from botocore.response import StreamingBody
+from typing import Any, BinaryIO, Collection, Dict, Iterator, Optional, Union
 
 import boto3
 import botocore.client
@@ -29,13 +34,13 @@ import math
 import time
 
 
-def calculate_chunk_size():
+def calculate_chunk_size() -> int:
     total_mem_mib = get_total_memory() or 0
     # At least 5 MiB, at most 524 MiB. Max block size used for hosts with ~210+ GB of memory
     return max(min(int(total_mem_mib / 400), 524), 5) * 1024 * 1024
 
 
-def get_proxy_url(proxy_info):
+def get_proxy_url(proxy_info: dict[str, Union[str, int]]) -> str:
     username = proxy_info.get("user")
     password = proxy_info.get("pass")
     if username and password:
@@ -83,20 +88,20 @@ class S3Transfer(BaseTransfer[Config]):
 
     def __init__(
         self,
-        region,
-        bucket_name,
-        aws_access_key_id=None,
-        aws_secret_access_key=None,
-        prefix=None,
-        host=None,
-        port=None,
-        is_secure=False,
-        is_verify_tls=False,
-        segment_size=MULTIPART_CHUNK_SIZE,
-        encrypted=False,
-        proxy_info=None,
-        connect_timeout=None,
-        read_timeout=None,
+        region: str,
+        bucket_name: str,
+        aws_access_key_id: Optional[str] = None,
+        aws_secret_access_key: Optional[str] = None,
+        prefix: Optional[str] = None,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
+        is_secure: bool = False,
+        is_verify_tls: bool = False,
+        segment_size: int = MULTIPART_CHUNK_SIZE,
+        encrypted: bool = False,
+        proxy_info: Optional[dict[str, Union[str, int]]] = None,
+        connect_timeout: Optional[float] = None,
+        read_timeout: Optional[float] = None,
         notifier: Optional[Notifier] = None,
         aws_session_token: Optional[str] = None,
         statsd_info: Optional[StatsdConfig] = None,
@@ -106,13 +111,13 @@ class S3Transfer(BaseTransfer[Config]):
         self.bucket_name = bucket_name
         self.location = ""
         self.region = region
-        timeouts = {}
+        timeouts: dict[str, Any] = {}
         if connect_timeout:
             timeouts["connect_timeout"] = connect_timeout
         if read_timeout:
             timeouts["read_timeout"] = read_timeout
         if not host or not port:
-            custom_config = {**timeouts}
+            custom_config: dict[str, Any] = {**timeouts}
             if proxy_info:
                 proxy_url = get_proxy_url(proxy_info)
                 custom_config["proxies"] = {"https": proxy_url}
@@ -160,7 +165,9 @@ class S3Transfer(BaseTransfer[Config]):
         self.encrypted = encrypted
         self.log.debug("S3Transfer initialized")
 
-    def copy_file(self, *, source_key, destination_key, metadata=None, **_kwargs):
+    def copy_file(
+        self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **_kwargs: Any
+    ) -> None:
         source_path = self.bucket_name + "/" + self.format_key_for_backend(source_key, remove_slash_prefix=True)
         destination_path = self.format_key_for_backend(destination_key, remove_slash_prefix=True)
         self.stats.operation(StorageOperation.copy_file)
@@ -180,11 +187,11 @@ class S3Transfer(BaseTransfer[Config]):
             else:
                 raise StorageError("Copying {!r} to {!r} failed: {!r}".format(source_key, destination_key, ex)) from ex
 
-    def get_metadata_for_key(self, key):
+    def get_metadata_for_key(self, key: str) -> Metadata:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
         return self._metadata_for_key(path)
 
-    def _metadata_for_key(self, key):
+    def _metadata_for_key(self, key: str) -> Metadata:
         self.stats.operation(StorageOperation.metadata_for_key)
         try:
             response = self.s3_client.head_object(Bucket=self.bucket_name, Key=key)
@@ -216,12 +223,14 @@ class S3Transfer(BaseTransfer[Config]):
         for key in keys:
             self.notifier.object_deleted(key=key)
 
-    def iter_key(self, key, *, with_metadata=True, deep=False, include_key=False):
+    def iter_key(
+        self, key: str, *, with_metadata: bool = True, deep: bool = False, include_key: bool = False
+    ) -> Iterator[IterKeyItem]:
         path = self.format_key_for_backend(key, remove_slash_prefix=True, trailing_slash=not include_key)
         self.log.debug("Listing path %r", path)
         continuation_token = None
         while True:
-            args = {
+            args: dict[str, Any] = {
                 "Bucket": self.bucket_name,
                 "Prefix": path,
             }
@@ -263,7 +272,7 @@ class S3Transfer(BaseTransfer[Config]):
             else:
                 break
 
-    def _get_object_stream(self, key):
+    def _get_object_stream(self, key: str) -> tuple[StreamingBody, int, Metadata]:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
         try:
             # Actual usage is accounted for in
@@ -281,7 +290,9 @@ class S3Transfer(BaseTransfer[Config]):
                 raise StorageError("Fetching the remote object {} failed".format(path)) from ex
         return response["Body"], response["ContentLength"], response["Metadata"]
 
-    def _read_object_to_fileobj(self, fileobj, streaming_body, body_length, cb: ProgressProportionCallbackType = None):
+    def _read_object_to_fileobj(
+        self, fileobj: BinaryIO, streaming_body: StreamingBody, body_length: int, cb: ProgressProportionCallbackType = None
+    ) -> None:
         data_read = 0
         while data_read < body_length:
             read_amount = body_length - data_read
@@ -296,12 +307,14 @@ class S3Transfer(BaseTransfer[Config]):
         if cb:
             cb(data_read, body_length)
 
-    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
+    def get_contents_to_fileobj(
+        self, key: str, fileobj_to_store_to: BinaryIO, *, progress_callback: ProgressProportionCallbackType = None
+    ) -> Metadata:
         stream, length, metadata = self._get_object_stream(key)
         self._read_object_to_fileobj(fileobj_to_store_to, stream, length, cb=progress_callback)
         return metadata
 
-    def get_file_size(self, key):
+    def get_file_size(self, key: str) -> int:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
         self.stats.operation(StorageOperation.get_file_size)
         try:
@@ -314,8 +327,16 @@ class S3Transfer(BaseTransfer[Config]):
                 raise StorageError("File size lookup failed for {}".format(path)) from ex
 
     def multipart_upload_file_object(
-        self, *, cache_control, fp, key, metadata, mimetype, progress_fn: ProgressProportionCallbackType = None, size=None
-    ):
+        self,
+        *,
+        cache_control: Optional[str],
+        fp: BinaryIO,
+        key: str,
+        metadata: Optional[Metadata],
+        mimetype: Optional[str],
+        progress_fn: ProgressProportionCallbackType = None,
+        size: Optional[int] = None,
+    ) -> None:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
         start_of_multipart_upload = time.monotonic()
         bytes_sent = 0
@@ -328,7 +349,7 @@ class S3Transfer(BaseTransfer[Config]):
         parts = []
         part_number = 1
 
-        args = {
+        args: dict[str, Any] = {
             "Bucket": self.bucket_name,
             "Key": path,
         }
@@ -399,7 +420,8 @@ class S3Transfer(BaseTransfer[Config]):
                     part_number += 1
                     bytes_sent += len(data)
                     if progress_fn:
-                        progress_fn(bytes_sent, size)
+                        # TODO: change this to incremental progress. Size parameter is currently unused.
+                        progress_fn(bytes_sent, size)  # type: ignore [arg-type]
                     break
 
         self.stats.operation(StorageOperation.multipart_complete)
@@ -431,18 +453,18 @@ class S3Transfer(BaseTransfer[Config]):
 
     def store_file_from_memory(
         self,
-        key,
-        memstring,
-        metadata=None,
+        key: str,
+        memstring: bytes,
+        metadata: Optional[Metadata] = None,
         *,
-        cache_control=None,
-        mimetype=None,
-        multipart: Union[bool, None] = None,
-        progress_fn: ProgressProportionCallbackType = None,
-    ):  # pylint: disable=unused-argument
+        cache_control: Optional[str] = None,
+        mimetype: Optional[str] = None,
+        multipart: Optional[bool] = None,  # pylint: disable=unused-argument
+        progress_fn: ProgressProportionCallbackType = None,  # pylint: disable=unused-argument
+    ) -> None:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
         data = bytes(memstring)  # make sure Body is of type bytes as memoryview's not allowed, only bytes/bytearrays
-        args = {
+        args: dict[str, Any] = {
             "Bucket": self.bucket_name,
             "Body": data,
             "Key": path,
@@ -462,15 +484,15 @@ class S3Transfer(BaseTransfer[Config]):
 
     def store_file_object(
         self,
-        key,
-        fd,
-        metadata=None,
+        key: str,
+        fd: BinaryIO,
+        metadata: Optional[Metadata] = None,
         *,
-        cache_control=None,
-        mimetype=None,
-        multipart: Union[bool, None] = None,
+        cache_control: Optional[str] = None,
+        mimetype: Optional[str] = None,
+        multipart: Optional[bool] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
-    ):  # pylint: disable=unused-argument
+    ) -> None:  # pylint: disable=unused-argument
         if not self._should_multipart(
             chunk_size=self.multipart_chunk_size, default=True, metadata=metadata, multipart=multipart
         ):
@@ -489,7 +511,7 @@ class S3Transfer(BaseTransfer[Config]):
             progress_fn=self._proportional_to_incremental_progress(upload_progress_fn),
         )
 
-    def check_or_create_bucket(self):
+    def check_or_create_bucket(self) -> None:
         create_bucket = False
         self.stats.operation(StorageOperation.head_request)
         try:
@@ -507,7 +529,7 @@ class S3Transfer(BaseTransfer[Config]):
 
         if create_bucket:
             self.log.debug("Creating bucket: %r in location: %r", self.bucket_name, self.region)
-            args = {
+            args: dict[str, Any] = {
                 "Bucket": self.bucket_name,
             }
             if self.location:
@@ -519,7 +541,7 @@ class S3Transfer(BaseTransfer[Config]):
             self.s3_client.create_bucket(**args)
 
     @classmethod
-    def _read_bytes(cls, stream, length):
+    def _read_bytes(cls, stream: BinaryIO, length: int) -> Optional[bytes]:
         bytes_remaining = length
         read_results = []
         while bytes_remaining > 0:

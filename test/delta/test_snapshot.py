@@ -1,6 +1,6 @@
 # Copyright (c) 2021 Aiven, Helsinki, Finland. https://aiven.io/
 from pathlib import Path
-from rohmu.delta.common import BackupPath, EMBEDDED_FILE_SIZE, Progress, SnapshotFile, SnapshotHash
+from rohmu.delta.common import BackupPath, EMBEDDED_FILE_SIZE, Progress, SizeLimitedFile, SnapshotFile, SnapshotHash
 
 import mock
 import os
@@ -173,7 +173,7 @@ def test_snapshot_error_when_required_files_not_found(snapshotter_creator):
 
         orig_open_for_reading = SnapshotFile.open_for_reading
 
-        def fake_open_for_reading(self, path: Path):
+        def fake_open_for_reading(self: SnapshotFile, path: Path) -> SizeLimitedFile:
             if self.relative_path.name == "foo":
                 raise FileNotFoundError()
             return orig_open_for_reading(self, path)

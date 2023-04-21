@@ -4,15 +4,17 @@ rohmu - rohmu data transformation interface
 Copyright (c) 2016 Ohmu Ltd
 See LICENSE for details
 """
-
 from . import IO_BLOCK_SIZE
 from .compressor import CompressionFile, DecompressionFile, DecompressSink
 from .encryptor import DecryptorFile, DecryptSink, EncryptorFile
 from .errors import InvalidConfigurationError
 from .filewrap import ThrottleSink
 from .object_storage.base import IncrementalProgressCallbackType
+from .typing import Metadata
 from contextlib import suppress
 from inspect import signature
+from io import IOBase
+from typing import BinaryIO, Callable, Optional
 
 import time
 
@@ -24,7 +26,9 @@ def _fileobj_name(input_obj):
     return repr(input_obj)
 
 
-def _get_encryption_key_data(metadata, key_lookup):
+def _get_encryption_key_data(
+    metadata: Optional[Metadata], key_lookup: Optional[Callable[[str], Optional[str]]]
+) -> Optional[str]:
     if not metadata or not metadata.get("encryption-key-id"):
         return None
 
@@ -39,7 +43,9 @@ def _get_encryption_key_data(metadata, key_lookup):
     return key_data
 
 
-def file_reader(*, fileobj, metadata=None, key_lookup=None):
+def file_reader(
+    *, fileobj: IOBase, metadata: Optional[Metadata] = None, key_lookup: Optional[Callable[[str], Optional[str]]] = None
+) -> IOBase:
     if not metadata:
         return fileobj
 
@@ -80,8 +86,14 @@ def _callback_wrapper(progress_callback: IncrementalProgressCallbackType) -> Inc
 
 
 def read_file(
-    *, input_obj, output_obj, metadata, key_lookup, progress_callback: IncrementalProgressCallbackType = None, log_func=None
-):
+    *,
+    input_obj: IOBase,
+    output_obj: BinaryIO,
+    metadata: Metadata,
+    key_lookup: Optional[Callable[[str], Optional[str]]],
+    progress_callback: IncrementalProgressCallbackType = None,
+    log_func: Optional[Callable[..., None]] = None,
+) -> tuple[int, int]:
     start_time = time.monotonic()
     progress_callback = _callback_wrapper(progress_callback)
 

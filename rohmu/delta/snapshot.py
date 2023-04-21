@@ -45,13 +45,13 @@ class Snapshotter:
     def __init__(
         self,
         *,
-        src,
-        dst,
-        globs,
+        src: Union[str, os.PathLike[str]],
+        dst: Union[str, os.PathLike[str]],
+        globs: list[str],
         src_iterate_func: Optional[Callable[[], Iterable[Union[BackupPath, str, Path]]]] = None,
         parallel: int = 1,
         min_delta_file_size: int = 0,
-    ):
+    ) -> None:
         assert globs
         self.src = Path(src)
         self.dst = Path(dst)
@@ -275,7 +275,7 @@ class Snapshotter:
 
         progress.add_total(len(snapshotfiles))
 
-        def _cb(snapshotfile: SnapshotFile):
+        def _cb(snapshotfile: SnapshotFile) -> SnapshotFile:
             # src may or may not be present; dst is present as it is in snapshot
             with snapshotfile.open_for_reading(self.dst) as f:
                 if snapshotfile.file_size <= EMBEDDED_FILE_SIZE:

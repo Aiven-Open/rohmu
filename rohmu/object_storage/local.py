@@ -9,6 +9,7 @@ from ..common.models import StorageModel
 from ..common.statsd import StatsdConfig
 from ..errors import FileNotFoundFromStorageError
 from ..notifier.interface import Notifier
+from ..typing import Metadata
 from .base import (
     BaseTransfer,
     IncrementalProgressCallbackType,
@@ -17,7 +18,7 @@ from .base import (
     KEY_TYPE_PREFIX,
     ProgressProportionCallbackType,
 )
-from typing import Optional, Union
+from typing import BinaryIO, Optional, Union
 
 import contextlib
 import datetime
@@ -39,8 +40,8 @@ class LocalTransfer(BaseTransfer[Config]):
 
     def __init__(
         self,
-        directory,
-        prefix=None,
+        directory: str,
+        prefix: Optional[str] = None,
         notifier: Optional[Notifier] = None,
         statsd_info: Optional[StatsdConfig] = None,
     ) -> None:
@@ -155,7 +156,9 @@ class LocalTransfer(BaseTransfer[Config]):
                     with_metadata=with_metadata,
                 )
 
-    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
+    def get_contents_to_fileobj(
+        self, key: str, fileobj_to_store_to: BinaryIO, *, progress_callback: ProgressProportionCallbackType = None
+    ) -> Metadata:
         source_path = self.format_key_for_backend(key.strip("/"))
         if not os.path.exists(source_path):
             raise FileNotFoundFromStorageError(key)
@@ -187,15 +190,15 @@ class LocalTransfer(BaseTransfer[Config]):
 
     def store_file_object(
         self,
-        key,
-        fd,
-        metadata=None,
+        key: str,
+        fd: BinaryIO,
+        metadata: Optional[Metadata] = None,
         *,
-        cache_control=None,
-        mimetype=None,
-        multipart: Union[bool, None] = None,
+        cache_control: Optional[str] = None,
+        mimetype: Optional[str] = None,
+        multipart: Optional[bool] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
-    ):  # pylint: disable=unused-argument
+    ) -> None:  # pylint: disable=unused-argument
         target_path = self.format_key_for_backend(key.strip("/"))
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
         bytes_written = 0

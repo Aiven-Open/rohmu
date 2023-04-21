@@ -13,7 +13,7 @@ def local_transfer(tmp_path):
 
 
 class SnapshotterWithDefaults(Snapshotter):
-    def create_samples(self, samples: Dict[Path, str]):
+    def create_samples(self, samples: Dict[Path, str]) -> None:
         for file_name, body in samples.items():
             (self.src / file_name).write_text(body)
         progress = Progress()

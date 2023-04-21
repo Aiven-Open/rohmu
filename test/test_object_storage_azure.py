@@ -27,12 +27,12 @@ def fixture_mock_azure_module() -> Tuple[ModuleType, MagicMock]:
 
 
 @pytest.fixture(name="azure_module")
-def fixture_azure_module(mock_azure_module) -> ModuleType:
+def fixture_azure_module(mock_azure_module: Tuple[ModuleType, MagicMock]) -> ModuleType:
     return mock_azure_module[0]
 
 
 @pytest.fixture(name="get_blob_client")
-def fixture_get_blob_client(mock_azure_module) -> MagicMock:
+def fixture_get_blob_client(mock_azure_module: Tuple[ModuleType, MagicMock]) -> MagicMock:
     return mock_azure_module[1]
 
 

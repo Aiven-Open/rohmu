@@ -10,6 +10,7 @@ from ..common.statsd import StatsdConfig
 from ..dates import parse_timestamp
 from ..errors import FileNotFoundFromStorageError
 from ..notifier.interface import Notifier
+from ..typing import Metadata
 from .base import (
     BaseTransfer,
     IncrementalProgressCallbackType,
@@ -20,7 +21,7 @@ from .base import (
 )
 from contextlib import suppress
 from swiftclient import client, exceptions  # pylint: disable=import-error
-from typing import Optional, Union
+from typing import BinaryIO, Optional, Union
 
 import logging
 import os
@@ -78,25 +79,25 @@ class SwiftTransfer(BaseTransfer[Config]):
     def __init__(
         self,
         *,
-        user,
-        key,
-        container_name,
-        auth_url,
-        auth_version="2.0",
-        tenant_name=None,
-        prefix=None,
-        segment_size=SEGMENT_SIZE,
-        region_name=None,
-        user_id=None,
-        user_domain_id=None,
-        user_domain_name=None,
-        tenant_id=None,
-        project_id=None,
-        project_name=None,
-        project_domain_id=None,
-        project_domain_name=None,
-        service_type=None,
-        endpoint_type=None,
+        user: str,
+        key: str,
+        container_name: str,
+        auth_url: str,
+        auth_version: str = "2.0",
+        tenant_name: Optional[str] = None,
+        prefix: Optional[str] = None,
+        segment_size: int = SEGMENT_SIZE,
+        region_name: Optional[str] = None,
+        user_id: Optional[str] = None,
+        user_domain_id: Optional[str] = None,
+        user_domain_name: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+        project_name: Optional[str] = None,
+        project_domain_id: Optional[str] = None,
+        project_domain_name: Optional[str] = None,
+        service_type: Optional[str] = None,
+        endpoint_type: Optional[str] = None,
         notifier: Optional[Notifier] = None,
         statsd_info: Optional[StatsdConfig] = None,
     ) -> None:
@@ -228,7 +229,9 @@ class SwiftTransfer(BaseTransfer[Config]):
             self._delete_object_plain(path)
         self.notifier.object_deleted(key=key)
 
-    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
+    def get_contents_to_fileobj(
+        self, key: str, fileobj_to_store_to: BinaryIO, *, progress_callback: ProgressProportionCallbackType = None
+    ) -> Metadata:
         path = self.format_key_for_backend(key)
         try:
             headers, data_gen = self.conn.get_object(self.container_name, path, resp_chunk_size=CHUNK_SIZE)
@@ -284,15 +287,15 @@ class SwiftTransfer(BaseTransfer[Config]):
 
     def store_file_object(
         self,
-        key,
-        fd,
-        metadata=None,
+        key: str,
+        fd: BinaryIO,
+        metadata: Optional[Metadata] = None,
         *,
-        cache_control=None,
-        mimetype=None,
-        multipart: Union[bool, None] = None,
+        cache_control: Optional[str] = None,
+        mimetype: Optional[str] = None,
+        multipart: Optional[bool] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
-    ):  # pylint: disable=unused-argument
+    ) -> None:  # pylint: disable=unused-argument
         metadata = metadata or {}
         content_length = metadata.get("Content-Length")
         multipart = self._should_multipart(
@@ -312,15 +315,15 @@ class SwiftTransfer(BaseTransfer[Config]):
 
     def _store_file_contents(
         self,
-        key,
-        fp,
-        cache_control=None,
-        metadata=None,
-        mimetype=None,
+        key: str,
+        fp: BinaryIO,
+        cache_control: Optional[str] = None,
+        metadata: Optional[Metadata] = None,
+        mimetype: Optional[str] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
-        multipart=None,
-        content_length=None,
-    ):
+        multipart: Optional[bool] = None,
+        content_length: Optional[int] = None,
+    ) -> None:
         if cache_control is not None:
             raise NotImplementedError("SwiftTransfer: cache_control support not implemented")
 
@@ -336,7 +339,7 @@ class SwiftTransfer(BaseTransfer[Config]):
         if (not multipart) or (not content_length) or content_length <= self.segment_size:
             self.log.debug("Uploading %r to %r (%r bytes)", fp, path, content_length)
             self.conn.put_object(self.container_name, path, contents=fp, content_length=content_length, headers=headers)
-            if upload_progress_fn:
+            if upload_progress_fn and content_length is not None:
                 upload_progress_fn(content_length)
             return
 

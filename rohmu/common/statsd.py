@@ -16,7 +16,7 @@ This is combination of:
 """
 from contextlib import asynccontextmanager, contextmanager
 from enum import Enum
-from typing import Dict, Optional, Union
+from typing import Any, AsyncIterator, Dict, Iterator, Optional, Union
 
 import pydantic
 import socket
@@ -64,12 +64,12 @@ class StatsClient:
         self._operation_map = config.operation_map
 
     @asynccontextmanager
-    async def async_timing_manager(self, metric: str, tags: Optional[Tags] = None):
+    async def async_timing_manager(self, metric: str, tags: Optional[Tags] = None) -> AsyncIterator[None]:
         with self.timing_manager(metric, tags=tags):
             yield
 
     @contextmanager
-    def timing_manager(self, metric: str, tags: Optional[Tags] = None):
+    def timing_manager(self, metric: str, tags: Optional[Tags] = None) -> Iterator[None]:
         start_time = time.monotonic()
         tags = (tags or {}).copy()
         try:
@@ -90,15 +90,15 @@ class StatsClient:
     def timing(self, metric: str, value: Union[int, float], *, tags: Optional[Tags] = None) -> None:
         self._send(metric, b"ms", value, tags)
 
-    def unexpected_exception(self, ex, where, *, tags: Optional[Tags] = None) -> None:
-        all_tags = {
+    def unexpected_exception(self, ex: BaseException, where: str, *, tags: Optional[Tags] = None) -> None:
+        all_tags: dict[str, Any] = {
             "exception": ex.__class__.__name__,
             "where": where,
         }
         all_tags.update(tags or {})
         self.increase("exception", tags=all_tags)
 
-    def operation(self, operation, *, count: int = 1, size: Union[int, None] = None):
+    def operation(self, operation: str, *, count: int = 1, size: Union[int, None] = None) -> None:
         tags: Tags = {"operation": self._operation_map.get(str(operation), str(operation))}
         self.increase("rohmu_operation_count", tags=tags, inc_value=count)
         if size is not None:

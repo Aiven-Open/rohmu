@@ -5,7 +5,7 @@ from multiprocessing.dummy import Pool
 from pathlib import Path
 from pydantic import BaseModel, Field
 from rohmu.dates import now
-from typing import List, Optional
+from typing import Any, Callable, Iterable, List, Optional
 
 import functools
 import hashlib
@@ -284,7 +284,9 @@ class Progress(DeltaModel):
         return p
 
 
-def parallel_map_to(*, fun, iterable, result_callback, n=None) -> bool:
+def parallel_map_to(
+    *, fun: Callable[[Any], Any], iterable: Iterable[Any], result_callback: Callable[..., bool], n: Optional[int] = None
+) -> bool:
     iterable_as_list = list(iterable)
     with Pool(n) as p:
         for map_in, map_out in zip(iterable_as_list, p.imap(fun, iterable_as_list)):
