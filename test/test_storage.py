@@ -106,7 +106,7 @@ def test_hidden_local_files(local_transfer):
     with open(Path(local_transfer.prefix) / ".null", "w"):
         pass
     with open(Path(local_transfer.prefix) / ".null.metadata", "w") as f:
-        f.write('{"k": "v"}')
+        f.write('{"k": "v", "_hash": ""}')
     assert local_transfer.list_path("") == []
 
     # Make sure the previous test actually worked, by manually creating a file
@@ -114,7 +114,7 @@ def test_hidden_local_files(local_transfer):
     with open(Path(local_transfer.prefix) / "somefile", "w"):
         pass
     with open(Path(local_transfer.prefix) / "somefile.metadata", "w") as f:
-        f.write('{"k": "v"}')
+        f.write('{"k": "v", "_hash": ""}')
 
     files = local_transfer.list_path("")
     assert len(files) == 1
