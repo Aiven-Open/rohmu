@@ -217,7 +217,7 @@ class AzureTransfer(BaseTransfer[Config]):
                     },
                 )
 
-    def delete_key(self, key):
+    def delete_key(self, key: str) -> None:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
         self.log.debug("Deleting key: %r", path)
         try:

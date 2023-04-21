@@ -72,7 +72,7 @@ class LocalTransfer(BaseTransfer[Config]):
         except FileNotFoundError:
             raise FileNotFoundFromStorageError(key)
 
-    def delete_key(self, key):
+    def delete_key(self, key: str) -> None:
         self.log.debug("Deleting key: %r", key)
         target_path = self.format_key_for_backend(key.strip("/"))
         if not os.path.exists(target_path):
