@@ -5,7 +5,7 @@ from io import BytesIO
 from rohmu.common.models import StorageOperation
 from rohmu.object_storage.s3 import S3Transfer
 from tempfile import NamedTemporaryFile
-from typing import Optional
+from typing import Any, Iterator, Optional
 from unittest.mock import MagicMock
 
 import pytest
@@ -20,7 +20,7 @@ class S3Infra:
 
 
 @pytest.fixture(name="infra")
-def fixture_infra(mocker):
+def fixture_infra(mocker: Any) -> Iterator[S3Infra]:
     notifier = MagicMock()
     get_session = mocker.patch("botocore.session.get_session")
     s3_client = MagicMock()

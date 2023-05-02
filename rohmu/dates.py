@@ -9,7 +9,7 @@ import dateutil.parser
 import dateutil.tz
 
 
-def parse_timestamp(ts, *, with_tz=True, assume_local=False):
+def parse_timestamp(ts: str, *, with_tz: bool = True, assume_local: bool = False) -> datetime.datetime:
     """Parse a given timestamp and return a datetime object with or without tzinfo.
 
     If `with_tz` is False and we can't parse a timezone from the timestamp the datetime object is returned
@@ -24,7 +24,7 @@ def parse_timestamp(ts, *, with_tz=True, assume_local=False):
 
     # pylint thinks dateutil.parser.parse always returns a tuple even though we didn't request it.
     # So this check is pointless but convinces pylint that we really have a datetime object now.
-    dt = parse_result[0] if isinstance(parse_result, tuple) else parse_result  # pylint: disable=unsubscriptable-object
+    dt = parse_result[0] if isinstance(parse_result, tuple) else parse_result  # type: ignore [index] # pylint: disable=unsubscriptable-object
 
     if with_tz is False:
         if not dt.tzinfo:
@@ -40,5 +40,5 @@ def parse_timestamp(ts, *, with_tz=True, assume_local=False):
     return dt.replace(tzinfo=tz)
 
 
-def now():
+def now() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)

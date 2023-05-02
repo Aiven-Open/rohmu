@@ -6,7 +6,7 @@ See LICENSE for details
 """
 from . import IO_BLOCK_SIZE
 from .compressor import CompressionFile, DecompressionFile, DecompressSink
-from .encryptor import DecryptorFile, DecryptSink, EncryptorFile
+from .encryptor import DecryptorFile, DecryptSink, EncryptorFile  # type: ignore
 from .errors import InvalidConfigurationError
 from .filewrap import ThrottleSink
 from .object_storage.base import IncrementalProgressCallbackType
@@ -14,12 +14,12 @@ from .typing import Metadata
 from contextlib import suppress
 from inspect import signature
 from io import IOBase
-from typing import BinaryIO, Callable, Optional
+from typing import BinaryIO, Callable, Optional, Union
 
 import time
 
 
-def _fileobj_name(input_obj):
+def _fileobj_name(input_obj: Union[IOBase, BinaryIO]) -> str:
     if hasattr(input_obj, "name"):
         return "open file {!r}".format(getattr(input_obj, "name"))
 
@@ -45,7 +45,7 @@ def _get_encryption_key_data(
 
 def file_reader(
     *, fileobj: IOBase, metadata: Optional[Metadata] = None, key_lookup: Optional[Callable[[str], Optional[str]]] = None
-) -> IOBase:
+) -> IOBase:  # type: ignore
     if not metadata:
         return fileobj
 
@@ -55,12 +55,12 @@ def file_reader(
 
     comp_alg = metadata.get("compression-algorithm")
     if comp_alg:
-        fileobj = DecompressionFile(fileobj, comp_alg)
+        fileobj = DecompressionFile(fileobj, comp_alg)  # type: ignore
 
     return fileobj
 
 
-def create_sink_pipeline(*, output, file_size=None, metadata=None, key_lookup=None, throttle_time=0.001):
+def create_sink_pipeline(*, output, file_size=None, metadata=None, key_lookup=None, throttle_time=0.001):  # type: ignore
     if throttle_time:
         output = ThrottleSink(output, throttle_time)
 
@@ -127,7 +127,9 @@ def read_file(
     return original_size, result_size
 
 
-def file_writer(*, fileobj, compression_algorithm=None, compression_level=0, compression_threads=0, rsa_public_key=None):
+def file_writer(  # type: ignore
+    *, fileobj, compression_algorithm=None, compression_level=0, compression_threads=0, rsa_public_key=None
+):
     if rsa_public_key:
         fileobj = EncryptorFile(fileobj, rsa_public_key)
 
@@ -137,7 +139,7 @@ def file_writer(*, fileobj, compression_algorithm=None, compression_level=0, com
     return fileobj
 
 
-def write_file(
+def write_file(  # type: ignore
     *,
     input_obj,
     output_obj,
@@ -194,7 +196,9 @@ def write_file(
     return original_size, result_size
 
 
-def log_compression_result(*, log_func, source_name, original_size, result_size, encrypted, elapsed):
+def log_compression_result(
+    *, log_func: Callable[..., None], source_name: str, original_size: int, result_size: int, encrypted: bool, elapsed: float
+) -> None:
     if original_size <= result_size:
         action = "Stored"
         ratio = ""

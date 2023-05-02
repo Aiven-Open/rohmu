@@ -4,9 +4,10 @@ rohmu - file-like interface for snappy
 Copyright (c) 2016 Ohmu Ltd
 See LICENSE for details
 """
-
 from . import IO_BLOCK_SIZE
 from .filewrap import FileWrap
+from .typing import BinaryData
+from typing import BinaryIO, Optional
 
 import io
 
@@ -17,7 +18,7 @@ except ImportError:
 
 
 class SnappyFile(FileWrap):
-    def __init__(self, next_fp, mode):
+    def __init__(self, next_fp: BinaryIO, mode: str) -> None:
         if snappy is None:
             raise io.UnsupportedOperation("Snappy is not available")
 
@@ -33,34 +34,38 @@ class SnappyFile(FileWrap):
         super().__init__(next_fp)
         self.decr_done = False
 
-    def close(self):
+    def close(self) -> None:
         if self.closed:
             return
         if self.encr:
             data = self.encr.flush() or b""
+            assert self.next_fp is not None
             if data:
                 self.next_fp.write(data)
             self.next_fp.flush()
         super().close()
 
-    def write(self, data):
+    def write(self, data: BinaryData) -> int:
         self._check_not_closed()
         if self.encr is None:
             raise io.UnsupportedOperation("file not open for writing")
-        compressed_data = self.encr.compress(data)
+        data_as_bytes = bytes(data)
+        compressed_data = self.encr.compress(data_as_bytes)
+        assert self.next_fp is not None
         self.next_fp.write(compressed_data)
-        self.offset += len(data)
-        return len(data)
+        self.offset += len(data_as_bytes)
+        return len(data_as_bytes)
 
-    def writable(self):
+    def writable(self) -> bool:
         return self.encr is not None
 
-    def read(self, size=-1):  # pylint: disable=unused-argument
+    def read(self, size: Optional[int] = -1) -> bytes:  # pylint: disable=unused-argument
         # NOTE: size arg is ignored, random size output is returned
         self._check_not_closed()
         if self.decr is None:
             raise io.UnsupportedOperation("file not open for reading")
         while not self.decr_done:
+            assert self.next_fp is not None
             compressed = self.next_fp.read(IO_BLOCK_SIZE)
             if not compressed:
                 self.decr_done = True
@@ -74,5 +79,5 @@ class SnappyFile(FileWrap):
 
         return b""
 
-    def readable(self):
+    def readable(self) -> bool:
         return self.decr is not None

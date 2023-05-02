@@ -1,9 +1,11 @@
+# type: ignore
 """
 rohmu - content encryption
 
 Copyright (c) 2016 Ohmu Ltd
 See LICENSE for details
 """
+
 
 from . import IO_BLOCK_SIZE
 from .filewrap import FileWrap, Sink, Stream

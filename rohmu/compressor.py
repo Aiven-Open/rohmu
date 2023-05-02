@@ -4,12 +4,14 @@ rohmu - compressor interface
 Copyright (c) 2016 Ohmu Ltd
 See LICENSE for details
 """
-
 from .errors import InvalidConfigurationError
 from .filewrap import Sink, Stream
 from .snappyfile import SnappyFile
+from .typing import Compressor, Decompressor, HasRead
 from .zstdfile import open as zstd_open
+from typing import cast, IO, Union
 
+import io
 import lzma
 
 try:
@@ -23,10 +25,10 @@ except ImportError:
     zstd = None  # type: ignore
 
 
-def CompressionFile(dst_fp, algorithm, level=0, threads=0):
+def CompressionFile(dst_fp: io.BufferedIOBase, algorithm: str, level: int = 0, threads: int = 0) -> io.BufferedIOBase:
     """This looks like a class to users, but is actually a function that instantiates a class based on algorithm."""
     if algorithm == "lzma":
-        return lzma.open(dst_fp, "w", preset=level)
+        return lzma.open(cast(IO[bytes], dst_fp), "w", preset=level)
 
     if algorithm == "snappy":
         return SnappyFile(dst_fp, "wb")
@@ -43,8 +45,9 @@ def CompressionFile(dst_fp, algorithm, level=0, threads=0):
 class CompressionStream(Stream):
     """Non-seekable stream of data that adds compression on top of given source stream"""
 
-    def __init__(self, src_fp, algorithm, level=0):
+    def __init__(self, src_fp: HasRead, algorithm: str, level: int = 0) -> None:
         super().__init__(src_fp, minimum_read_size=32 * 1024)
+        self._compressor: Compressor
         if algorithm == "lzma":
             self._compressor = lzma.LZMACompressor(lzma.FORMAT_XZ, -1, level, None)
         elif algorithm == "snappy":
@@ -54,17 +57,17 @@ class CompressionStream(Stream):
         else:
             raise InvalidConfigurationError("invalid compression algorithm: {!r}".format(algorithm))
 
-    def _process_chunk(self, data):
+    def _process_chunk(self, data: bytes) -> bytes:
         return self._compressor.compress(data)
 
-    def _finalize(self):
+    def _finalize(self) -> bytes:
         return self._compressor.flush()
 
 
-def DecompressionFile(src_fp, algorithm):
+def DecompressionFile(src_fp: io.BufferedIOBase, algorithm: str) -> io.BufferedIOBase:
     """This looks like a class to users, but is actually a function that instantiates a class based on algorithm."""
     if algorithm == "lzma":
-        return lzma.open(src_fp, "r")
+        return lzma.open(cast(IO[bytes], src_fp), "r")
 
     if algorithm == "snappy":
         return SnappyFile(src_fp, "rb")
@@ -79,11 +82,11 @@ def DecompressionFile(src_fp, algorithm):
 
 
 class DecompressSink(Sink):
-    def __init__(self, next_sink, compression_algorithm):
+    def __init__(self, next_sink: Union[io.BufferedIOBase, Sink], compression_algorithm: str):
         super().__init__(next_sink)
         self.decompressor = self._create_decompressor(compression_algorithm)
 
-    def _create_decompressor(self, alg):
+    def _create_decompressor(self, alg: str) -> Decompressor:
         if alg == "snappy":
             return snappy.StreamDecompressor()
         elif alg == "lzma":
@@ -92,7 +95,7 @@ class DecompressSink(Sink):
             return zstd.ZstdDecompressor().decompressobj()
         raise InvalidConfigurationError("invalid compression algorithm: {!r}".format(alg))
 
-    def write(self, data):
+    def write(self, data: bytes) -> int:
         written = len(data)
         if not data:
             return written

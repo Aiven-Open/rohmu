@@ -11,10 +11,23 @@ from ..errors import FileNotFoundFromStorageError, StorageError
 from ..notifier.interface import Notifier
 from ..notifier.null import NullNotifier
 from ..typing import AnyPath, Metadata
-from collections import namedtuple
 from contextlib import suppress
 from io import BytesIO
-from typing import Any, BinaryIO, Callable, Collection, Generic, Optional, Type, TypeVar, Union
+from typing import (
+    Any,
+    BinaryIO,
+    Callable,
+    cast,
+    Collection,
+    Dict,
+    Generic,
+    Iterator,
+    NamedTuple,
+    Optional,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import logging
 import os
@@ -23,7 +36,11 @@ import platform
 KEY_TYPE_OBJECT = "object"
 KEY_TYPE_PREFIX = "prefix"
 
-IterKeyItem = namedtuple("IterKeyItem", ["type", "value"])
+
+class IterKeyItem(NamedTuple):
+    type: str
+    value: Union[str, dict[str, Any]]
+
 
 # Percent complete is the ratio of the first argument to the second
 ProgressProportionCallbackType = Optional[Callable[[int, int], None]]
@@ -109,12 +126,14 @@ class BaseTransfer(Generic[StorageModelT]):
     def from_model(cls, model: StorageModelT) -> "BaseTransfer[StorageModelT]":
         return cls(**model.dict(by_alias=True))
 
-    def copy_file(self, *, source_key, destination_key, metadata=None, **_kwargs):
+    def copy_file(
+        self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **_kwargs: Any
+    ) -> None:
         """Performs remote copy from source key name to destination key name. Key must identify a file, trees
         cannot be copied with this method. If no metadata is given copies the existing metadata."""
         raise NotImplementedError
 
-    def format_key_for_backend(self, key, remove_slash_prefix=False, trailing_slash=False):
+    def format_key_for_backend(self, key: str, remove_slash_prefix: bool = False, trailing_slash: bool = False) -> str:
         """Add a possible prefix to the key before sending it to the backend"""
         path = self.prefix + key
         if trailing_slash:
@@ -126,7 +145,7 @@ class BaseTransfer(Generic[StorageModelT]):
             path = path.lstrip("/")
         return path
 
-    def format_key_from_backend(self, key):
+    def format_key_from_backend(self, key: str) -> str:
         """Strip the configured prefix from a key retrieved from the backend
         before passing it on to other pghoard code and presenting it to the
         user."""
@@ -144,7 +163,7 @@ class BaseTransfer(Generic[StorageModelT]):
         for key in keys:
             self.delete_key(key)
 
-    def delete_tree(self, key):
+    def delete_tree(self, key: str) -> None:
         """Delete all keys under given root key. Basic implementation works by just listing all available
         keys and deleting them individually but storage providers can implement more efficient logic."""
         self.log.debug("Deleting tree: %r", key)
@@ -177,41 +196,43 @@ class BaseTransfer(Generic[StorageModelT]):
         """Like `get_contents_to_file()` but writes to an open file-like object."""
         raise NotImplementedError
 
-    def get_contents_to_string(self, key):
+    def get_contents_to_string(self, key: str) -> tuple[bytes, Metadata]:
         """Returns a tuple (content-byte-string, metadata)"""
         with BytesIO() as buf:
             metadata = self.get_contents_to_fileobj(key, buf)
             return buf.getvalue(), metadata
 
-    def get_file_size(self, key):
+    def get_file_size(self, key: str) -> int:
         """Returns an int indicating the size of the file in bytes"""
         # This method isn't currently used by PGHoard itself, it is merely provided
         # for applications that use PGHoard's object storage abstraction layer.
         raise NotImplementedError
 
-    def get_metadata_for_key(self, key):
+    def get_metadata_for_key(self, key: str) -> Metadata:
         raise NotImplementedError
 
-    def list_path(self, key, *, with_metadata=True, deep=False):
+    def list_path(self, key: str, *, with_metadata: bool = True, deep: bool = False) -> list[dict[str, Any]]:
         return list(self.list_iter(key, with_metadata=with_metadata, deep=deep))
 
-    def list_iter(self, key, *, with_metadata=True, deep=False):
+    def list_iter(self, key: str, *, with_metadata: bool = True, deep: bool = False) -> Iterator[dict[str, Any]]:
         for item in self.iter_key(key, with_metadata=with_metadata, deep=deep):
             if item.type == KEY_TYPE_OBJECT:
-                yield item.value
+                yield cast(Dict[str, Any], item.value)
 
-    def list_prefixes(self, key):
+    def list_prefixes(self, key: str) -> list[str]:
         return list(self.iter_prefixes(key))
 
-    def iter_prefixes(self, key):
+    def iter_prefixes(self, key: str) -> Iterator[str]:
         for item in self.iter_key(key, with_metadata=False):
             if item.type == KEY_TYPE_PREFIX:
-                yield item.value
+                yield cast(str, item.value)
 
-    def iter_key(self, key, *, with_metadata=True, deep=False, include_key=False):
+    def iter_key(
+        self, key: str, *, with_metadata: bool = True, deep: bool = False, include_key: bool = False
+    ) -> Iterator[IterKeyItem]:
         raise NotImplementedError
 
-    def sanitize_metadata(self, metadata, replace_hyphen_with="-"):
+    def sanitize_metadata(self, metadata: Optional[Metadata], replace_hyphen_with: str = "-") -> dict[str, str]:
         """Convert non-string metadata values to strings and drop null values"""
         return {str(k).replace("-", replace_hyphen_with): str(v) for k, v in (metadata or {}).items() if v is not None}
 
@@ -285,7 +306,7 @@ class BaseTransfer(Generic[StorageModelT]):
         raise NotImplementedError
 
 
-def get_total_memory():
+def get_total_memory() -> Optional[int]:
     """return total system memory in mebibytes (or None if parsing meminfo fails)"""
     if platform.system() != "Linux":
         return None

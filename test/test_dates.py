@@ -11,7 +11,7 @@ import dateutil.tz
 import re
 
 
-def test_parse_timestamp():
+def test_parse_timestamp() -> None:
     local_aware = datetime.datetime.now(dateutil.tz.tzlocal())
 
     # split local_aware such as "2021-02-08T09:58:27.988218-05:00" into date, time, tzoffset components

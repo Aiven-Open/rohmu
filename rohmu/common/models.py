@@ -28,7 +28,7 @@ class StorageOperation(str, enum.Enum):
     multipart_aborted = "multipart_aborted"
     multipart_complete = "multipart_complete"
 
-    def __str__(self):
+    def __str__(self) -> str:
         return str(self.value)
 
 

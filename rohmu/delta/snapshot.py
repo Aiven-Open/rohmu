@@ -11,7 +11,7 @@ from rohmu.delta.common import (
     SnapshotHash,
     SnapshotState,
 )
-from typing import Callable, Dict, Generator, Iterable, List, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Callable, Dict, Generator, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 import base64
 import logging
@@ -286,8 +286,9 @@ class Snapshotter:
                     snapshotfile.hexdigest = hash_hexdigest_readable(f)
             return snapshotfile
 
-        def _result_cb(*, map_in, map_out):
+        def _result_cb(*, map_in: Any, map_out: "SnapshotFile") -> bool:
             self._add_snapshotfile(map_out)
+            assert progress is not None
             progress.add_success()
             return True
 

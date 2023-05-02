@@ -27,7 +27,7 @@ class MessageFormat(str, Enum):
     datadog = "datadog"
     telegraf = "telegraf"
 
-    def __str__(self):
+    def __str__(self) -> str:
         return str(self.value)
 
 

@@ -80,7 +80,7 @@ def test_file_is_never_created_if_function_breaks(tmp_path: Path) -> None:
 def test_file_is_fully_written_if_visible(tmp_path: Path) -> None:
     output_file = tmp_path / "something"
 
-    def linkhook():
+    def linkhook() -> None:
         assert output_file.exists()
         assert output_file.read_text() == "aaaaaaaaaa"
 

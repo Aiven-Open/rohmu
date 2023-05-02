@@ -21,7 +21,7 @@ from .base import (
 )
 from contextlib import suppress
 from swiftclient import client, exceptions  # pylint: disable=import-error
-from typing import BinaryIO, Optional, Union
+from typing import Any, BinaryIO, cast, Iterator, Optional
 
 import logging
 import os
@@ -35,15 +35,16 @@ SEGMENT_SIZE = 1024 * 1024 * 1024 * 3  # 3 Gi
 # command line to recreate the request that failed with a simple 404 error.
 # At WARNING level curl commands are not logged, but we get a full ugly
 # traceback for all failures, including 404s.  Monkey-patch them away.
-def swift_exception_logger(err):
+def swift_exception_logger(err: BaseException) -> Any:
     if not isinstance(err, exceptions.ClientException):
         return orig_swift_exception_logger(err)
     if getattr(err, "http_status", None) is None:
         return orig_swift_exception_logger(err)
-    if err.http_status == 404 and err.msg.startswith("Object GET failed"):
-        client.logger.debug("GET %r FAILED: %r", err.http_path, err.http_status)
+    client_err = cast(exceptions.ClientException, err)
+    if client_err.http_status == 404 and client_err.msg.startswith("Object GET failed"):
+        client.logger.debug("GET %r FAILED: %r", client_err.http_path, client_err.http_status)
     else:
-        client.logger.error(str(err))
+        client.logger.error(str(client_err))
     return None
 
 
@@ -133,18 +134,18 @@ class SwiftTransfer(BaseTransfer[Config]):
         self.log.debug("SwiftTransfer initialized")
 
     @staticmethod
-    def _headers_to_metadata(headers):
+    def _headers_to_metadata(headers: dict[str, str]) -> Metadata:
         return {name[len("x-object-meta-") :]: value for name, value in headers.items() if name.startswith("x-object-meta-")}
 
     @staticmethod
-    def _metadata_to_headers(metadata):
+    def _metadata_to_headers(metadata: Metadata) -> dict[str, str]:
         return {"x-object-meta-{}".format(name): str(value) for name, value in metadata.items()}
 
-    def get_metadata_for_key(self, key):
+    def get_metadata_for_key(self, key: str) -> Metadata:
         path = self.format_key_for_backend(key)
         return self._metadata_for_key(path)
 
-    def _metadata_for_key(self, key, *, resolve_manifest=False):
+    def _metadata_for_key(self, key: str, *, resolve_manifest: bool = False) -> Metadata:
         try:
             headers = self.conn.head_object(self.container_name, key)
         except exceptions.ClientException as ex:
@@ -163,7 +164,9 @@ class SwiftTransfer(BaseTransfer[Config]):
 
         return metadata
 
-    def iter_key(self, key, *, with_metadata=True, deep=False, include_key=False):
+    def iter_key(
+        self, key: str, *, with_metadata: bool = True, deep: bool = False, include_key: bool = False
+    ) -> Iterator[IterKeyItem]:
         path = self.format_key_for_backend(key, remove_slash_prefix=True, trailing_slash=not include_key)
         self.log.debug("Listing path %r", path)
         if not deep:
@@ -197,7 +200,7 @@ class SwiftTransfer(BaseTransfer[Config]):
                     },
                 )
 
-    def _delete_object_plain(self, key):
+    def _delete_object_plain(self, key: str) -> None:
         try:
             return self.conn.delete_object(self.container_name, key)
         except exceptions.ClientException as ex:
@@ -205,7 +208,7 @@ class SwiftTransfer(BaseTransfer[Config]):
                 raise FileNotFoundFromStorageError(key)
             raise
 
-    def _delete_object_segments(self, key, manifest):
+    def _delete_object_segments(self, key: str, manifest: str) -> None:
         self._delete_object_plain(key)
         seg_container, seg_prefix = manifest.split("/", 1)
         _, segments = self.conn.get_container(seg_container, prefix=seg_prefix, delimiter="/")
@@ -254,12 +257,12 @@ class SwiftTransfer(BaseTransfer[Config]):
 
         return self._headers_to_metadata(headers)
 
-    def get_file_size(self, key):
+    def get_file_size(self, key: str) -> int:
         # Not implemented due to lack of environment where to test this. This method is not required by
         # PGHoard itself, this is only called by external apps that utilize PGHoard's object storage abstraction.
         raise NotImplementedError
 
-    def get_or_create_container(self, container_name):
+    def get_or_create_container(self, container_name: str) -> str:
         start_time = time.monotonic()
         try:
             self.conn.get_container(container_name, headers={}, limit=1)  # Limit 1 here to not traverse the entire folder
@@ -275,11 +278,13 @@ class SwiftTransfer(BaseTransfer[Config]):
             raise
         return container_name
 
-    def copy_file(self, *, source_key, destination_key, metadata=None, **_kwargs):
+    def copy_file(
+        self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **_kwargs: Any
+    ) -> None:
         source_key = self.format_key_for_backend(source_key)
         destination_key = "/".join((self.container_name, self.format_key_for_backend(destination_key)))
         sanitized_metadata = self.sanitize_metadata(metadata)
-        headers = self._metadata_to_headers(sanitized_metadata)
+        headers = cast(Metadata, self._metadata_to_headers(sanitized_metadata))
         if metadata:
             headers["X-Fresh-Metadata"] = True
         self.conn.copy_object(self.container_name, source_key, destination=destination_key, headers=headers)

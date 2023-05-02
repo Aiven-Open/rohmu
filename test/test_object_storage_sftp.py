@@ -3,6 +3,7 @@ from datetime import datetime
 from io import BytesIO
 from rohmu.object_storage.sftp import SFTPTransfer
 from tempfile import NamedTemporaryFile
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 
@@ -10,13 +11,13 @@ def test_store_file_from_disk() -> None:
     notifier = MagicMock()
     with patch("paramiko.Transport") as _, patch("paramiko.SFTPClient") as sftp_client:
 
-        def _putfo():
+        def _putfo() -> int:
             return 42
 
         client = MagicMock()
 
         # Size reporting relies on the progress callback from paramiko
-        def upload_side_effect(*args, **kwargs):  # pylint: disable=unused-argument
+        def upload_side_effect(*args: Any, **kwargs: Any) -> None:  # pylint: disable=unused-argument
             if kwargs.get("callback"):
                 kwargs["callback"](len(test_data), len(test_data))
 
@@ -59,7 +60,7 @@ def test_store_file_object() -> None:
         file_object = BytesIO(test_data)
 
         # Size reporting relies on the progress callback from paramiko
-        def upload_side_effect(*args, **kwargs):  # pylint: disable=unused-argument
+        def upload_side_effect(*args: Any, **kwargs: Any) -> None:  # pylint: disable=unused-argument
             if kwargs.get("callback"):
                 kwargs["callback"](len(test_data), len(test_data))
 

@@ -4,6 +4,9 @@ rohmu - common utility functions
 Copyright (c) 2022 Ohmu Ltd
 See LICENSE for details
 """
+from rohmu.typing import HasFileno
+from typing import Union
+
 import fcntl
 import logging
 import os
@@ -12,7 +15,7 @@ import platform
 LOG = logging.getLogger("rohmu.util")
 
 
-def increase_pipe_capacity(*pipes):
+def increase_pipe_capacity(*pipes: Union[int, HasFileno]) -> None:
     if platform.system() != "Linux":
         return
     try:
@@ -41,7 +44,7 @@ def increase_pipe_capacity(*pipes):
                 pass
 
 
-def set_stream_nonblocking(stream):
+def set_stream_nonblocking(stream: HasFileno) -> None:
     fd = stream.fileno()
     fl = fcntl.fcntl(fd, fcntl.F_GETFL)
     fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)

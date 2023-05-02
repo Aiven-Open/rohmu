@@ -18,7 +18,8 @@ from .base import (
     KEY_TYPE_PREFIX,
     ProgressProportionCallbackType,
 )
-from typing import BinaryIO, Optional, Union
+from pathlib import Path
+from typing import Any, BinaryIO, Iterator, Optional, TextIO, Union
 
 import contextlib
 import datetime
@@ -40,7 +41,7 @@ class LocalTransfer(BaseTransfer[Config]):
 
     def __init__(
         self,
-        directory: str,
+        directory: Union[str, Path],
         prefix: Optional[str] = None,
         notifier: Optional[Notifier] = None,
         statsd_info: Optional[StatsdConfig] = None,
@@ -49,7 +50,9 @@ class LocalTransfer(BaseTransfer[Config]):
         super().__init__(prefix=prefix, notifier=notifier, statsd_info=statsd_info)
         self.log.debug("LocalTransfer initialized")
 
-    def copy_file(self, *, source_key, destination_key, metadata=None, **_kwargs):
+    def copy_file(
+        self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **_kwargs: Any
+    ) -> None:
         source_path = self.format_key_for_backend(source_key.strip("/"))
         destination_path = self.format_key_for_backend(destination_key.strip("/"))
         if not os.path.isfile(source_path):
@@ -62,7 +65,7 @@ class LocalTransfer(BaseTransfer[Config]):
             self._save_metadata(destination_path, metadata)
         self.notifier.object_copied(key=destination_key, size=os.path.getsize(destination_path), metadata=metadata)
 
-    def get_metadata_for_key(self, key):
+    def get_metadata_for_key(self, key: str) -> Metadata:
         source_path = self.format_key_for_backend(key.strip("/"))
         if not os.path.exists(source_path):
             raise FileNotFoundFromStorageError(key)
@@ -87,7 +90,7 @@ class LocalTransfer(BaseTransfer[Config]):
             os.unlink(metadata_path)
         self.notifier.object_deleted(key=key)
 
-    def delete_tree(self, key):
+    def delete_tree(self, key: str) -> None:
         self.log.debug("Deleting tree: %r", key)
         target_path = self.format_key_for_backend(key.strip("/"))
         if not os.path.isdir(target_path):
@@ -96,11 +99,11 @@ class LocalTransfer(BaseTransfer[Config]):
         self.notifier.tree_deleted(key=key)
 
     @staticmethod
-    def _skip_file_name(file_name):
+    def _skip_file_name(file_name: str) -> bool:
         return file_name.startswith(".") or file_name.endswith(".metadata") or ".metadata_tmp" in file_name
 
     @staticmethod
-    def _yield_object(key, full_path, with_metadata):
+    def _yield_object(key: str, full_path: str, with_metadata: bool) -> Iterator[IterKeyItem]:
         metadata_file = full_path + ".metadata"
         if not os.path.exists(metadata_file):
             return
@@ -121,7 +124,9 @@ class LocalTransfer(BaseTransfer[Config]):
             },
         )
 
-    def iter_key(self, key, *, with_metadata=True, deep=False, include_key=False):
+    def iter_key(
+        self, key: str, *, with_metadata: bool = True, deep: bool = False, include_key: bool = False
+    ) -> Iterator[IterKeyItem]:
         target_path = self.format_key_for_backend(key.strip("/"))
         try:
             input_files = os.listdir(target_path)
@@ -177,13 +182,13 @@ class LocalTransfer(BaseTransfer[Config]):
 
         return self.get_metadata_for_key(key)
 
-    def get_file_size(self, key):
+    def get_file_size(self, key: str) -> int:
         source_path = self.format_key_for_backend(key.strip("/"))
         if not os.path.exists(source_path):
             raise FileNotFoundFromStorageError(key)
         return os.stat(source_path).st_size
 
-    def _save_metadata(self, target_path, metadata):
+    def _save_metadata(self, target_path: str, metadata: Optional[Metadata]) -> None:
         metadata_path = target_path + ".metadata"
         with atomic_create_file(metadata_path) as fp:
             json.dump(self.sanitize_metadata(metadata), fp)
@@ -194,11 +199,11 @@ class LocalTransfer(BaseTransfer[Config]):
         fd: BinaryIO,
         metadata: Optional[Metadata] = None,
         *,
-        cache_control: Optional[str] = None,
-        mimetype: Optional[str] = None,
-        multipart: Optional[bool] = None,
+        cache_control: Optional[str] = None,  # pylint: disable=unused-argument
+        mimetype: Optional[str] = None,  # pylint: disable=unused-argument
+        multipart: Optional[bool] = None,  # pylint: disable=unused-argument
         upload_progress_fn: IncrementalProgressCallbackType = None,
-    ) -> None:  # pylint: disable=unused-argument
+    ) -> None:
         target_path = self.format_key_for_backend(key.strip("/"))
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
         bytes_written = 0
@@ -217,7 +222,7 @@ class LocalTransfer(BaseTransfer[Config]):
 
 
 @contextlib.contextmanager
-def atomic_create_file(file_path):
+def atomic_create_file(file_path: str) -> Iterator[TextIO]:
     """Open a temporary file for writing, rename to final name when done"""
     fd, tmp_file_path = tempfile.mkstemp(
         prefix=os.path.basename(file_path), dir=os.path.dirname(file_path), suffix=".metadata_tmp"

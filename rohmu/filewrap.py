@@ -4,6 +4,8 @@ rohmu - file transformation wrapper
 Copyright (c) 2016 Ohmu Ltd
 See LICENSE for details
 """
+from .typing import BinaryData
+from typing import BinaryIO, Callable, Optional, Union
 
 import io
 import time
@@ -12,17 +14,17 @@ import time
 class FileWrap(io.BufferedIOBase):
     # pylint: disable=unused-argument
 
-    def __init__(self, next_fp):
+    def __init__(self, next_fp: BinaryIO) -> None:
         super().__init__()
-        self.next_fp = next_fp
+        self.next_fp: Optional[BinaryIO] = next_fp
         self.offset = 0
         self.state = "OPEN"
 
-    def _check_not_closed(self):
+    def _check_not_closed(self) -> None:
         if self.state == "CLOSED":
             raise ValueError("I/O operation on closed file")
 
-    def close(self):
+    def close(self) -> None:
         """Close stream"""
         if self.state == "CLOSED":
             return
@@ -36,50 +38,51 @@ class FileWrap(io.BufferedIOBase):
         self.state = "CLOSED"
 
     @property
-    def closed(self):
+    def closed(self) -> bool:
         """True if this stream is closed"""
         return self.state == "CLOSED"
 
-    def fileno(self):
+    def fileno(self) -> int:
         self._check_not_closed()
+        assert self.next_fp is not None
         return self.next_fp.fileno()
 
-    def flush(self):
+    def flush(self) -> None:
         self._check_not_closed()
 
-    def tell(self):
+    def tell(self) -> int:
         self._check_not_closed()
         return self.offset
 
-    def readable(self):
+    def readable(self) -> bool:
         """True if this stream supports reading"""
         self._check_not_closed()
         return False
 
-    def read(self, size=-1):
+    def read(self, size: Optional[int] = -1) -> bytes:
         """Read up to size decrypted bytes"""
         self._check_not_closed()
         raise io.UnsupportedOperation("Read not supported")
 
-    def seekable(self):
+    def seekable(self) -> bool:
         """True if this stream supports random access"""
         self._check_not_closed()
         return False
 
-    def seek(self, offset, whence=0):
+    def seek(self, offset: int, whence: int = 0) -> int:
         self._check_not_closed()
         raise io.UnsupportedOperation("Seek not supported")
 
-    def truncate(self):
+    def truncate(self, size: Optional[int] = None) -> int:
         self._check_not_closed()
         raise io.UnsupportedOperation("Truncate not supported")
 
-    def writable(self):
+    def writable(self) -> bool:
         """True if this stream supports writing"""
         self._check_not_closed()
         return False
 
-    def write(self, data):
+    def write(self, data: BinaryData) -> int:
         """Encrypt and write the given bytes"""
         self._check_not_closed()
         raise io.UnsupportedOperation("Write not supported")
@@ -95,13 +98,13 @@ class Sink:
     pushed through a pipeline of transformations. This provides better performance as
     any temporary files or buffers can be omitted."""
 
-    def __init__(self, next_sink):
+    def __init__(self, next_sink: io.IOBase) -> None:
         self.next_sink = next_sink
 
-    def _data_written(self, bytes_written, pending_bytes):
+    def _data_written(self, bytes_written: int, pending_bytes: int) -> None:
         pass
 
-    def _write_to_next_sink(self, data):
+    def _write_to_next_sink(self, data: BinaryData) -> None:
         data = memoryview(data)
         offset = 0
         while offset < len(data):
@@ -109,7 +112,7 @@ class Sink:
             offset += self.next_sink.write(data[offset:])
             self._data_written(offset - start_offset, len(data) - offset)
 
-    def write(self, data):
+    def write(self, data: Union[bytes, bytearray]) -> int:
         """Performs some transformation for given data and writes the transformed
         data to next sink."""
         self._write_to_next_sink(data)
@@ -122,12 +125,12 @@ class ThrottleSink(Sink):
     written. In such cases writing again immediately after a small write would
     result in unnecessary busy-looping."""
 
-    def __init__(self, next_sink, wait_time, sleep_fn=time.sleep):
+    def __init__(self, next_sink: io.IOBase, wait_time: float, sleep_fn: Callable[[float], None] = time.sleep) -> None:
         super().__init__(next_sink)
         self.sleep_fn = sleep_fn
         self.wait_time = wait_time
 
-    def _data_written(self, bytes_written, pending_bytes):
+    def _data_written(self, bytes_written: int, pending_bytes: int) -> None:
         if pending_bytes > 0 and bytes_written < 10 * 1024:
             self.sleep_fn(self.wait_time)
 
@@ -135,20 +138,20 @@ class ThrottleSink(Sink):
 class Stream:
     """Non-seekable stream of data that performs some kind of processing for given source stream"""
 
-    def __init__(self, src_fp, *, minimum_read_size=8 * 1024):
+    def __init__(self, src_fp: io.IOBase, *, minimum_read_size: int = 8 * 1024) -> None:
         self._eof = False
         self._remainder = b""
         self._src = src_fp
         self.minimum_read_size = minimum_read_size
         self._offset = 0
 
-    def _process_chunk(self, data):
+    def _process_chunk(self, data: bytes) -> bytes:
         raise NotImplementedError
 
-    def _finalize(self):
+    def _finalize(self) -> bytes:
         raise NotImplementedError
 
-    def read(self, size=-1):
+    def read(self, size: int = -1) -> bytes:
         bytes_available = len(self._remainder)
         chunks = [self._remainder] if self._remainder else []
         while not self._eof and (size < 0 or bytes_available < size):
@@ -188,5 +191,5 @@ class Stream:
         self._offset += len(data)
         return data
 
-    def tell(self):
+    def tell(self) -> int:
         return self._offset

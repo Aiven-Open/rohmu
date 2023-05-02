@@ -5,7 +5,9 @@ from multiprocessing.dummy import Pool
 from pathlib import Path
 from pydantic import BaseModel, Field
 from rohmu.dates import now
-from typing import Any, Callable, Iterable, List, Optional
+from rohmu.typing import AnyPath, HasRead
+from types import TracebackType
+from typing import Any, Callable, Iterable, List, Optional, Sequence, Type, TypeVar
 
 import functools
 import hashlib
@@ -23,7 +25,7 @@ EMBEDDED_FILE_SIZE = 150
 logger = logging.getLogger(__name__)
 
 
-def hash_hexdigest_readable(f, *, read_buffer=1_000_000):
+def hash_hexdigest_readable(f: HasRead, *, read_buffer: int = 1_000_000) -> str:
     h = _hash()
     while True:
         data = f.read(read_buffer)
@@ -33,7 +35,7 @@ def hash_hexdigest_readable(f, *, read_buffer=1_000_000):
     return h.hexdigest()
 
 
-def increase_worth_reporting(value, new_value=None, *, total=None):
+def increase_worth_reporting(value: int, new_value: Optional[int] = None, *, total: Optional[int] = None) -> bool:
     """Make reporting sparser and sparser as values grow larger
     - report every 1.1**N or so
     - if we know total, report every percent
@@ -76,7 +78,7 @@ class DeltaModel(BaseModel):
         # possibly the tests themselves are broken
         validate_assignment = True
 
-    def jsondict(self, **kw):
+    def jsondict(self, **kw: Any) -> dict[str, Any]:
         # By default,
         #
         # .json() returns json string.
@@ -90,25 +92,25 @@ class DeltaModel(BaseModel):
 
 
 class SizeLimitedFile:
-    def __init__(self, *, path, file_size):
+    def __init__(self, *, path: AnyPath, file_size: int) -> None:
         self._f = open(path, "rb")
         self._file_size = file_size
         self.tell = self._f.tell
 
-    def __enter__(self):
+    def __enter__(self) -> "SizeLimitedFile":
         return self
 
-    def __exit__(self, t, v, tb):
+    def __exit__(self, t: Optional[Type[BaseException]], v: Optional[BaseException], tb: Optional[TracebackType]) -> None:
         self._f.close()
 
-    def read(self, n=None):
+    def read(self, n: Optional[int] = None) -> bytes:
         can_read = max(0, self._file_size - self._f.tell())
         if n is None:
             n = can_read
         n = min(can_read, n)
         return self._f.read(n)
 
-    def seek(self, ofs, whence=0):
+    def seek(self, ofs: int, whence: int = 0) -> int:
         if whence == os.SEEK_END:
             ofs += self._file_size
             whence = os.SEEK_SET
@@ -127,12 +129,12 @@ class SnapshotHash(DeltaModel):
     hexdigest: str
     size: int
 
-    def __eq__(self, other):
+    def __eq__(self, other: Any) -> bool:
         if isinstance(other, SnapshotHash):
             return self.hexdigest == other.hexdigest
         return False
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         # hexdigests should be unique, regardless of size
         return hash(self.hexdigest)
 
@@ -151,17 +153,17 @@ class SnapshotFile(DeltaModel):
     should_be_bundled: bool = False
     missing_ok: bool = True
 
-    def __lt__(self, o):
+    def __lt__(self, o: "SnapshotFile") -> bool:
         # In our use case, paths uniquely identify files we care about
         return self.relative_path < o.relative_path
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(self.relative_path)
 
-    def equals_excluding_mtime(self, o):
+    def equals_excluding_mtime(self, o: "SnapshotFile") -> bool:
         return self.copy(update={"mtime_ns": 0}) == o.copy(update={"mtime_ns": 0})
 
-    def open_for_reading(self, root_path):
+    def open_for_reading(self, root_path: Path) -> SizeLimitedFile:
         return SizeLimitedFile(path=root_path / self.relative_path, file_size=self.file_size)
 
 
@@ -211,17 +213,17 @@ class Progress(DeltaModel):
     total: int = 0
     final: bool = False
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         finished = ", finished" if self.final else ""
         return f"{self.handled}/{self.total} handled, {self.failed} failures{finished}"
 
-    def start(self, n):
+    def start(self, n: int) -> None:
         "Optional 'first' step, just for logic handling state (e.g. no progress object reuse desired)"
         assert not self.total
         logger.debug("start")
         self.add_total(n)
 
-    def add_total(self, n):
+    def add_total(self, n: int) -> None:
         if not n:
             return
         old_total = self.total
@@ -230,7 +232,7 @@ class Progress(DeltaModel):
             logger.debug("add_total %r -> %r", n, self)
         assert not self.final
 
-    def add_fail(self, n=1, *, info="add_fail"):
+    def add_fail(self, n: int = 1, *, info: str = "add_fail") -> None:
         assert n > 0
         old_failed = self.failed
         self.failed += n
@@ -238,7 +240,7 @@ class Progress(DeltaModel):
             logger.debug("%s %r -> %r", info, n, self)
         assert not self.final
 
-    def add_success(self, n=1, *, info="add_success"):
+    def add_success(self, n: int = 1, *, info: str = "add_success") -> None:
         assert n > 0
         old_handled = self.handled
         self.handled += n
@@ -247,34 +249,34 @@ class Progress(DeltaModel):
             logger.debug("%s %r -> %r", info, n, self)
         assert not self.final
 
-    def download_success(self, size):
+    def download_success(self, size: int) -> None:
         self.add_success(size, info="download_success")
 
-    def upload_success(self, hexdigest):
+    def upload_success(self, hexdigest: str) -> None:
         self.add_success(info=f"upload_success {hexdigest}")
 
-    def upload_missing(self, hexdigest):
+    def upload_missing(self, hexdigest: str) -> None:
         self.add_fail(info=f"upload_missing {hexdigest}")
 
-    def upload_failure(self, hexdigest):
+    def upload_failure(self, hexdigest: str) -> None:
         self.add_fail(info=f"upload_failure {hexdigest}")
 
-    def done(self):
+    def done(self) -> None:
         assert self.total is not None and self.handled <= self.total
         assert not self.final
         self.final = True
         logger.debug("done %r", self)
 
     @property
-    def finished_successfully(self):
+    def finished_successfully(self) -> bool:
         return self.final and not self.failed and self.handled == self.total
 
     @property
-    def finished_failed(self):
+    def finished_failed(self) -> bool:
         return self.final and not self.finished_successfully
 
     @classmethod
-    def merge(cls, progresses):
+    def merge(cls, progresses: Sequence["Progress"]) -> "Progress":
         p = cls()
         for progress in progresses:
             p.handled += progress.handled
@@ -284,8 +286,12 @@ class Progress(DeltaModel):
         return p
 
 
+Item = TypeVar("Item")
+Result = TypeVar("Result")
+
+
 def parallel_map_to(
-    *, fun: Callable[[Any], Any], iterable: Iterable[Any], result_callback: Callable[..., bool], n: Optional[int] = None
+    *, fun: Callable[[Item], Result], iterable: Iterable[Item], result_callback: Callable[..., bool], n: Optional[int] = None
 ) -> bool:
     iterable_as_list = list(iterable)
     with Pool(n) as p:

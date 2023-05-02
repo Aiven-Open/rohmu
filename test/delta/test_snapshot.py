@@ -1,6 +1,9 @@
 # Copyright (c) 2021 Aiven, Helsinki, Finland. https://aiven.io/
 from pathlib import Path
 from rohmu.delta.common import BackupPath, EMBEDDED_FILE_SIZE, Progress, SizeLimitedFile, SnapshotFile, SnapshotHash
+from rohmu.typing import AnyPath
+from test.conftest import SnapshotterWithDefaults
+from typing import Any, Callable, Union
 
 import mock
 import os
@@ -8,9 +11,9 @@ import pytest
 
 
 @pytest.mark.timeout(2)
-def test_snapshot(snapshotter_creator):
+def test_snapshot(snapshotter_creator: Callable[..., SnapshotterWithDefaults]) -> None:
     snapshotter = snapshotter_creator()
-    samples = {
+    samples: dict[Union[str, Path], str] = {
         "foo": "foobar",
         "foo2": "foobar",
         "foobig": "foobar" * EMBEDDED_FILE_SIZE,
@@ -71,10 +74,12 @@ def test_snapshot(snapshotter_creator):
 
 
 @pytest.mark.parametrize("test", [(os, "link", 1, 1), (None, "_snapshotfile_from_path", 3, 0)])
-def test_snapshot_error_filenotfound(snapshotter_creator, test):
+def test_snapshot_error_filenotfound(
+    snapshotter_creator: Callable[..., SnapshotterWithDefaults], test: tuple[Any, str, int, int]
+) -> None:
     (obj, fun, exp_progress_1, exp_progress_2) = test
 
-    def _not_really_found(*a, **kw):
+    def _not_really_found(*a: Any, **kw: Any) -> None:
         raise FileNotFoundError
 
     snapshotter = snapshotter_creator()
@@ -90,9 +95,9 @@ def test_snapshot_error_filenotfound(snapshotter_creator, test):
 
 
 @pytest.mark.timeout(2)
-def test_snapshot_single_file_size(snapshotter_creator):
+def test_snapshot_single_file_size(snapshotter_creator: Callable[..., SnapshotterWithDefaults]) -> None:
     snapshotter = snapshotter_creator(min_delta_file_size=1024 * 1024)
-    samples = {
+    samples: dict[Union[str, Path], str] = {
         "embed1": "foobar",
         "embed2": "foobar",
         "bundle1": "foobar" * EMBEDDED_FILE_SIZE,
@@ -122,9 +127,9 @@ def test_snapshot_single_file_size(snapshotter_creator):
 
         hashes = snapshotter.get_snapshot_hashes()
         bundled_file = snapshotter.relative_path_to_snapshotfile.get(Path("bundle3"))
-        assert bundled_file.should_be_bundled and not bundled_file.hexdigest
+        assert bundled_file is not None and bundled_file.should_be_bundled and not bundled_file.hexdigest
         hexdigest_file = snapshotter.relative_path_to_snapshotfile.get(Path("big3"))
-        assert not hexdigest_file.should_be_bundled and hexdigest_file.hexdigest
+        assert hexdigest_file is not None and not hexdigest_file.should_be_bundled and hexdigest_file.hexdigest
 
         assert len(hashes) == 3
         assert hashes == [
@@ -134,8 +139,8 @@ def test_snapshot_single_file_size(snapshotter_creator):
         ]
 
 
-def test_snapshot_error_when_required_files_not_found(snapshotter_creator):
-    def src_iterate_func():
+def test_snapshot_error_when_required_files_not_found(snapshotter_creator: Callable[..., SnapshotterWithDefaults]) -> None:
+    def src_iterate_func() -> list[Union[AnyPath, BackupPath]]:
         return [
             BackupPath(path=snapshotter.src / "foo", missing_ok=False),
             BackupPath(path=snapshotter.src / "bar"),
@@ -157,7 +162,7 @@ def test_snapshot_error_when_required_files_not_found(snapshotter_creator):
         (snapshotter.src / "foo").write_text("foobar")
         assert snapshotter.snapshot(progress=Progress())
 
-        def validate_snapshot():
+        def validate_snapshot() -> None:
             state = snapshotter.get_snapshot_state()
             assert len(state.files) == 4
             expected_paths = ["bar", "bar_path", "bar_str_path", "foo"]
