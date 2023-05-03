@@ -19,7 +19,7 @@ from .base import (
     KEY_TYPE_PREFIX,
     ProgressProportionCallbackType,
 )
-from io import BytesIO, StringIO
+from io import BytesIO
 from stat import S_ISDIR
 from typing import Any, BinaryIO, cast, Iterator, Optional
 
@@ -137,7 +137,9 @@ class SFTPTransfer(BaseTransfer[Config]):
                     else:
                         metadata = None
 
-                    last_modified = datetime.datetime.fromtimestamp(attr.st_mtime, tz=datetime.timezone.utc)  # type: ignore
+                    last_modified = datetime.datetime.fromtimestamp(
+                        attr.st_mtime, tz=datetime.timezone.utc  # type: ignore [arg-type]
+                    )
                     yield IterKeyItem(
                         type=KEY_TYPE_OBJECT,
                         value={
@@ -160,7 +162,7 @@ class SFTPTransfer(BaseTransfer[Config]):
                 continue
 
             file_key = os.path.join(key.strip("/"), attr.filename)
-            if S_ISDIR(attr.st_mode):  # type: ignore
+            if S_ISDIR(attr.st_mode):  # type: ignore [arg-type]
                 if deep:
                     yield from self.iter_key(file_key, with_metadata=with_metadata, deep=True)
                 else:
@@ -174,7 +176,9 @@ class SFTPTransfer(BaseTransfer[Config]):
                     else:
                         metadata = None
 
-                    last_modified = datetime.datetime.fromtimestamp(attr.st_mtime, tz=datetime.timezone.utc)  # type: ignore
+                    last_modified = datetime.datetime.fromtimestamp(
+                        attr.st_mtime, tz=datetime.timezone.utc  # type: ignore [arg-type]
+                    )
                     yield IterKeyItem(
                         type=KEY_TYPE_OBJECT,
                         value={
@@ -252,8 +256,8 @@ class SFTPTransfer(BaseTransfer[Config]):
         self.log.debug("Save metadata: %r", metadata_path)
 
         sanitised = self.sanitize_metadata(metadata)
-        bio = StringIO(json.dumps(sanitised))  # FIXME: should this be BytesIO?
-        self.client.putfo(fl=bio, remotepath=metadata_path)  # type: ignore
+        bio = BytesIO(json.dumps(sanitised).encode())
+        self.client.putfo(fl=bio, remotepath=metadata_path)
 
     # https://stackoverflow.com/questions/14819681/upload-files-using-sftp-in-python-but-create-directories-if-path-doesnt-exist
     def _mkdir_p(self, remote: str) -> None:

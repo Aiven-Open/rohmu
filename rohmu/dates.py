@@ -20,11 +20,7 @@ def parse_timestamp(ts: str, *, with_tz: bool = True, assume_local: bool = False
     When `with_tz` is True and there's a timezone in the timestamp we return it as-is.  If `with_tz` is True
     but we can't parse a timezone we add either local or UTC timezone to the datetime based on `assume_local`.
     """
-    parse_result = dateutil.parser.parse(ts)
-
-    # pylint thinks dateutil.parser.parse always returns a tuple even though we didn't request it.
-    # So this check is pointless but convinces pylint that we really have a datetime object now.
-    dt = parse_result[0] if isinstance(parse_result, tuple) else parse_result  # type: ignore [index] # pylint: disable=unsubscriptable-object
+    dt = dateutil.parser.parse(ts)
 
     if with_tz is False:
         if not dt.tzinfo:

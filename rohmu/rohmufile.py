@@ -6,20 +6,19 @@ See LICENSE for details
 """
 from . import IO_BLOCK_SIZE
 from .compressor import CompressionFile, DecompressionFile, DecompressSink
-from .encryptor import DecryptorFile, DecryptSink, EncryptorFile  # type: ignore
+from .encryptor import DecryptorFile, DecryptSink, EncryptorFile
 from .errors import InvalidConfigurationError
 from .filewrap import ThrottleSink
 from .object_storage.base import IncrementalProgressCallbackType
-from .typing import Metadata
+from .typing import FileLike, HasWrite, Metadata
 from contextlib import suppress
 from inspect import signature
-from io import IOBase
-from typing import BinaryIO, Callable, Optional, Union
+from typing import Callable, Optional, Union
 
 import time
 
 
-def _fileobj_name(input_obj: Union[IOBase, BinaryIO]) -> str:
+def _fileobj_name(input_obj: FileLike) -> str:
     if hasattr(input_obj, "name"):
         return "open file {!r}".format(getattr(input_obj, "name"))
 
@@ -44,8 +43,11 @@ def _get_encryption_key_data(
 
 
 def file_reader(
-    *, fileobj: IOBase, metadata: Optional[Metadata] = None, key_lookup: Optional[Callable[[str], Optional[str]]] = None
-) -> IOBase:  # type: ignore
+    *,
+    fileobj: FileLike,
+    metadata: Optional[Metadata] = None,
+    key_lookup: Optional[Callable[[str], Optional[str]]] = None,
+) -> FileLike:
     if not metadata:
         return fileobj
 
@@ -55,12 +57,19 @@ def file_reader(
 
     comp_alg = metadata.get("compression-algorithm")
     if comp_alg:
-        fileobj = DecompressionFile(fileobj, comp_alg)  # type: ignore
+        fileobj = DecompressionFile(fileobj, comp_alg)
 
     return fileobj
 
 
-def create_sink_pipeline(*, output, file_size=None, metadata=None, key_lookup=None, throttle_time=0.001):  # type: ignore
+def create_sink_pipeline(
+    *,
+    output: HasWrite,
+    file_size: int = 0,
+    metadata: Optional[Metadata] = None,
+    key_lookup: Optional[Callable[[str], Optional[str]]] = None,
+    throttle_time: float = 0.001,
+) -> HasWrite:
     if throttle_time:
         output = ThrottleSink(output, throttle_time)
 
@@ -81,14 +90,14 @@ def _callback_wrapper(progress_callback: IncrementalProgressCallbackType) -> Inc
         return None
     sig = signature(progress_callback)
     if len(sig.parameters) == 0:
-        return lambda f: progress_callback()  # type: ignore
+        return lambda f: progress_callback()  # type: ignore [misc,call-arg]
     return progress_callback
 
 
 def read_file(
     *,
-    input_obj: IOBase,
-    output_obj: BinaryIO,
+    input_obj: FileLike,
+    output_obj: FileLike,
     metadata: Metadata,
     key_lookup: Optional[Callable[[str], Optional[str]]],
     progress_callback: IncrementalProgressCallbackType = None,
@@ -127,9 +136,14 @@ def read_file(
     return original_size, result_size
 
 
-def file_writer(  # type: ignore
-    *, fileobj, compression_algorithm=None, compression_level=0, compression_threads=0, rsa_public_key=None
-):
+def file_writer(
+    *,
+    fileobj: FileLike,
+    compression_algorithm: Optional[str] = None,
+    compression_level: int = 0,
+    compression_threads: int = 0,
+    rsa_public_key: Union[None, str, bytes] = None,
+) -> FileLike:
     if rsa_public_key:
         fileobj = EncryptorFile(fileobj, rsa_public_key)
 
@@ -139,19 +153,19 @@ def file_writer(  # type: ignore
     return fileobj
 
 
-def write_file(  # type: ignore
+def write_file(
     *,
-    input_obj,
-    output_obj,
-    progress_callback=None,
-    compression_algorithm=None,
-    compression_level=0,
-    compression_threads=0,
-    rsa_public_key=None,
-    log_func=None,
-    header_func=None,
-    data_callback=None,
-):
+    input_obj: FileLike,
+    output_obj: FileLike,
+    progress_callback: IncrementalProgressCallbackType = None,
+    compression_algorithm: Optional[str] = None,
+    compression_level: int = 0,
+    compression_threads: int = 0,
+    rsa_public_key: Union[None, str, bytes] = None,
+    log_func: Optional[Callable[..., None]] = None,
+    header_func: Optional[Callable[[bytes], None]] = None,
+    data_callback: Optional[Callable[[bytes], None]] = None,
+) -> tuple[int, int]:
     start_time = time.monotonic()
     progress_callback = _callback_wrapper(progress_callback)
 

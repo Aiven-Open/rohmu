@@ -6,8 +6,8 @@ See LICENSE for details
 """
 from . import IO_BLOCK_SIZE
 from .filewrap import FileWrap
-from .typing import BinaryData
-from typing import BinaryIO, Optional
+from .typing import BinaryData, FileLike
+from typing import Optional
 
 import io
 
@@ -18,7 +18,7 @@ except ImportError:
 
 
 class _ZstdFileWriter(FileWrap):
-    def __init__(self, next_fp: BinaryIO, level: int, threads: int = 0) -> None:
+    def __init__(self, next_fp: FileLike, level: int, threads: int = 0) -> None:
         self._zstd = zstd.ZstdCompressor(level=level, threads=threads).compressobj()
         super().__init__(next_fp)
 
@@ -26,7 +26,6 @@ class _ZstdFileWriter(FileWrap):
         if self.closed:
             return
         data = self._zstd.flush() or b""
-        assert self.next_fp is not None
         if data:
             self.next_fp.write(data)
         self.next_fp.flush()
@@ -36,7 +35,6 @@ class _ZstdFileWriter(FileWrap):
         self._check_not_closed()
         data_as_bytes = bytes(data)
         compressed_data = self._zstd.compress(data_as_bytes)
-        assert self.next_fp is not None
         self.next_fp.write(compressed_data)
         self.offset += len(data_as_bytes)
         return len(data_as_bytes)
@@ -46,7 +44,7 @@ class _ZstdFileWriter(FileWrap):
 
 
 class _ZtsdFileReader(FileWrap):
-    def __init__(self, next_fp: BinaryIO) -> None:
+    def __init__(self, next_fp: FileLike) -> None:
         self._zstd = zstd.ZstdDecompressor().decompressobj()
         super().__init__(next_fp)
         self._done = False
@@ -60,7 +58,6 @@ class _ZtsdFileReader(FileWrap):
         # NOTE: size arg is ignored, random size output is returned
         self._check_not_closed()
         while not self._done:
-            assert self.next_fp is not None
             compressed = self.next_fp.read(IO_BLOCK_SIZE)
             if not compressed:
                 self._done = True
@@ -78,7 +75,7 @@ class _ZtsdFileReader(FileWrap):
         return True
 
 
-def open(fp: BinaryIO, mode: str, level: int = 0, threads: int = 0) -> FileWrap:  # pylint: disable=redefined-builtin
+def open(fp: FileLike, mode: str, level: int = 0, threads: int = 0) -> FileWrap:  # pylint: disable=redefined-builtin
     if zstd is None:
         raise io.UnsupportedOperation("zstd is not available")
 

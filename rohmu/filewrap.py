@@ -4,8 +4,9 @@ rohmu - file transformation wrapper
 Copyright (c) 2016 Ohmu Ltd
 See LICENSE for details
 """
-from .typing import BinaryData
-from typing import BinaryIO, Callable, Optional, Union
+from .errors import UninitializedError
+from .typing import BinaryData, FileLike, HasRead, HasWrite
+from typing import Callable, Optional
 
 import io
 import time
@@ -14,18 +15,24 @@ import time
 class FileWrap(io.BufferedIOBase):
     # pylint: disable=unused-argument
 
-    def __init__(self, next_fp: BinaryIO) -> None:
+    def __init__(self, next_fp: FileLike) -> None:
         super().__init__()
-        self.next_fp: Optional[BinaryIO] = next_fp
+        self._next_fp: Optional[FileLike] = next_fp
         self.offset = 0
         self.state = "OPEN"
+
+    @property
+    def next_fp(self) -> FileLike:
+        if self._next_fp is None:
+            raise UninitializedError("next_fp not initialized")
+        return self._next_fp
 
     def _check_not_closed(self) -> None:
         if self.state == "CLOSED":
             raise ValueError("I/O operation on closed file")
 
     def close(self) -> None:
-        """Close stream"""
+        """Close stream."""
         if self.state == "CLOSED":
             return
         self.flush()
@@ -34,7 +41,7 @@ class FileWrap(io.BufferedIOBase):
         # object or linking a temporary file to another name, etc.
         if isinstance(self.next_fp, FileWrap):
             self.next_fp.close()
-        self.next_fp = None
+        self._next_fp = None
         self.state = "CLOSED"
 
     @property
@@ -44,7 +51,6 @@ class FileWrap(io.BufferedIOBase):
 
     def fileno(self) -> int:
         self._check_not_closed()
-        assert self.next_fp is not None
         return self.next_fp.fileno()
 
     def flush(self) -> None:
@@ -98,7 +104,7 @@ class Sink:
     pushed through a pipeline of transformations. This provides better performance as
     any temporary files or buffers can be omitted."""
 
-    def __init__(self, next_sink: io.IOBase) -> None:
+    def __init__(self, next_sink: HasWrite) -> None:
         self.next_sink = next_sink
 
     def _data_written(self, bytes_written: int, pending_bytes: int) -> None:
@@ -112,9 +118,10 @@ class Sink:
             offset += self.next_sink.write(data[offset:])
             self._data_written(offset - start_offset, len(data) - offset)
 
-    def write(self, data: Union[bytes, bytearray]) -> int:
+    def write(self, data: BinaryData) -> int:
         """Performs some transformation for given data and writes the transformed
         data to next sink."""
+        data = memoryview(data)
         self._write_to_next_sink(data)
         return len(data)
 
@@ -125,7 +132,7 @@ class ThrottleSink(Sink):
     written. In such cases writing again immediately after a small write would
     result in unnecessary busy-looping."""
 
-    def __init__(self, next_sink: io.IOBase, wait_time: float, sleep_fn: Callable[[float], None] = time.sleep) -> None:
+    def __init__(self, next_sink: HasWrite, wait_time: float, sleep_fn: Callable[[float], None] = time.sleep) -> None:
         super().__init__(next_sink)
         self.sleep_fn = sleep_fn
         self.wait_time = wait_time
@@ -138,7 +145,7 @@ class ThrottleSink(Sink):
 class Stream:
     """Non-seekable stream of data that performs some kind of processing for given source stream"""
 
-    def __init__(self, src_fp: io.IOBase, *, minimum_read_size: int = 8 * 1024) -> None:
+    def __init__(self, src_fp: HasRead, *, minimum_read_size: int = 8 * 1024) -> None:
         self._eof = False
         self._remainder = b""
         self._src = src_fp

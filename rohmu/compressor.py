@@ -7,11 +7,10 @@ See LICENSE for details
 from .errors import InvalidConfigurationError
 from .filewrap import Sink, Stream
 from .snappyfile import SnappyFile
-from .typing import Compressor, Decompressor, HasRead
+from .typing import BinaryData, Compressor, Decompressor, FileLike, HasRead, HasWrite
 from .zstdfile import open as zstd_open
-from typing import cast, IO, Union
+from typing import cast, IO
 
-import io
 import lzma
 
 try:
@@ -25,7 +24,7 @@ except ImportError:
     zstd = None  # type: ignore
 
 
-def CompressionFile(dst_fp: io.BufferedIOBase, algorithm: str, level: int = 0, threads: int = 0) -> io.BufferedIOBase:
+def CompressionFile(dst_fp: FileLike, algorithm: str, level: int = 0, threads: int = 0) -> FileLike:
     """This looks like a class to users, but is actually a function that instantiates a class based on algorithm."""
     if algorithm == "lzma":
         return lzma.open(cast(IO[bytes], dst_fp), "w", preset=level)
@@ -64,7 +63,7 @@ class CompressionStream(Stream):
         return self._compressor.flush()
 
 
-def DecompressionFile(src_fp: io.BufferedIOBase, algorithm: str) -> io.BufferedIOBase:
+def DecompressionFile(src_fp: FileLike, algorithm: str) -> FileLike:
     """This looks like a class to users, but is actually a function that instantiates a class based on algorithm."""
     if algorithm == "lzma":
         return lzma.open(cast(IO[bytes], src_fp), "r")
@@ -82,7 +81,7 @@ def DecompressionFile(src_fp: io.BufferedIOBase, algorithm: str) -> io.BufferedI
 
 
 class DecompressSink(Sink):
-    def __init__(self, next_sink: Union[io.BufferedIOBase, Sink], compression_algorithm: str):
+    def __init__(self, next_sink: HasWrite, compression_algorithm: str):
         super().__init__(next_sink)
         self.decompressor = self._create_decompressor(compression_algorithm)
 
@@ -95,7 +94,8 @@ class DecompressSink(Sink):
             return zstd.ZstdDecompressor().decompressobj()
         raise InvalidConfigurationError("invalid compression algorithm: {!r}".format(alg))
 
-    def write(self, data: bytes) -> int:
+    def write(self, data: BinaryData) -> int:
+        data = bytes(data) if not isinstance(data, bytes) else data
         written = len(data)
         if not data:
             return written

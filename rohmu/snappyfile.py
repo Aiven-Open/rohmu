@@ -6,8 +6,8 @@ See LICENSE for details
 """
 from . import IO_BLOCK_SIZE
 from .filewrap import FileWrap
-from .typing import BinaryData
-from typing import BinaryIO, Optional
+from .typing import BinaryData, FileLike
+from typing import Optional
 
 import io
 
@@ -18,7 +18,7 @@ except ImportError:
 
 
 class SnappyFile(FileWrap):
-    def __init__(self, next_fp: BinaryIO, mode: str) -> None:
+    def __init__(self, next_fp: FileLike, mode: str) -> None:
         if snappy is None:
             raise io.UnsupportedOperation("Snappy is not available")
 
@@ -39,7 +39,6 @@ class SnappyFile(FileWrap):
             return
         if self.encr:
             data = self.encr.flush() or b""
-            assert self.next_fp is not None
             if data:
                 self.next_fp.write(data)
             self.next_fp.flush()
@@ -51,7 +50,6 @@ class SnappyFile(FileWrap):
             raise io.UnsupportedOperation("file not open for writing")
         data_as_bytes = bytes(data)
         compressed_data = self.encr.compress(data_as_bytes)
-        assert self.next_fp is not None
         self.next_fp.write(compressed_data)
         self.offset += len(data_as_bytes)
         return len(data_as_bytes)
@@ -65,7 +63,6 @@ class SnappyFile(FileWrap):
         if self.decr is None:
             raise io.UnsupportedOperation("file not open for reading")
         while not self.decr_done:
-            assert self.next_fp is not None
             compressed = self.next_fp.read(IO_BLOCK_SIZE)
             if not compressed:
                 self.decr_done = True

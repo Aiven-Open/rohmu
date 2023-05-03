@@ -1,14 +1,39 @@
-from array import array
-from os import PathLike
-from pickle import PickleBuffer
-from typing import Any, Protocol, Union
+from types import TracebackType
+from typing import Any, Dict, Optional, Type, TYPE_CHECKING, Union
 
-import ctypes
+try:
+    from typing import Protocol
+except ImportError:
+    from typing_extensions import Protocol  # type: ignore [assignment]
+
+try:
+    # Remove when dropping support for Python 3.7
+    from pickle import PickleBuffer
+except ImportError:
+    PickleBuffer = bytes  # type: ignore [misc,assignment]
 import mmap
 
-Metadata = dict[str, Any]
+if TYPE_CHECKING:
+    from array import array
+    from os import PathLike
 
-AnyPath = Union[str, bytes, PathLike[str], PathLike[bytes]]
+    import ctypes
+
+Metadata = Dict[str, Any]
+
+AnyPath = Union[str, bytes, "PathLike[str]", "PathLike[bytes]"]
+
+BinaryData = Union[
+    bytes,
+    bytearray,
+    memoryview,
+    "array[Any]",
+    mmap.mmap,
+    "ctypes._CData",
+    PickleBuffer,
+]
+
+StrOrPathLike = Union[str, "PathLike[str]"]
 
 
 class HasFileno(Protocol):
@@ -16,8 +41,49 @@ class HasFileno(Protocol):
         ...
 
 
+class HasRead(Protocol):
+    def read(self, n: Optional[int] = -1) -> bytes:
+        ...
+
+
+class HasWrite(Protocol):
+    def write(self, data: BinaryData) -> int:
+        ...
+
+
+class FileLike(Protocol):
+    def __enter__(self) -> "FileLike":
+        ...
+
+    def __exit__(
+        self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[TracebackType]
+    ) -> None:
+        ...
+
+    def read(self, n: Optional[int] = -1) -> bytes:
+        ...
+
+    def flush(self) -> None:
+        ...
+
+    def write(self, data: BinaryData) -> int:
+        ...
+
+    def close(self) -> None:
+        ...
+
+    def fileno(self) -> int:
+        ...
+
+    def tell(self) -> int:
+        ...
+
+    def seek(self, offset: int, whence: int) -> int:
+        ...
+
+
 class Compressor(Protocol):
-    def compress(self, data: bytes) -> Any:
+    def compress(self, data: bytes) -> bytes:
         ...
 
     def flush(self) -> bytes:
@@ -27,14 +93,3 @@ class Compressor(Protocol):
 class Decompressor(Protocol):
     def decompress(self, data: bytes) -> bytes:
         ...
-
-
-BinaryData = Union[
-    bytes,
-    bytearray,
-    memoryview,
-    array[Any],  # pylint: disable=unsubscriptable-object
-    mmap.mmap,
-    ctypes._CData,  # pylint: disable=no-member,protected-access
-    PickleBuffer,
-]

@@ -20,7 +20,7 @@ def test_error_thrown_if_final_path_parent_doesnt_exist(tmp_path: Path) -> None:
 
 def test_error_mode_doesnt_contain_write(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
-        with atomic_opener(tmp_path, mode="r"):  # type: ignore
+        with atomic_opener(tmp_path, mode="r"):  # type: ignore [call-overload]
             pass
 
 
