@@ -8,13 +8,13 @@ See LICENSE for details
 from .common.models import StorageModel
 from .errors import InvalidConfigurationError
 from .notifier.interface import Notifier
-from .object_storage.base import BaseTransfer, StorageModelT
-from typing import Any, cast, Dict, Mapping, Type, TypeVar
+from .object_storage.base import BaseTransfer
+from typing import Any, cast, Dict, Type
 
 IO_BLOCK_SIZE = 2**20  # 1 MiB
 STORAGE_TYPE = "storage_type"
 NOTIFIER_TYPE = "notifier_type"
-Config = Mapping[str, Any]
+Config = Dict[str, Any]
 
 
 def get_class_for_transfer(obj_store: Config) -> Type[BaseTransfer[StorageModel]]:
@@ -47,7 +47,7 @@ def get_class_for_transfer(obj_store: Config) -> Type[BaseTransfer[StorageModel]
     raise InvalidConfigurationError("unsupported storage type {0!r}".format(storage_type))
 
 
-def get_class_for_notifier(notifier_config: dict[str, Any]) -> Type[Notifier]:
+def get_class_for_notifier(notifier_config: Config) -> Type[Notifier]:
     notifier_type = notifier_config[NOTIFIER_TYPE]
     if notifier_type == "http":
         from .notifier.http import BackgroundHTTPNotifier
@@ -56,7 +56,7 @@ def get_class_for_notifier(notifier_config: dict[str, Any]) -> Type[Notifier]:
     raise InvalidConfigurationError("unsupported storage type {0!r}".format(notifier_type))
 
 
-def get_notifier(notifier_config: dict[str, Any]) -> Notifier:
+def get_notifier(notifier_config: Config) -> Notifier:
     notificer_class = get_class_for_notifier(notifier_config)
     notifier_config = notifier_config.copy()
     notifier_config.pop(NOTIFIER_TYPE)

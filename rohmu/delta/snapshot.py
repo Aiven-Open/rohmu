@@ -11,6 +11,7 @@ from rohmu.delta.common import (
     SnapshotHash,
     SnapshotState,
 )
+from rohmu.typing import StrOrPathLike
 from typing import Any, Callable, Dict, Generator, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 import base64
@@ -45,8 +46,8 @@ class Snapshotter:
     def __init__(
         self,
         *,
-        src: Union[str, os.PathLike[str]],
-        dst: Union[str, os.PathLike[str]],
+        src: StrOrPathLike,
+        dst: StrOrPathLike,
         globs: list[str],
         src_iterate_func: Optional[Callable[[], Iterable[Union[BackupPath, str, Path]]]] = None,
         parallel: int = 1,

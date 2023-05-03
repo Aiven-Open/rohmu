@@ -54,9 +54,7 @@ class RohmuModel(pydantic.BaseModel):
         validate_all = True
 
         # Validate also assignments
-        # validate_assignment = True
-        # TBD: Figure out why this doesn't work in some unit tests;
-        # possibly the tests themselves are broken
+        validate_assignment = True
 
 
 class ProxyInfo(RohmuModel):
