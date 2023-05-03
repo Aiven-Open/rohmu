@@ -1,4 +1,6 @@
 """Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
+from __future__ import annotations
+
 from .interface import Notifier
 from dataclasses import dataclass
 from datetime import datetime, timezone

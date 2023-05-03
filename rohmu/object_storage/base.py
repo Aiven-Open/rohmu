@@ -5,6 +5,8 @@ Copyright (c) 2016 Ohmu Ltd
 Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
+from __future__ import annotations
+
 from ..common.models import StorageModel
 from ..common.statsd import StatsClient, StatsdConfig
 from ..errors import FileNotFoundFromStorageError, StorageError
@@ -302,7 +304,7 @@ class BaseTransfer(Generic[StorageModelT]):
         mimetype: Optional[str] = None,
         multipart: Optional[bool] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
-    ) -> Any:
+    ) -> None:
         raise NotImplementedError
 
 

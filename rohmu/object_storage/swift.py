@@ -5,6 +5,9 @@ Copyright (c) 2016 Ohmu Ltd
 Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
+
+from __future__ import annotations
+
 from ..common.models import StorageModel
 from ..common.statsd import StatsdConfig
 from ..dates import parse_timestamp

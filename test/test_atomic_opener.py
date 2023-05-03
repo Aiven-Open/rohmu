@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 from pathlib import Path
 from rohmu.atomic_opener import atomic_opener
+from typing import cast, TextIO
 
 import errno
 import os
@@ -35,7 +38,8 @@ def test_file_is_atomically_created_only_after_function_execution_is_over(tmp_pa
     output_file = tmp_path / "something"
     try:
         _verify_file_not_created_and_dir_not_polluted(output_file)
-        with atomic_opener(output_file, mode="w") as f:
+        # FIXME: when dropping python3.7 support we should not need cast here
+        with cast(TextIO, atomic_opener(output_file, mode="w")) as f:
             inode_inside = os.stat(f.fileno()).st_ino
             _verify_file_not_created_and_dir_not_polluted(output_file)
             for unused_counter in range(block_count):
@@ -64,7 +68,7 @@ def test_file_is_never_created_if_function_breaks(tmp_path: Path) -> None:
 
     try:
         _verify_file_not_created_and_dir_not_polluted(output_file)
-        with atomic_opener(output_file, mode="w") as f:
+        with cast(TextIO, atomic_opener(output_file, mode="w")) as f:
             _verify_file_not_created_and_dir_not_polluted(output_file)
             f.write("aaaaaaaaaa")
             f.flush()
@@ -86,7 +90,7 @@ def test_file_is_fully_written_if_visible(tmp_path: Path) -> None:
 
     try:
         _verify_file_not_created_and_dir_not_polluted(output_file)
-        with atomic_opener(output_file, mode="w", _after_link_hook=linkhook) as f:
+        with cast(TextIO, atomic_opener(output_file, mode="w", _after_link_hook=linkhook)) as f:
             _verify_file_not_created_and_dir_not_polluted(output_file)
             f.write("aaaaaaaaaa")
             _verify_file_not_created_and_dir_not_polluted(output_file)
@@ -99,7 +103,7 @@ def test_file_is_fully_written_if_visible(tmp_path: Path) -> None:
 
 def test_open_for_writing_text_opens_proper_encoding_file(tmp_path: Path) -> None:
     final_path = tmp_path / "file"
-    with atomic_opener(final_path, encoding="iso-8859-1", mode="w") as f:
+    with cast(TextIO, atomic_opener(final_path, encoding="iso-8859-1", mode="w")) as f:
         f.write("à")
     assert final_path.read_bytes() == b"\xe0"
 
@@ -132,7 +136,9 @@ def test_no_fd_leak_if_fdopen_fails_because_of_unknown_mode(tmp_path: Path) -> N
     final_path = tmp_path / "file"
     opened_fd: list[int] = []
     try:
-        with atomic_opener(final_path, mode="somethingrandomw", encoding="ascii", _fd_spy=opened_fd.append):
+        with atomic_opener(
+            final_path, mode="somethingrandomw", encoding="ascii", _fd_spy=opened_fd.append
+        ):  # type: ignore [call-overload]
             pass
         pytest.fail("should fail, mode is wrong")
     except ValueError:

@@ -14,9 +14,12 @@ This is combination of:
 - pydantic configuration + explicit typing
 
 """
+
+from __future__ import annotations
+
 from contextlib import asynccontextmanager, contextmanager
 from enum import Enum
-from typing import Any, AsyncIterator, Dict, Iterator, Optional, Union
+from typing import AsyncIterator, Dict, Iterator, Optional, Union
 
 import pydantic
 import socket
@@ -91,7 +94,7 @@ class StatsClient:
         self._send(metric, b"ms", value, tags)
 
     def unexpected_exception(self, ex: BaseException, where: str, *, tags: Optional[Tags] = None) -> None:
-        all_tags: dict[str, Any] = {
+        all_tags: Tags = {
             "exception": ex.__class__.__name__,
             "where": where,
         }

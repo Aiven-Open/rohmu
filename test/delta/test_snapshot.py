@@ -1,4 +1,7 @@
 # Copyright (c) 2021 Aiven, Helsinki, Finland. https://aiven.io/
+
+from __future__ import annotations
+
 from pathlib import Path
 from rohmu.delta.common import BackupPath, EMBEDDED_FILE_SIZE, Progress, SizeLimitedFile, SnapshotFile, SnapshotHash
 from rohmu.typing import AnyPath

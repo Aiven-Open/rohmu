@@ -4,6 +4,9 @@ rohmu - inotify wrapper
 Copyright (c) 2016 Ohmu Ltd
 See LICENSE for details
 """
+
+from __future__ import annotations
+
 from contextlib import suppress
 from ctypes import c_char_p, c_int, c_uint32
 from queue import Queue

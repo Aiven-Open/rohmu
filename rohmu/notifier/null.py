@@ -1,4 +1,7 @@
 """Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
+
+from __future__ import annotations
+
 from .interface import Notifier
 from typing import Optional
 

@@ -4,6 +4,9 @@ rohmu - rohmu data transformation interface
 Copyright (c) 2016 Ohmu Ltd
 See LICENSE for details
 """
+
+from __future__ import annotations
+
 from . import IO_BLOCK_SIZE
 from .compressor import CompressionFile, DecompressionFile, DecompressSink
 from .encryptor import DecryptorFile, DecryptSink, EncryptorFile

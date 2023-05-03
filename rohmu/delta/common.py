@@ -1,4 +1,7 @@
 # Copyright (c) 2021 Aiven, Helsinki, Finland. https://aiven.io/
+
+from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import datetime
 from multiprocessing.dummy import Pool
