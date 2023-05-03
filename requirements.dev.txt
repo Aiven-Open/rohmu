@@ -10,6 +10,8 @@ pylint-quotes
 pytest
 pytest-cov
 pytest-mock
+pytest-timeout
+pytest-asyncio
 # Same version from pghoard
 isort==5.10.1
 types-python-dateutil
