@@ -234,7 +234,10 @@ class S3Transfer(BaseTransfer[Config]):
 
             for item in response.get("Contents", []):
                 if with_metadata:
-                    metadata = {k.lower(): v for k, v in self._metadata_for_key(item["Key"]).items()}
+                    try:
+                        metadata = {k.lower(): v for k, v in self._metadata_for_key(item["Key"]).items()}
+                    except FileNotFoundFromStorageError:
+                        continue
                 else:
                     metadata = None
                 name = self.format_key_from_backend(item["Key"])
