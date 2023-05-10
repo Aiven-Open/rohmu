@@ -15,7 +15,7 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from cryptography.hazmat.primitives.ciphers import algorithms, Cipher, CipherContext, modes
 from cryptography.hazmat.primitives.hashes import SHA1, SHA256
 from cryptography.hazmat.primitives.hmac import HMAC
-from typing import cast, Optional, Union
+from typing import Optional, Union
 
 import io
 import logging
@@ -34,9 +34,9 @@ class Encryptor:
     def __init__(self, rsa_public_key_pem: Union[str, bytes]):
         if not isinstance(rsa_public_key_pem, bytes):
             rsa_public_key_pem = rsa_public_key_pem.encode("ascii")
-        self.rsa_public_key = cast(
-            RSAPublicKey, serialization.load_pem_public_key(rsa_public_key_pem, backend=default_backend())
-        )
+        public_key = serialization.load_pem_public_key(rsa_public_key_pem, backend=default_backend())
+        assert isinstance(public_key, RSAPublicKey)
+        self.rsa_public_key = public_key
         self._cipher: Optional[CipherContext] = None
         self._authenticator: Optional[HMAC] = None
 

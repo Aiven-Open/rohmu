@@ -15,21 +15,7 @@ from ..notifier.null import NullNotifier
 from ..typing import AnyPath, Metadata
 from contextlib import suppress
 from io import BytesIO
-from typing import (
-    Any,
-    BinaryIO,
-    Callable,
-    cast,
-    Collection,
-    Dict,
-    Generic,
-    Iterator,
-    NamedTuple,
-    Optional,
-    Type,
-    TypeVar,
-    Union,
-)
+from typing import Any, BinaryIO, Callable, Collection, Generic, Iterator, NamedTuple, Optional, Type, TypeVar, Union
 
 import logging
 import os
@@ -219,7 +205,8 @@ class BaseTransfer(Generic[StorageModelT]):
     def list_iter(self, key: str, *, with_metadata: bool = True, deep: bool = False) -> Iterator[dict[str, Any]]:
         for item in self.iter_key(key, with_metadata=with_metadata, deep=deep):
             if item.type == KEY_TYPE_OBJECT:
-                yield cast(Dict[str, Any], item.value)
+                assert isinstance(item.value, dict)
+                yield item.value
 
     def list_prefixes(self, key: str) -> list[str]:
         return list(self.iter_prefixes(key))
@@ -227,7 +214,8 @@ class BaseTransfer(Generic[StorageModelT]):
     def iter_prefixes(self, key: str) -> Iterator[str]:
         for item in self.iter_key(key, with_metadata=False):
             if item.type == KEY_TYPE_PREFIX:
-                yield cast(str, item.value)
+                assert isinstance(item.value, str)
+                yield item.value
 
     def iter_key(
         self, key: str, *, with_metadata: bool = True, deep: bool = False, include_key: bool = False

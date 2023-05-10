@@ -24,7 +24,7 @@ from .base import (
 )
 from contextlib import suppress
 from swiftclient import client, exceptions  # pylint: disable=import-error
-from typing import Any, BinaryIO, cast, Iterator, Optional
+from typing import Any, BinaryIO, Iterator, Optional
 
 import logging
 import os
@@ -43,11 +43,10 @@ def swift_exception_logger(err: BaseException) -> Any:
         return orig_swift_exception_logger(err)
     if getattr(err, "http_status", None) is None:
         return orig_swift_exception_logger(err)
-    client_err = cast(exceptions.ClientException, err)
-    if client_err.http_status == 404 and client_err.msg.startswith("Object GET failed"):
-        client.logger.debug("GET %r FAILED: %r", client_err.http_path, client_err.http_status)
+    if err.http_status == 404 and err.msg.startswith("Object GET failed"):
+        client.logger.debug("GET %r FAILED: %r", err.http_path, err.http_status)
     else:
-        client.logger.error(str(client_err))
+        client.logger.error(str(err))
     return None
 
 
@@ -287,7 +286,7 @@ class SwiftTransfer(BaseTransfer[Config]):
         source_key = self.format_key_for_backend(source_key)
         destination_key = "/".join((self.container_name, self.format_key_for_backend(destination_key)))
         sanitized_metadata = self.sanitize_metadata(metadata)
-        headers = cast(Metadata, self._metadata_to_headers(sanitized_metadata))
+        headers: Metadata = self._metadata_to_headers(sanitized_metadata)
         if metadata:
             headers["X-Fresh-Metadata"] = True
         self.conn.copy_object(self.container_name, source_key, destination=destination_key, headers=headers)

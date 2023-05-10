@@ -174,9 +174,11 @@ class AzureTransfer(BaseTransfer[Config]):
             # look up the matching result
             item_name: str
             if item.type == KEY_TYPE_OBJECT:
-                item_name = cast(Dict[str, str], item.value)["name"]
+                assert isinstance(item.value, dict)
+                item_name = item.value["name"]
             else:
-                item_name = cast(str, item.value)
+                assert isinstance(item.value, str)
+                item_name = item.value
             if item_name.rstrip("/").rsplit("/", 1)[-1] == expected_name:
                 break
         else:
