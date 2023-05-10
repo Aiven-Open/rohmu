@@ -290,7 +290,7 @@ class Snapshotter:
                     snapshotfile.hexdigest = hash_hexdigest_readable(f)
             return snapshotfile
 
-        def _result_cb(*, map_in: Any, map_out: "SnapshotFile") -> bool:
+        def _result_cb(*, map_in: Any, map_out: SnapshotFile) -> bool:
             self._add_snapshotfile(map_out)
             assert progress is not None
             progress.add_success()

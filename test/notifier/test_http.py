@@ -1,4 +1,6 @@
 """Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
+from __future__ import annotations
+
 from contextlib import closing, contextmanager
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -35,7 +37,7 @@ class _TestSession:
         pass
 
 
-def _join_queue_with_timeout(queue: "Queue[HTTPNotifyJob]", *, timeout: float, iteration: float = 0.1) -> None:
+def _join_queue_with_timeout(queue: Queue[HTTPNotifyJob], *, timeout: float, iteration: float = 0.1) -> None:
     while queue.unfinished_tasks and timeout > 0.0:
         time.sleep(iteration)
         timeout -= iteration
@@ -102,7 +104,7 @@ def test_background_http_request() -> None:
     session = _TestSession()
     stop_event = threading.Event()
     stop_event_check_timeout = 0.2
-    queue: "Queue[HTTPNotifyJob]" = Queue()
+    queue: Queue[HTTPNotifyJob] = Queue()
     url = "http://test_background_http_request.com"
     data = json.dumps(["test", "background", "http", "request"])
 
@@ -134,7 +136,7 @@ def test_background_http_request() -> None:
 def test_initialize_background_thread() -> None:
     stop_event = threading.Event()
     stop_event_check_timeout = 0.2
-    queue: "Queue[HTTPNotifyJob]" = Queue()
+    queue: Queue[HTTPNotifyJob] = Queue()
     thread = initialize_background_thread(
         queue,
         stop_event,

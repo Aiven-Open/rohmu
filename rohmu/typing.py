@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from types import TracebackType
 from typing import Any, Dict, Optional, Type, TYPE_CHECKING, Union
 
@@ -52,7 +54,7 @@ class HasWrite(Protocol):
 
 
 class FileLike(Protocol):
-    def __enter__(self) -> "FileLike":
+    def __enter__(self) -> FileLike:
         ...
 
     def __exit__(

@@ -100,7 +100,7 @@ class SizeLimitedFile:
         self._file_size = file_size
         self.tell = self._f.tell
 
-    def __enter__(self) -> "SizeLimitedFile":
+    def __enter__(self) -> SizeLimitedFile:
         return self
 
     def __exit__(self, t: Optional[Type[BaseException]], v: Optional[BaseException], tb: Optional[TracebackType]) -> None:
@@ -156,14 +156,14 @@ class SnapshotFile(DeltaModel):
     should_be_bundled: bool = False
     missing_ok: bool = True
 
-    def __lt__(self, o: "SnapshotFile") -> bool:
+    def __lt__(self, o: SnapshotFile) -> bool:
         # In our use case, paths uniquely identify files we care about
         return self.relative_path < o.relative_path
 
     def __hash__(self) -> int:
         return hash(self.relative_path)
 
-    def equals_excluding_mtime(self, o: "SnapshotFile") -> bool:
+    def equals_excluding_mtime(self, o: SnapshotFile) -> bool:
         return self.copy(update={"mtime_ns": 0}) == o.copy(update={"mtime_ns": 0})
 
     def open_for_reading(self, root_path: Path) -> SizeLimitedFile:
@@ -279,7 +279,7 @@ class Progress(DeltaModel):
         return self.final and not self.finished_successfully
 
     @classmethod
-    def merge(cls, progresses: Sequence["Progress"]) -> "Progress":
+    def merge(cls, progresses: Sequence[Progress]) -> Progress:
         p = cls()
         for progress in progresses:
             p.handled += progress.handled

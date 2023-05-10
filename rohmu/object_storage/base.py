@@ -125,7 +125,7 @@ class BaseTransfer(Generic[StorageModelT]):
         return size > chunk_size
 
     @classmethod
-    def from_model(cls, model: StorageModelT) -> "BaseTransfer[StorageModelT]":
+    def from_model(cls, model: StorageModelT) -> BaseTransfer[StorageModelT]:
         return cls(**model.dict(by_alias=True))
 
     def copy_file(
