@@ -15,7 +15,7 @@ from rohmu.delta.common import (
     SnapshotState,
 )
 from rohmu.typing import StrOrPathLike
-from typing import Any, Callable, Dict, Generator, Iterable, List, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Callable, Generator, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 import base64
 import logging
@@ -61,8 +61,8 @@ class Snapshotter:
         self.dst = Path(dst)
         self.globs = globs
         self.src_iterate_func = src_iterate_func
-        self.relative_path_to_snapshotfile: Dict[Path, SnapshotFile] = {}
-        self.hexdigest_to_snapshotfiles: Dict[str, List[SnapshotFile]] = {}
+        self.relative_path_to_snapshotfile: dict[Path, SnapshotFile] = {}
+        self.hexdigest_to_snapshotfiles: dict[str, List[SnapshotFile]] = {}
         self.parallel = parallel
         self.lock = threading.Lock()
         self.empty_dirs: List[Path] = []

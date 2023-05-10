@@ -37,7 +37,7 @@ from googleapiclient.http import (
 from http.client import IncompleteRead
 from oauth2client import GOOGLE_TOKEN_URI
 from oauth2client.client import GoogleCredentials
-from typing import Any, BinaryIO, Callable, cast, Dict, Iterable, Iterator, Optional, TextIO, Tuple, TypeVar, Union
+from typing import Any, BinaryIO, Callable, cast, Dict, Iterable, Iterator, Optional, TextIO, TypeVar, Union
 
 import codecs
 import dataclasses
@@ -186,9 +186,9 @@ class GoogleTransfer(BaseTransfer[Config]):
         project_id: str,
         bucket_name: str,
         credential_file: Optional[TextIO] = None,
-        credentials: Optional[Dict[str, Any]] = None,
+        credentials: Optional[dict[str, Any]] = None,
         prefix: Optional[str] = None,
-        proxy_info: Optional[Dict[str, Union[str, int]]] = None,
+        proxy_info: Optional[dict[str, Union[str, int]]] = None,
         notifier: Optional[Notifier] = None,
         statsd_info: Optional[StatsdConfig] = None,
     ) -> None:
@@ -323,7 +323,7 @@ class GoogleTransfer(BaseTransfer[Config]):
         with self._object_client(not_found=path) as clob:
             return self._metadata_for_key(clob, path)[0]
 
-    def _metadata_for_key(self, clob: Any, key: str) -> Tuple[Dict[str, Any], int]:
+    def _metadata_for_key(self, clob: Any, key: str) -> tuple[dict[str, Any], int]:
         # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.objects.html#get
         req = clob.get(bucket=self.bucket_name, object=key)
 
@@ -455,7 +455,7 @@ class GoogleTransfer(BaseTransfer[Config]):
         upload: MediaUpload,
         key: str,
         metadata: Metadata,
-        extra_props: Optional[Dict[str, Any]],
+        extra_props: Optional[dict[str, Any]],
         cache_control: Optional[str],
         reporter: Reporter,
         upload_progress_fn: IncrementalProgressCallbackType = None,
@@ -507,7 +507,7 @@ class GoogleTransfer(BaseTransfer[Config]):
         mimetype: Optional[str] = None,
         multipart: Optional[bool] = None,
         progress_fn: ProgressProportionCallbackType = None,
-        extra_props: Optional[Dict[str, Any]] = None,  # pylint: disable=arguments-differ
+        extra_props: Optional[dict[str, Any]] = None,  # pylint: disable=arguments-differ
     ) -> None:  # pylint: disable=unused-argument
         # TODO: extra_props seems to be used only to set cacheControl in pghoard tests.
         #
@@ -539,7 +539,7 @@ class GoogleTransfer(BaseTransfer[Config]):
         mimetype: Optional[str] = None,
         multipart: Optional[bool] = None,  # pylint: disable=unused-argument
         upload_progress_fn: IncrementalProgressCallbackType = None,
-        extra_props: Optional[Dict[str, Any]] = None,  # pylint: disable=arguments-differ
+        extra_props: Optional[dict[str, Any]] = None,  # pylint: disable=arguments-differ
     ) -> None:
         mimetype = mimetype or "application/octet-stream"
         sanitized_metadata = self.sanitize_metadata(metadata)

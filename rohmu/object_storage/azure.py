@@ -17,7 +17,7 @@ from .base import IncrementalProgressCallbackType, ProgressProportionCallbackTyp
 # pylint: disable=import-error, no-name-in-module
 from azure.core.exceptions import HttpResponseError, ResourceExistsError
 from azure.storage.blob import BlobServiceClient, ContentSettings
-from typing import Any, BinaryIO, cast, Dict, Iterator, Optional, Union
+from typing import Any, BinaryIO, Iterator, Optional, Union
 
 import azure.common
 import logging
@@ -185,10 +185,13 @@ class AzureTransfer(BaseTransfer[Config]):
             raise FileNotFoundFromStorageError(path)
         if item.type != KEY_TYPE_OBJECT:
             raise FileNotFoundFromStorageError(path)  # not found or prefix
-        return cast(Dict[str, Any], item.value)["metadata"]
+        assert isinstance(item.value, dict)
+        return item.value["metadata"]
 
     def _metadata_for_key(self, path: str) -> Metadata:
-        return cast(Dict[str, Any], list(self._iter_key(path=path, with_metadata=True, deep=False))[0].value)["metadata"]
+        result = list(self._iter_key(path=path, with_metadata=True, deep=False))[0].value
+        assert isinstance(result, dict)
+        return result["metadata"]
 
     def iter_key(
         self, key: str, *, with_metadata: bool = True, deep: bool = False, include_key: bool = False

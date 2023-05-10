@@ -23,7 +23,7 @@ from .base import (
     ProgressProportionCallbackType,
 )
 from botocore.response import StreamingBody
-from typing import Any, BinaryIO, Collection, Dict, Iterator, Optional, Union
+from typing import Any, BinaryIO, Collection, Iterator, Optional, Union
 
 import boto3
 import botocore.client
@@ -139,7 +139,7 @@ class S3Transfer(BaseTransfer[Config]):
                 self.location = self.region
             else:
                 signature_version = "s3"
-            proxies: Optional[Dict[str, str]] = None
+            proxies: Optional[dict[str, str]] = None
             if proxy_info:
                 proxies = {"https": get_proxy_url(proxy_info)}
             boto_config = botocore.client.Config(
