@@ -49,6 +49,17 @@ IN_NONBLOCK = 0x00004000
 
 
 def parse_inotify_buffer(event_buffer: bytes) -> Iterator[tuple[int, int, int, bytes]]:
+    """Yield parsed inotify events from a raw bytes sequence.
+
+    The `event_buffer` must be a byte sequence consisting of 0 or more sequences of the kind:
+
+        +------------------+------+--------+-------------+------+
+        | Watch descriptor | Mask | Cookie | Name length | Name |
+        +------------------+------+--------+-------------+------+
+
+    This function yields successive tuples (Watch descriptor, Mask, Cookie, Name) parsed from the provided bytes.
+
+    """
     i = 0
     while i + s_size <= len(event_buffer):
         wd, mask, cookie, length = struct.unpack_from("iIII", event_buffer, i)
