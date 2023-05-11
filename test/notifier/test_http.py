@@ -1,4 +1,6 @@
 """Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
+from __future__ import annotations
+
 from contextlib import closing, contextmanager
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -10,7 +12,8 @@ from rohmu.notifier.http import (
     initialize_background_thread,
     Operation,
 )
-from typing import Any, Iterator, List, Tuple
+from types import TracebackType
+from typing import Any, Iterator, List, Tuple, Type
 
 import json
 import requests
@@ -19,20 +22,22 @@ import time
 
 
 class _TestSession:
-    def __init__(self, *args, **kwargs) -> None:  # pylint: disable=super-init-not-called,unused-argument
+    def __init__(self, *args: Any, **kwargs: Any) -> None:  # pylint: disable=super-init-not-called,unused-argument
         self.post_called: List[Tuple[Any, ...]] = list()
 
-    def post(self, *args, **kwargs) -> None:
+    def post(self, *args: Any, **kwargs: Any) -> None:
         self.post_called.append((args, kwargs))
 
     def __enter__(self) -> None:
         pass
 
-    def __exit__(self, type, value, traceback) -> None:  # pylint: disable=redefined-builtin
+    def __exit__(
+        self, type: Type[BaseException], value: BaseException, traceback: TracebackType
+    ) -> None:  # pylint: disable=redefined-builtin
         pass
 
 
-def _join_queue_with_timeout(queue: Queue, *, timeout: float, iteration: float = 0.1) -> None:
+def _join_queue_with_timeout(queue: Queue[HTTPNotifyJob], *, timeout: float, iteration: float = 0.1) -> None:
     while queue.unfinished_tasks and timeout > 0.0:
         time.sleep(iteration)
         timeout -= iteration
@@ -99,7 +104,7 @@ def test_background_http_request() -> None:
     session = _TestSession()
     stop_event = threading.Event()
     stop_event_check_timeout = 0.2
-    queue: "Queue[HTTPNotifyJob]" = Queue()
+    queue: Queue[HTTPNotifyJob] = Queue()
     url = "http://test_background_http_request.com"
     data = json.dumps(["test", "background", "http", "request"])
 
@@ -131,7 +136,7 @@ def test_background_http_request() -> None:
 def test_initialize_background_thread() -> None:
     stop_event = threading.Event()
     stop_event_check_timeout = 0.2
-    queue: "Queue[HTTPNotifyJob]" = Queue()
+    queue: Queue[HTTPNotifyJob] = Queue()
     thread = initialize_background_thread(
         queue,
         stop_event,

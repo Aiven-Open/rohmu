@@ -10,6 +10,7 @@ from ..common.models import StorageModel
 from ..common.statsd import StatsdConfig
 from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError
 from ..notifier.interface import Notifier
+from ..typing import Metadata
 from .base import (
     BaseTransfer,
     IncrementalProgressCallbackType,
@@ -18,9 +19,9 @@ from .base import (
     KEY_TYPE_PREFIX,
     ProgressProportionCallbackType,
 )
-from io import BytesIO, StringIO
+from io import BytesIO
 from stat import S_ISDIR
-from typing import cast, Optional, Union
+from typing import Any, BinaryIO, cast, Iterator, Optional
 
 import datetime
 import json
@@ -44,12 +45,12 @@ class SFTPTransfer(BaseTransfer[Config]):
 
     def __init__(
         self,
-        server,
-        port,
-        username,
-        password=None,
-        private_key=None,
-        prefix=None,
+        server: str,
+        port: int,
+        username: str,
+        password: Optional[str] = None,
+        private_key: Optional[str] = None,
+        prefix: Optional[str] = None,
         notifier: Optional[Notifier] = None,
         statsd_info: Optional[StatsdConfig] = None,
     ) -> None:
@@ -70,7 +71,7 @@ class SFTPTransfer(BaseTransfer[Config]):
 
         transport = paramiko.Transport((self.server, self.port))
 
-        if private_key:
+        if self.private_key:
             pkey = paramiko.RSAKey.from_private_key_file(self.private_key)
             transport.connect(username=self.username, pkey=pkey)
         else:  # password must be defined due to previous check above
@@ -80,37 +81,43 @@ class SFTPTransfer(BaseTransfer[Config]):
 
         self.log.debug("SFTPTransfer initialized")
 
-    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
+    def get_contents_to_fileobj(
+        self, key: str, fileobj_to_store_to: BinaryIO, *, progress_callback: ProgressProportionCallbackType = None
+    ) -> Metadata:
         self._get_contents_to_fileobj(key, fileobj_to_store_to, progress_callback)
         return self.get_metadata_for_key(key)
 
-    def _get_contents_to_fileobj(self, key, fileobj_to_store_to, progress_callback=None):
+    def _get_contents_to_fileobj(
+        self, key: str, fileobj_to_store_to: BinaryIO, progress_callback: ProgressProportionCallbackType = None
+    ) -> None:
         target_path = self.format_key_for_backend(key.strip("/"))
         self.log.debug("Get file content: %r", target_path)
 
         try:
             # the paramiko progress callback has the same interface as pghoard for downloads
-            return self.client.getfo(remotepath=target_path, fl=fileobj_to_store_to, callback=progress_callback)
+            self.client.getfo(remotepath=target_path, fl=fileobj_to_store_to, callback=progress_callback)
         except FileNotFoundError as ex:
             raise FileNotFoundFromStorageError(key) from ex
 
-    def get_file_size(self, key):
+    def get_file_size(self, key: str) -> int:
         target_path = self.format_key_for_backend(key.strip("/"))
         try:
-            return self.client.stat(target_path).st_size
+            return self.client.stat(target_path).st_size  # type: ignore
         except FileNotFoundError as ex:
             raise FileNotFoundFromStorageError(key) from ex
 
-    def get_metadata_for_key(self, key):
+    def get_metadata_for_key(self, key: str) -> Metadata:
         bio = BytesIO()
         self._get_contents_to_fileobj(key + ".metadata", bio)
         return json.loads(bio.getvalue().decode())
 
     @staticmethod
-    def _skip_file_name(file_name):
+    def _skip_file_name(file_name: str) -> bool:
         return file_name.startswith(".") or file_name.endswith(".metadata") or ".metadata_tmp" in file_name
 
-    def iter_key(self, key, *, with_metadata=True, deep=False, include_key=False):
+    def iter_key(
+        self, key: str, *, with_metadata: bool = True, deep: bool = False, include_key: bool = False
+    ) -> Iterator[IterKeyItem]:
         target_path = self.format_key_for_backend(key.strip("/"))
         self.log.debug("Listing path: %r", target_path)
 
@@ -130,7 +137,9 @@ class SFTPTransfer(BaseTransfer[Config]):
                     else:
                         metadata = None
 
-                    last_modified = datetime.datetime.fromtimestamp(attr.st_mtime, tz=datetime.timezone.utc)
+                    last_modified = datetime.datetime.fromtimestamp(
+                        attr.st_mtime, tz=datetime.timezone.utc  # type: ignore [arg-type]
+                    )
                     yield IterKeyItem(
                         type=KEY_TYPE_OBJECT,
                         value={
@@ -153,7 +162,7 @@ class SFTPTransfer(BaseTransfer[Config]):
                 continue
 
             file_key = os.path.join(key.strip("/"), attr.filename)
-            if S_ISDIR(attr.st_mode):
+            if S_ISDIR(attr.st_mode):  # type: ignore [arg-type]
                 if deep:
                     yield from self.iter_key(file_key, with_metadata=with_metadata, deep=True)
                 else:
@@ -167,7 +176,9 @@ class SFTPTransfer(BaseTransfer[Config]):
                     else:
                         metadata = None
 
-                    last_modified = datetime.datetime.fromtimestamp(attr.st_mtime, tz=datetime.timezone.utc)
+                    last_modified = datetime.datetime.fromtimestamp(
+                        attr.st_mtime, tz=datetime.timezone.utc  # type: ignore [arg-type]
+                    )
                     yield IterKeyItem(
                         type=KEY_TYPE_OBJECT,
                         value={
@@ -179,7 +190,9 @@ class SFTPTransfer(BaseTransfer[Config]):
                     )
 
     # can't support remote copy, only remote rename
-    def copy_file(self, *, source_key, destination_key, metadata=None, **_kwargs):
+    def copy_file(
+        self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **_kwargs: Any
+    ) -> None:
         raise NotImplementedError
 
     def delete_key(self, key: str) -> None:
@@ -195,15 +208,15 @@ class SFTPTransfer(BaseTransfer[Config]):
 
     def store_file_object(
         self,
-        key,
-        fd,
-        metadata=None,
+        key: str,
+        fd: BinaryIO,
+        metadata: Optional[Metadata] = None,
         *,
-        cache_control=None,
-        mimetype=None,
-        multipart: Union[bool, None] = None,
+        cache_control: Optional[str] = None,  # pylint: disable=unused-argument
+        mimetype: Optional[str] = None,  # pylint: disable=unused-argument
+        multipart: Optional[bool] = None,  # pylint: disable=unused-argument
         upload_progress_fn: IncrementalProgressCallbackType = None,
-    ):  # pylint: disable=unused-argument
+    ) -> None:
         bytes_written = self._put_object(
             key, fd, metadata=metadata, upload_progress_fn=self._proportional_to_incremental_progress(upload_progress_fn)
         )
@@ -211,13 +224,20 @@ class SFTPTransfer(BaseTransfer[Config]):
         if upload_progress_fn:
             upload_progress_fn(bytes_written)
 
-    def _put_object(self, key, fd, *, metadata=None, upload_progress_fn: ProgressProportionCallbackType = None) -> int:
+    def _put_object(
+        self,
+        key: str,
+        fd: BinaryIO,
+        *,
+        metadata: Optional[Metadata] = None,
+        upload_progress_fn: ProgressProportionCallbackType = None,
+    ) -> int:
         target_path = self.format_key_for_backend(key.strip("/"))
         total_bytes_written = 0
 
         self.log.debug("Store path: %r", target_path)
 
-        def wrapper_upload_progress_fn(bytes_written, total_bytes):
+        def wrapper_upload_progress_fn(bytes_written: int, total_bytes: int) -> None:
             nonlocal total_bytes_written
             total_bytes_written = bytes_written
             if upload_progress_fn:
@@ -231,16 +251,16 @@ class SFTPTransfer(BaseTransfer[Config]):
         self._save_metadata(target_path, metadata)
         return total_bytes_written
 
-    def _save_metadata(self, target_path, metadata):
+    def _save_metadata(self, target_path: str, metadata: Optional[Metadata]) -> None:
         metadata_path = target_path + ".metadata"
         self.log.debug("Save metadata: %r", metadata_path)
 
         sanitised = self.sanitize_metadata(metadata)
-        bio = StringIO(json.dumps(sanitised))
+        bio = BytesIO(json.dumps(sanitised).encode())
         self.client.putfo(fl=bio, remotepath=metadata_path)
 
     # https://stackoverflow.com/questions/14819681/upload-files-using-sftp-in-python-but-create-directories-if-path-doesnt-exist
-    def _mkdir_p(self, remote):
+    def _mkdir_p(self, remote: str) -> None:
         dirs_ = []
         dir_ = remote
         while len(dir_) > 1:

@@ -5,6 +5,7 @@ from io import BytesIO
 from rohmu.common.models import StorageOperation
 from rohmu.object_storage.s3 import S3Transfer
 from tempfile import NamedTemporaryFile
+from typing import Any, Iterator, Optional
 from unittest.mock import MagicMock
 
 import pytest
@@ -19,7 +20,7 @@ class S3Infra:
 
 
 @pytest.fixture(name="infra")
-def fixture_infra(mocker):
+def fixture_infra(mocker: Any) -> Iterator[S3Infra]:
     notifier = MagicMock()
     get_session = mocker.patch("botocore.session.get_session")
     s3_client = MagicMock()
@@ -35,7 +36,7 @@ def fixture_infra(mocker):
     yield S3Infra(notifier, operation, s3_client, transfer)
 
 
-def test_store_file_from_disk(infra) -> None:
+def test_store_file_from_disk(infra: S3Infra) -> None:
     test_data = b"test-data"
     metadata = {"Content-Length": len(test_data), "some-date": datetime(2022, 11, 15, 18, 30, 58, 486644)}
     with NamedTemporaryFile() as tmpfile:
@@ -55,7 +56,7 @@ def test_store_file_from_disk(infra) -> None:
 
 
 @pytest.mark.parametrize("multipart", [False, None, True])
-def test_store_file_object(infra, multipart) -> None:
+def test_store_file_object(infra: S3Infra, multipart: Optional[bool]) -> None:
     test_data = b"test-data"
     file_object = BytesIO(test_data)
 
@@ -92,7 +93,7 @@ def test_store_file_object(infra, multipart) -> None:
         )
 
 
-def test_operations_reporting(infra) -> None:
+def test_operations_reporting(infra: S3Infra) -> None:
     infra.operation.assert_called_once_with(StorageOperation.head_request)  # pylint: disable=no-member
 
 

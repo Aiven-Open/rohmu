@@ -32,3 +32,7 @@ class MissingLibraryError(Exception):
 
 class MaybeRecoverableError(Error):
     """An error that may be recoverable"""
+
+
+class UninitializedError(Error):
+    """Error trying to access an uninitialized resource."""

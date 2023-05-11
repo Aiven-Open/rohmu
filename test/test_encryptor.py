@@ -3,8 +3,10 @@ Copyright (c) 2015 Ohmu Ltd
 See LICENSE for details
 """
 from .base import CONSTANT_TEST_RSA_PRIVATE_KEY, CONSTANT_TEST_RSA_PUBLIC_KEY
+from py.path import LocalPath  # type: ignore [import] # pylint: disable=import-error
 from rohmu import IO_BLOCK_SIZE
 from rohmu.encryptor import Decryptor, DecryptorFile, Encryptor, EncryptorFile, EncryptorStream
+from typing import cast, IO
 
 import io
 import json
@@ -14,7 +16,7 @@ import random
 import tarfile
 
 
-def test_encryptor_decryptor():
+def test_encryptor_decryptor() -> None:
     plaintext = b"test"
     for op in (None, "json"):
         if op == "json":
@@ -39,7 +41,7 @@ def test_encryptor_decryptor():
         assert plaintext == decrypted
 
 
-def test_encryptor_stream():
+def test_encryptor_stream() -> None:
     plaintext = os.urandom(2 * 1024 * 1024)
     encrypted_stream = EncryptorStream(io.BytesIO(plaintext), CONSTANT_TEST_RSA_PUBLIC_KEY)
     result_data = io.BytesIO()
@@ -68,7 +70,7 @@ def test_encryptor_stream():
     assert plaintext == decrypted
 
 
-def test_decryptorfile(tmpdir):
+def test_decryptorfile(tmpdir: LocalPath) -> None:
     # create a plaintext blob bigger than IO_BLOCK_SIZE
     plaintext1 = b"rvdmfki6iudmx8bb25tx1sozex3f4u0nm7uba4eibscgda0ckledcydz089qw1p1wer"
     repeat = int(1.5 * IO_BLOCK_SIZE / len(plaintext1))
@@ -142,7 +144,7 @@ def test_decryptorfile(tmpdir):
         fp.truncate()
 
 
-def test_decryptorfile_for_tarfile(tmpdir):
+def test_decryptorfile_for_tarfile(tmpdir: LocalPath) -> None:
     testdata = b"file contents"
     data_tmp_name = tmpdir.join("plain.data").strpath
     with open(data_tmp_name, mode="wb") as data_tmp:
@@ -161,13 +163,14 @@ def test_decryptorfile_for_tarfile(tmpdir):
         enc_tar.seek(0)
 
         dfile = DecryptorFile(enc_tar, CONSTANT_TEST_RSA_PRIVATE_KEY)
-        with tarfile.open(fileobj=dfile, mode="r") as tar:
+        with tarfile.open(fileobj=cast(IO[bytes], dfile), mode="r") as tar:
             info = tar.getmember("archived_content")
             assert info.isfile() is True
             assert info.size == len(testdata)
             content_file = tar.extractfile("archived_content")
-            content = content_file.read()  # pylint: disable=no-member
-            content_file.close()  # pylint: disable=no-member
+            assert content_file is not None
+            content = content_file.read()
+            content_file.close()
             assert testdata == content
 
             decout = tmpdir.join("dec_out_dir").strpath
@@ -178,7 +181,7 @@ def test_decryptorfile_for_tarfile(tmpdir):
                 assert testdata == ext_fp.read()
 
 
-def test_encryptorfile(tmpdir):
+def test_encryptorfile(tmpdir: LocalPath) -> None:
     # create a plaintext blob bigger than IO_BLOCK_SIZE
     plaintext1 = b"rvdmfki6iudmx8bb25tx1sozex3f4u0nm7uba4eibscgda0ckledcydz089qw1p1"
     repeat = int(1.5 * IO_BLOCK_SIZE / len(plaintext1))
@@ -218,7 +221,7 @@ def test_encryptorfile(tmpdir):
         assert plaintext == result
 
 
-def test_encryptorfile_for_tarfile(tmpdir):
+def test_encryptorfile_for_tarfile(tmpdir: LocalPath) -> None:
     testdata = b"file contents"
     data_tmp_name = tmpdir.join("plain.data").strpath
     with open(data_tmp_name, mode="wb") as data_tmp:
@@ -227,24 +230,25 @@ def test_encryptorfile_for_tarfile(tmpdir):
     enc_tar_name = tmpdir.join("enc.tar.data").strpath
     with open(enc_tar_name, "w+b") as plain_fp:
         enc_fp = EncryptorFile(plain_fp, CONSTANT_TEST_RSA_PUBLIC_KEY)
-        with tarfile.open(name="foo", fileobj=enc_fp, mode="w") as tar:
+        with tarfile.open(name="foo", fileobj=cast(IO[bytes], enc_fp), mode="w") as tar:
             tar.add(data_tmp_name, arcname="archived_content")
         enc_fp.close()
 
         plain_fp.seek(0)
 
         dfile = DecryptorFile(plain_fp, CONSTANT_TEST_RSA_PRIVATE_KEY)
-        with tarfile.open(fileobj=dfile, mode="r") as tar:
+        with tarfile.open(fileobj=cast(IO[bytes], dfile), mode="r") as tar:
             info = tar.getmember("archived_content")
             assert info.isfile() is True
             assert info.size == len(testdata)
             content_file = tar.extractfile("archived_content")
-            content = content_file.read()  # pylint: disable=no-member
-            content_file.close()  # pylint: disable=no-member
+            assert content_file is not None
+            content = content_file.read()
+            content_file.close()
             assert testdata == content
 
 
-def test_empty_file():
+def test_empty_file() -> None:
     bio = io.BytesIO()
     ef = EncryptorFile(bio, CONSTANT_TEST_RSA_PUBLIC_KEY)
     ef.write(b"")

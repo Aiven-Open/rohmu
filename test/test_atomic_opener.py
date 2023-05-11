@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 from pathlib import Path
 from rohmu.atomic_opener import atomic_opener
+from typing import cast, TextIO
 
 import errno
 import os
@@ -7,24 +10,24 @@ import pytest
 import time
 
 
-def _verify_file_not_created_and_dir_not_polluted(output_file: Path):
+def _verify_file_not_created_and_dir_not_polluted(output_file: Path) -> None:
     assert os.listdir(output_file.parent) == []
     assert not output_file.exists()
 
 
-def test_error_thrown_if_final_path_parent_doesnt_exist(tmp_path: Path):
+def test_error_thrown_if_final_path_parent_doesnt_exist(tmp_path: Path) -> None:
     with pytest.raises(IOError):
         with atomic_opener(tmp_path / "nonexistingdir" / "final_path", mode="w"):
             pass
 
 
-def test_error_mode_doesnt_contain_write(tmp_path: Path):
+def test_error_mode_doesnt_contain_write(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
-        with atomic_opener(tmp_path, mode="r"):  # type: ignore
+        with atomic_opener(tmp_path, mode="r"):  # type: ignore [call-overload]
             pass
 
 
-def test_file_is_atomically_created_only_after_function_execution_is_over(tmp_path: Path):
+def test_file_is_atomically_created_only_after_function_execution_is_over(tmp_path: Path) -> None:
     data_block = "x" * 100_000_000
     # manually tested with block_count of 1000 but it seems overkill to do it every time and it can hog
     # the testing infra quite a bit.
@@ -35,7 +38,8 @@ def test_file_is_atomically_created_only_after_function_execution_is_over(tmp_pa
     output_file = tmp_path / "something"
     try:
         _verify_file_not_created_and_dir_not_polluted(output_file)
-        with atomic_opener(output_file, mode="w") as f:
+        # FIXME: when dropping python3.7 support we should not need cast here
+        with cast(TextIO, atomic_opener(output_file, mode="w")) as f:
             inode_inside = os.stat(f.fileno()).st_ino
             _verify_file_not_created_and_dir_not_polluted(output_file)
             for unused_counter in range(block_count):
@@ -59,12 +63,12 @@ def test_file_is_atomically_created_only_after_function_execution_is_over(tmp_pa
             pass
 
 
-def test_file_is_never_created_if_function_breaks(tmp_path: Path):
+def test_file_is_never_created_if_function_breaks(tmp_path: Path) -> None:
     output_file = tmp_path / "something"
 
     try:
         _verify_file_not_created_and_dir_not_polluted(output_file)
-        with atomic_opener(output_file, mode="w") as f:
+        with cast(TextIO, atomic_opener(output_file, mode="w")) as f:
             _verify_file_not_created_and_dir_not_polluted(output_file)
             f.write("aaaaaaaaaa")
             f.flush()
@@ -77,16 +81,16 @@ def test_file_is_never_created_if_function_breaks(tmp_path: Path):
         _verify_file_not_created_and_dir_not_polluted(output_file)
 
 
-def test_file_is_fully_written_if_visible(tmp_path: Path):
+def test_file_is_fully_written_if_visible(tmp_path: Path) -> None:
     output_file = tmp_path / "something"
 
-    def linkhook():
+    def linkhook() -> None:
         assert output_file.exists()
         assert output_file.read_text() == "aaaaaaaaaa"
 
     try:
         _verify_file_not_created_and_dir_not_polluted(output_file)
-        with atomic_opener(output_file, mode="w", _after_link_hook=linkhook) as f:
+        with cast(TextIO, atomic_opener(output_file, mode="w", _after_link_hook=linkhook)) as f:
             _verify_file_not_created_and_dir_not_polluted(output_file)
             f.write("aaaaaaaaaa")
             _verify_file_not_created_and_dir_not_polluted(output_file)
@@ -97,21 +101,21 @@ def test_file_is_fully_written_if_visible(tmp_path: Path):
         _verify_file_not_created_and_dir_not_polluted(output_file)
 
 
-def test_open_for_writing_text_opens_proper_encoding_file(tmp_path: Path):
+def test_open_for_writing_text_opens_proper_encoding_file(tmp_path: Path) -> None:
     final_path = tmp_path / "file"
-    with atomic_opener(final_path, encoding="iso-8859-1", mode="w") as f:
+    with cast(TextIO, atomic_opener(final_path, encoding="iso-8859-1", mode="w")) as f:
         f.write("à")
     assert final_path.read_bytes() == b"\xe0"
 
 
-def test_open_for_writing_bytes_properly_writes_bytes(tmp_path: Path):
+def test_open_for_writing_bytes_properly_writes_bytes(tmp_path: Path) -> None:
     final_path = tmp_path / "file"
     with atomic_opener(final_path, mode="wb") as f:
         f.write(b"\xe0")
     assert final_path.read_text("iso-8859-1") == "à"
 
 
-def test_no_fd_leak_if_fdopen_fails_because_of_wrong_encoding(tmp_path: Path):
+def test_no_fd_leak_if_fdopen_fails_because_of_wrong_encoding(tmp_path: Path) -> None:
     final_path = tmp_path / "file"
     opened_fd: list[int] = []
     try:
@@ -128,11 +132,13 @@ def test_no_fd_leak_if_fdopen_fails_because_of_wrong_encoding(tmp_path: Path):
             # descriptor is invalid, all ok
 
 
-def test_no_fd_leak_if_fdopen_fails_because_of_unknown_mode(tmp_path: Path):
+def test_no_fd_leak_if_fdopen_fails_because_of_unknown_mode(tmp_path: Path) -> None:
     final_path = tmp_path / "file"
     opened_fd: list[int] = []
     try:
-        with atomic_opener(final_path, mode="somethingrandomw", encoding="ascii", _fd_spy=opened_fd.append):
+        with atomic_opener(
+            final_path, mode="somethingrandomw", encoding="ascii", _fd_spy=opened_fd.append
+        ):  # type: ignore [call-overload]
             pass
         pytest.fail("should fail, mode is wrong")
     except ValueError:

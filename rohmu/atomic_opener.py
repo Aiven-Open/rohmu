@@ -1,34 +1,18 @@
 from contextlib import contextmanager
 from pathlib import Path
-from typing import BinaryIO, Callable, cast, ContextManager, Generator, Optional, overload, TextIO, TYPE_CHECKING, Union
+from typing import BinaryIO, Callable, cast, ContextManager, Generator, Optional, overload, TextIO, Union
+from typing_extensions import TypeAlias
 
-# workaround < Python3.8 missing Literal.
-# if we just use the try/except block, mypy will complain
-# about the fact that Write* variables are being redefined.
-# so we need to pour in an additional branch.
-if TYPE_CHECKING:
+try:
     from typing import Literal
-
-    Write = Literal["w"]
-    WriteBinary = Literal["wb"]
-    WriteTest = Literal["somethingrandomw"]
-else:
-    try:
-        from typing import Literal
-
-        Write = Literal["w"]
-        WriteBinary = Literal["wb"]
-        WriteTest = Literal["somethingrandomw"]
-    except ImportError:
-        from typing import Any
-
-        Write = Any
-        WriteBinary = Any
-        WriteTest = Any
-
+except ImportError:
+    from typing_extensions import Literal  # type: ignore [assignment]
 
 import errno
 import os
+
+Write: TypeAlias = Literal["w"]
+WriteBinary: TypeAlias = Literal["wb"]
 
 
 def _fd_close_quietly(fd: int) -> None:
@@ -61,19 +45,6 @@ def atomic_opener(
     _after_link_hook: Callable[[], None] = lambda: None,
 ) -> ContextManager[TextIO]:
     ...
-
-
-if TYPE_CHECKING:
-    # necessary for testing or tests will fail type checking
-    @overload
-    def atomic_opener(
-        final_path: Path,
-        mode: WriteTest,
-        encoding: Optional[str] = None,
-        _fd_spy: Callable[[int], None] = lambda unused: None,
-        _after_link_hook: Callable[[], None] = lambda: None,
-    ) -> ContextManager[TextIO]:
-        ...
 
 
 def atomic_opener(

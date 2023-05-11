@@ -1,4 +1,7 @@
 # Copyright (c) 2021 Aiven, Helsinki, Finland. https://aiven.io/
+
+from __future__ import annotations
+
 from pathlib import Path
 from rohmu.delta.common import (
     BackupPath,
@@ -11,7 +14,8 @@ from rohmu.delta.common import (
     SnapshotHash,
     SnapshotState,
 )
-from typing import Callable, Dict, Generator, Iterable, List, Optional, Sequence, Set, Tuple, Union
+from rohmu.typing import StrOrPathLike
+from typing import Any, Callable, Generator, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 import base64
 import logging
@@ -45,20 +49,20 @@ class Snapshotter:
     def __init__(
         self,
         *,
-        src,
-        dst,
-        globs,
+        src: StrOrPathLike,
+        dst: StrOrPathLike,
+        globs: list[str],
         src_iterate_func: Optional[Callable[[], Iterable[Union[BackupPath, str, Path]]]] = None,
         parallel: int = 1,
         min_delta_file_size: int = 0,
-    ):
+    ) -> None:
         assert globs
         self.src = Path(src)
         self.dst = Path(dst)
         self.globs = globs
         self.src_iterate_func = src_iterate_func
-        self.relative_path_to_snapshotfile: Dict[Path, SnapshotFile] = {}
-        self.hexdigest_to_snapshotfiles: Dict[str, List[SnapshotFile]] = {}
+        self.relative_path_to_snapshotfile: dict[Path, SnapshotFile] = {}
+        self.hexdigest_to_snapshotfiles: dict[str, List[SnapshotFile]] = {}
         self.parallel = parallel
         self.lock = threading.Lock()
         self.empty_dirs: List[Path] = []
@@ -275,7 +279,7 @@ class Snapshotter:
 
         progress.add_total(len(snapshotfiles))
 
-        def _cb(snapshotfile: SnapshotFile):
+        def _cb(snapshotfile: SnapshotFile) -> SnapshotFile:
             # src may or may not be present; dst is present as it is in snapshot
             with snapshotfile.open_for_reading(self.dst) as f:
                 if snapshotfile.file_size <= EMBEDDED_FILE_SIZE:
@@ -286,8 +290,9 @@ class Snapshotter:
                     snapshotfile.hexdigest = hash_hexdigest_readable(f)
             return snapshotfile
 
-        def _result_cb(*, map_in, map_out):
+        def _result_cb(*, map_in: Any, map_out: SnapshotFile) -> bool:
             self._add_snapshotfile(map_out)
+            assert progress is not None
             progress.add_success()
             return True
 

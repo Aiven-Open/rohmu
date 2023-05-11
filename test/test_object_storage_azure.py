@@ -3,7 +3,7 @@ from datetime import datetime
 from io import BytesIO
 from tempfile import NamedTemporaryFile
 from types import ModuleType
-from typing import Tuple
+from typing import Any, Tuple
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -27,12 +27,12 @@ def fixture_mock_azure_module() -> Tuple[ModuleType, MagicMock]:
 
 
 @pytest.fixture(name="azure_module")
-def fixture_azure_module(mock_azure_module) -> ModuleType:
+def fixture_azure_module(mock_azure_module: Tuple[ModuleType, MagicMock]) -> ModuleType:
     return mock_azure_module[0]
 
 
 @pytest.fixture(name="get_blob_client")
-def fixture_get_blob_client(mock_azure_module) -> MagicMock:
+def fixture_get_blob_client(mock_azure_module: Tuple[ModuleType, MagicMock]) -> MagicMock:
     return mock_azure_module[1]
 
 
@@ -72,7 +72,7 @@ def test_store_file_object(azure_module: ModuleType, get_blob_client: MagicMock)
     metadata = {"Content-Length": len(test_data), "some-date": datetime(2022, 11, 15, 18, 30, 58, 486644)}
     file_object = BytesIO(test_data)
 
-    def upload_side_effect(*args, **kwargs):  # pylint: disable=unused-argument
+    def upload_side_effect(*args: Any, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         if kwargs.get("raw_response_hook"):
             kwargs["raw_response_hook"](MagicMock(context={"upload_stream_current": len(test_data)}))
 

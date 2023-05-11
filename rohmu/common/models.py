@@ -28,7 +28,7 @@ class StorageOperation(str, enum.Enum):
     multipart_aborted = "multipart_aborted"
     multipart_complete = "multipart_complete"
 
-    def __str__(self):
+    def __str__(self) -> str:
         return str(self.value)
 
 
@@ -54,9 +54,7 @@ class RohmuModel(pydantic.BaseModel):
         validate_all = True
 
         # Validate also assignments
-        # validate_assignment = True
-        # TBD: Figure out why this doesn't work in some unit tests;
-        # possibly the tests themselves are broken
+        validate_assignment = True
 
 
 class ProxyInfo(RohmuModel):

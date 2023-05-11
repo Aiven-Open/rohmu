@@ -5,26 +5,32 @@ Copyright (c) 2016 Ohmu Ltd
 See LICENSE for details
 """
 
+from __future__ import annotations
+
 from . import IO_BLOCK_SIZE
 from .compressor import CompressionFile, DecompressionFile, DecompressSink
 from .encryptor import DecryptorFile, DecryptSink, EncryptorFile
 from .errors import InvalidConfigurationError
 from .filewrap import ThrottleSink
 from .object_storage.base import IncrementalProgressCallbackType
+from .typing import FileLike, HasWrite, Metadata
 from contextlib import suppress
 from inspect import signature
+from typing import Callable, Optional, Union
 
 import time
 
 
-def _fileobj_name(input_obj):
+def _fileobj_name(input_obj: FileLike) -> str:
     if hasattr(input_obj, "name"):
         return "open file {!r}".format(getattr(input_obj, "name"))
 
     return repr(input_obj)
 
 
-def _get_encryption_key_data(metadata, key_lookup):
+def _get_encryption_key_data(
+    metadata: Optional[Metadata], key_lookup: Optional[Callable[[str], Optional[str]]]
+) -> Optional[str]:
     if not metadata or not metadata.get("encryption-key-id"):
         return None
 
@@ -39,7 +45,12 @@ def _get_encryption_key_data(metadata, key_lookup):
     return key_data
 
 
-def file_reader(*, fileobj, metadata=None, key_lookup=None):
+def file_reader(
+    *,
+    fileobj: FileLike,
+    metadata: Optional[Metadata] = None,
+    key_lookup: Optional[Callable[[str], Optional[str]]] = None,
+) -> FileLike:
     if not metadata:
         return fileobj
 
@@ -54,7 +65,14 @@ def file_reader(*, fileobj, metadata=None, key_lookup=None):
     return fileobj
 
 
-def create_sink_pipeline(*, output, file_size=None, metadata=None, key_lookup=None, throttle_time=0.001):
+def create_sink_pipeline(
+    *,
+    output: HasWrite,
+    file_size: int = 0,
+    metadata: Optional[Metadata] = None,
+    key_lookup: Optional[Callable[[str], Optional[str]]] = None,
+    throttle_time: float = 0.001,
+) -> HasWrite:
     if throttle_time:
         output = ThrottleSink(output, throttle_time)
 
@@ -75,13 +93,19 @@ def _callback_wrapper(progress_callback: IncrementalProgressCallbackType) -> Inc
         return None
     sig = signature(progress_callback)
     if len(sig.parameters) == 0:
-        return lambda f: progress_callback()  # type: ignore
+        return lambda f: progress_callback()  # type: ignore [misc,call-arg]
     return progress_callback
 
 
 def read_file(
-    *, input_obj, output_obj, metadata, key_lookup, progress_callback: IncrementalProgressCallbackType = None, log_func=None
-):
+    *,
+    input_obj: FileLike,
+    output_obj: FileLike,
+    metadata: Metadata,
+    key_lookup: Optional[Callable[[str], Optional[str]]],
+    progress_callback: IncrementalProgressCallbackType = None,
+    log_func: Optional[Callable[..., None]] = None,
+) -> tuple[int, int]:
     start_time = time.monotonic()
     progress_callback = _callback_wrapper(progress_callback)
 
@@ -115,7 +139,14 @@ def read_file(
     return original_size, result_size
 
 
-def file_writer(*, fileobj, compression_algorithm=None, compression_level=0, compression_threads=0, rsa_public_key=None):
+def file_writer(
+    *,
+    fileobj: FileLike,
+    compression_algorithm: Optional[str] = None,
+    compression_level: int = 0,
+    compression_threads: int = 0,
+    rsa_public_key: Union[None, str, bytes] = None,
+) -> FileLike:
     if rsa_public_key:
         fileobj = EncryptorFile(fileobj, rsa_public_key)
 
@@ -127,17 +158,17 @@ def file_writer(*, fileobj, compression_algorithm=None, compression_level=0, com
 
 def write_file(
     *,
-    input_obj,
-    output_obj,
-    progress_callback=None,
-    compression_algorithm=None,
-    compression_level=0,
-    compression_threads=0,
-    rsa_public_key=None,
-    log_func=None,
-    header_func=None,
-    data_callback=None,
-):
+    input_obj: FileLike,
+    output_obj: FileLike,
+    progress_callback: IncrementalProgressCallbackType = None,
+    compression_algorithm: Optional[str] = None,
+    compression_level: int = 0,
+    compression_threads: int = 0,
+    rsa_public_key: Union[None, str, bytes] = None,
+    log_func: Optional[Callable[..., None]] = None,
+    header_func: Optional[Callable[[bytes], None]] = None,
+    data_callback: Optional[Callable[[bytes], None]] = None,
+) -> tuple[int, int]:
     start_time = time.monotonic()
     progress_callback = _callback_wrapper(progress_callback)
 
@@ -182,7 +213,9 @@ def write_file(
     return original_size, result_size
 
 
-def log_compression_result(*, log_func, source_name, original_size, result_size, encrypted, elapsed):
+def log_compression_result(
+    *, log_func: Callable[..., None], source_name: str, original_size: int, result_size: int, encrypted: bool, elapsed: float
+) -> None:
     if original_size <= result_size:
         action = "Stored"
         ratio = ""

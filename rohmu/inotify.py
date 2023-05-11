@@ -4,9 +4,15 @@ rohmu - inotify wrapper
 Copyright (c) 2016 Ohmu Ltd
 See LICENSE for details
 """
+
+from __future__ import annotations
+
 from contextlib import suppress
 from ctypes import c_char_p, c_int, c_uint32
+from queue import Queue
+from rohmu.typing import AnyPath
 from threading import Thread
+from typing import Iterable, Iterator, Optional
 
 import ctypes
 import logging
@@ -42,7 +48,18 @@ event_types = {
 IN_NONBLOCK = 0x00004000
 
 
-def parse_inotify_buffer(event_buffer):
+def parse_inotify_buffer(event_buffer: bytes) -> Iterator[tuple[int, int, int, bytes]]:
+    """Yield parsed inotify events from a raw bytes sequence.
+
+    The `event_buffer` must be a byte sequence consisting of 0 or more sequences of the kind:
+
+        +------------------+------+--------+-------------+------+
+        | Watch descriptor | Mask | Cookie | Name length | Name |
+        +------------------+------+--------+-------------+------+
+
+    This function yields successive tuples (Watch descriptor, Mask, Cookie, Name) parsed from the provided bytes.
+
+    """
     i = 0
     while i + s_size <= len(event_buffer):
         wd, mask, cookie, length = struct.unpack_from("iIII", event_buffer, i)
@@ -52,20 +69,20 @@ def parse_inotify_buffer(event_buffer):
 
 
 class InotifyWatcher(Thread):
-    def __init__(self, compression_queue):
+    def __init__(self, compression_queue: Queue[dict[str, str]]) -> None:
         super().__init__()
         # use the newer form for future-proofness
         self.log = logging.getLogger("PGHoardInotify")
         self.libc = ctypes.CDLL("libc.so.6", use_errno=True)
         self.fd = self.libc.inotify_init()
-        self.watch_to_path = {}
-        self.cookies = {}
+        self.watch_to_path: dict[int, str] = {}
+        self.cookies: dict[int, str] = {}
         self.running = True
         self.compression_queue = compression_queue
         self.timeout = 1.0
         self.log.debug("InotifyWatcher initialized")
 
-    def add_watch(self, path, events=None):
+    def add_watch(self, path: str, events: Optional[Iterable[str]] = None) -> None:
         mask = 0
         events = events or event_types.keys()
         for key in events:
@@ -77,7 +94,7 @@ class InotifyWatcher(Thread):
         self.watch_to_path[watch] = path
         self.log.debug("Added watch for path: %r", path)
 
-    def read_events(self):
+    def read_events(self) -> None:
         event_buffer = None
         while self.running:
             with suppress(InterruptedError):
@@ -93,7 +110,7 @@ class InotifyWatcher(Thread):
                 continue
             self.create_event(wd, mask, cookie, name)
 
-    def log_event(self, ev_type, full_path):
+    def log_event(self, ev_type: str, full_path: AnyPath) -> None:
         if self.log.getEffectiveLevel() > logging.DEBUG:
             return
 
@@ -104,7 +121,7 @@ class InotifyWatcher(Thread):
 
         self.log.debug("event: %s %s, %r", full_path, ev_type, st)
 
-    def create_event(self, wd, mask, cookie, name):
+    def create_event(self, wd: int, mask: int, cookie: int, name: bytes) -> None:
         if mask & event_types["IN_IGNORED"]:
             # explicit removal of watch or dir, ignore
             return
@@ -148,7 +165,7 @@ class InotifyWatcher(Thread):
             else:
                 self.compression_queue.put({"type": "CREATE", "full_path": full_path, "watched_path": watched_path})
 
-    def run(self):
+    def run(self) -> None:
         self.log.debug("Starting InotifyWatcher")
         while self.running:
             self.read_events()

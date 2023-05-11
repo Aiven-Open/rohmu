@@ -5,11 +5,15 @@ Copyright (c) 2016 Ohmu Ltd
 Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
+
+from __future__ import annotations
+
 from ..common.models import StorageModel
 from ..common.statsd import StatsdConfig
 from ..dates import parse_timestamp
 from ..errors import FileNotFoundFromStorageError
 from ..notifier.interface import Notifier
+from ..typing import Metadata
 from .base import (
     BaseTransfer,
     IncrementalProgressCallbackType,
@@ -20,7 +24,7 @@ from .base import (
 )
 from contextlib import suppress
 from swiftclient import client, exceptions  # pylint: disable=import-error
-from typing import Optional, Union
+from typing import Any, BinaryIO, Iterator, Optional
 
 import logging
 import os
@@ -34,7 +38,7 @@ SEGMENT_SIZE = 1024 * 1024 * 1024 * 3  # 3 Gi
 # command line to recreate the request that failed with a simple 404 error.
 # At WARNING level curl commands are not logged, but we get a full ugly
 # traceback for all failures, including 404s.  Monkey-patch them away.
-def swift_exception_logger(err):
+def swift_exception_logger(err: BaseException) -> Any:
     if not isinstance(err, exceptions.ClientException):
         return orig_swift_exception_logger(err)
     if getattr(err, "http_status", None) is None:
@@ -78,25 +82,25 @@ class SwiftTransfer(BaseTransfer[Config]):
     def __init__(
         self,
         *,
-        user,
-        key,
-        container_name,
-        auth_url,
-        auth_version="2.0",
-        tenant_name=None,
-        prefix=None,
-        segment_size=SEGMENT_SIZE,
-        region_name=None,
-        user_id=None,
-        user_domain_id=None,
-        user_domain_name=None,
-        tenant_id=None,
-        project_id=None,
-        project_name=None,
-        project_domain_id=None,
-        project_domain_name=None,
-        service_type=None,
-        endpoint_type=None,
+        user: str,
+        key: str,
+        container_name: str,
+        auth_url: str,
+        auth_version: str = "2.0",
+        tenant_name: Optional[str] = None,
+        prefix: Optional[str] = None,
+        segment_size: int = SEGMENT_SIZE,
+        region_name: Optional[str] = None,
+        user_id: Optional[str] = None,
+        user_domain_id: Optional[str] = None,
+        user_domain_name: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+        project_name: Optional[str] = None,
+        project_domain_id: Optional[str] = None,
+        project_domain_name: Optional[str] = None,
+        service_type: Optional[str] = None,
+        endpoint_type: Optional[str] = None,
         notifier: Optional[Notifier] = None,
         statsd_info: Optional[StatsdConfig] = None,
     ) -> None:
@@ -132,18 +136,18 @@ class SwiftTransfer(BaseTransfer[Config]):
         self.log.debug("SwiftTransfer initialized")
 
     @staticmethod
-    def _headers_to_metadata(headers):
+    def _headers_to_metadata(headers: dict[str, str]) -> Metadata:
         return {name[len("x-object-meta-") :]: value for name, value in headers.items() if name.startswith("x-object-meta-")}
 
     @staticmethod
-    def _metadata_to_headers(metadata):
+    def _metadata_to_headers(metadata: Metadata) -> dict[str, str]:
         return {"x-object-meta-{}".format(name): str(value) for name, value in metadata.items()}
 
-    def get_metadata_for_key(self, key):
+    def get_metadata_for_key(self, key: str) -> Metadata:
         path = self.format_key_for_backend(key)
         return self._metadata_for_key(path)
 
-    def _metadata_for_key(self, key, *, resolve_manifest=False):
+    def _metadata_for_key(self, key: str, *, resolve_manifest: bool = False) -> Metadata:
         try:
             headers = self.conn.head_object(self.container_name, key)
         except exceptions.ClientException as ex:
@@ -162,7 +166,9 @@ class SwiftTransfer(BaseTransfer[Config]):
 
         return metadata
 
-    def iter_key(self, key, *, with_metadata=True, deep=False, include_key=False):
+    def iter_key(
+        self, key: str, *, with_metadata: bool = True, deep: bool = False, include_key: bool = False
+    ) -> Iterator[IterKeyItem]:
         path = self.format_key_for_backend(key, remove_slash_prefix=True, trailing_slash=not include_key)
         self.log.debug("Listing path %r", path)
         if not deep:
@@ -196,7 +202,7 @@ class SwiftTransfer(BaseTransfer[Config]):
                     },
                 )
 
-    def _delete_object_plain(self, key):
+    def _delete_object_plain(self, key: str) -> None:
         try:
             return self.conn.delete_object(self.container_name, key)
         except exceptions.ClientException as ex:
@@ -204,7 +210,7 @@ class SwiftTransfer(BaseTransfer[Config]):
                 raise FileNotFoundFromStorageError(key)
             raise
 
-    def _delete_object_segments(self, key, manifest):
+    def _delete_object_segments(self, key: str, manifest: str) -> None:
         self._delete_object_plain(key)
         seg_container, seg_prefix = manifest.split("/", 1)
         _, segments = self.conn.get_container(seg_container, prefix=seg_prefix, delimiter="/")
@@ -228,7 +234,9 @@ class SwiftTransfer(BaseTransfer[Config]):
             self._delete_object_plain(path)
         self.notifier.object_deleted(key=key)
 
-    def get_contents_to_fileobj(self, key, fileobj_to_store_to, *, progress_callback: ProgressProportionCallbackType = None):
+    def get_contents_to_fileobj(
+        self, key: str, fileobj_to_store_to: BinaryIO, *, progress_callback: ProgressProportionCallbackType = None
+    ) -> Metadata:
         path = self.format_key_for_backend(key)
         try:
             headers, data_gen = self.conn.get_object(self.container_name, path, resp_chunk_size=CHUNK_SIZE)
@@ -251,12 +259,12 @@ class SwiftTransfer(BaseTransfer[Config]):
 
         return self._headers_to_metadata(headers)
 
-    def get_file_size(self, key):
+    def get_file_size(self, key: str) -> int:
         # Not implemented due to lack of environment where to test this. This method is not required by
         # PGHoard itself, this is only called by external apps that utilize PGHoard's object storage abstraction.
         raise NotImplementedError
 
-    def get_or_create_container(self, container_name):
+    def get_or_create_container(self, container_name: str) -> str:
         start_time = time.monotonic()
         try:
             self.conn.get_container(container_name, headers={}, limit=1)  # Limit 1 here to not traverse the entire folder
@@ -272,11 +280,13 @@ class SwiftTransfer(BaseTransfer[Config]):
             raise
         return container_name
 
-    def copy_file(self, *, source_key, destination_key, metadata=None, **_kwargs):
+    def copy_file(
+        self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **_kwargs: Any
+    ) -> None:
         source_key = self.format_key_for_backend(source_key)
         destination_key = "/".join((self.container_name, self.format_key_for_backend(destination_key)))
         sanitized_metadata = self.sanitize_metadata(metadata)
-        headers = self._metadata_to_headers(sanitized_metadata)
+        headers: Metadata = self._metadata_to_headers(sanitized_metadata)
         if metadata:
             headers["X-Fresh-Metadata"] = True
         self.conn.copy_object(self.container_name, source_key, destination=destination_key, headers=headers)
@@ -284,15 +294,15 @@ class SwiftTransfer(BaseTransfer[Config]):
 
     def store_file_object(
         self,
-        key,
-        fd,
-        metadata=None,
+        key: str,
+        fd: BinaryIO,
+        metadata: Optional[Metadata] = None,
         *,
-        cache_control=None,
-        mimetype=None,
-        multipart: Union[bool, None] = None,
+        cache_control: Optional[str] = None,
+        mimetype: Optional[str] = None,
+        multipart: Optional[bool] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
-    ):  # pylint: disable=unused-argument
+    ) -> None:  # pylint: disable=unused-argument
         metadata = metadata or {}
         content_length = metadata.get("Content-Length")
         multipart = self._should_multipart(
@@ -312,15 +322,15 @@ class SwiftTransfer(BaseTransfer[Config]):
 
     def _store_file_contents(
         self,
-        key,
-        fp,
-        cache_control=None,
-        metadata=None,
-        mimetype=None,
+        key: str,
+        fp: BinaryIO,
+        cache_control: Optional[str] = None,
+        metadata: Optional[Metadata] = None,
+        mimetype: Optional[str] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
-        multipart=None,
-        content_length=None,
-    ):
+        multipart: Optional[bool] = None,
+        content_length: Optional[int] = None,
+    ) -> None:
         if cache_control is not None:
             raise NotImplementedError("SwiftTransfer: cache_control support not implemented")
 
@@ -336,7 +346,7 @@ class SwiftTransfer(BaseTransfer[Config]):
         if (not multipart) or (not content_length) or content_length <= self.segment_size:
             self.log.debug("Uploading %r to %r (%r bytes)", fp, path, content_length)
             self.conn.put_object(self.container_name, path, contents=fp, content_length=content_length, headers=headers)
-            if upload_progress_fn:
+            if upload_progress_fn and content_length is not None:
                 upload_progress_fn(content_length)
             return
 
