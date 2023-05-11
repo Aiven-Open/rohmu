@@ -21,7 +21,7 @@ from .base import (
 )
 from io import BytesIO
 from stat import S_ISDIR
-from typing import cast, Any, BinaryIO, Iterator, Optional, Tuple
+from typing import Any, BinaryIO, cast, Iterator, Optional, Tuple
 
 import datetime
 import json

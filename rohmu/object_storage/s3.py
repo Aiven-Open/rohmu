@@ -276,7 +276,7 @@ class S3Transfer(BaseTransfer[Config]):
 
     def _get_object_stream(self, key: str, byte_range: Optional[tuple[int, int]]) -> tuple[StreamingBody, int, Metadata]:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
-        kwargs = {}
+        kwargs: dict[str, Any] = {}
         if byte_range:
             kwargs["Range"] = f"bytes {byte_range[0]}-{byte_range[1]}"
         try:
@@ -317,6 +317,7 @@ class S3Transfer(BaseTransfer[Config]):
         byte_range: Optional[Tuple[int, int]] = None,
         progress_callback: ProgressProportionCallbackType = None,
     ) -> Metadata:
+        self._validate_byte_range(byte_range)
         stream, length, metadata = self._get_object_stream(key, byte_range)
         self._read_object_to_fileobj(fileobj_to_store_to, stream, length, cb=progress_callback)
         return metadata

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from ..common.models import StorageModel
 from ..common.statsd import StatsClient, StatsdConfig
-from ..errors import FileNotFoundFromStorageError, StorageError
+from ..errors import FileNotFoundFromStorageError, InvalidByteRangeError, StorageError
 from ..notifier.interface import Notifier
 from ..notifier.null import NullNotifier
 from ..typing import AnyPath, Metadata
@@ -184,12 +184,16 @@ class BaseTransfer(Generic[StorageModelT]):
         fileobj_to_store_to: BinaryIO,
         *,
         byte_range: Optional[Tuple[int, int]] = None,
-        progress_callback: ProgressProportionCallbackType = None
+        progress_callback: ProgressProportionCallbackType = None,
     ) -> Metadata:
         """Like `get_contents_to_file()` but writes to an open file-like object."""
         raise NotImplementedError
 
-    def get_contents_to_string(self, key, *, byte_range: Optional[Tuple[int, int]] = None):
+    def _validate_byte_range(self, byte_range: Optional[Tuple[int, int]]) -> None:
+        if byte_range is not None and byte_range[0] > byte_range[1]:
+            raise InvalidByteRangeError(f"Invalid byte_range: {byte_range}. Start must be <= end.")
+
+    def get_contents_to_string(self, key: str, *, byte_range: Optional[Tuple[int, int]] = None) -> tuple[bytes, Metadata]:
         """Returns a tuple (content-byte-string, metadata).
 
         byte_range can be used to limit the content requested (as per RFC9110 section 14.1.2):

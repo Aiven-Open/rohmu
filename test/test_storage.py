@@ -124,10 +124,10 @@ def test_hidden_local_files(local_transfer: LocalTransfer) -> None:
 
 
 @pytest.mark.parametrize("transfer", ["local_transfer"])
-def test_delete(transfer: LocalTransfer, request: Any):
+def test_delete(transfer: LocalTransfer, request: Any) -> None:
     transfer = request.getfixturevalue(transfer)
 
-    def setup():
+    def setup() -> None:
         assert transfer.list_path("") == []
         transfer.store_file_from_memory("shallow", b"1")
         transfer.store_file_from_memory("something/quite/deep", b"2")

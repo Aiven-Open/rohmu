@@ -175,6 +175,7 @@ class LocalTransfer(BaseTransfer[Config]):
         byte_range: Optional[Tuple[int, int]] = None,
         progress_callback: ProgressProportionCallbackType = None,
     ) -> Metadata:
+        self._validate_byte_range(byte_range)
         source_path = self.format_key_for_backend(key.strip("/"))
         if not os.path.exists(source_path):
             raise FileNotFoundFromStorageError(key)
