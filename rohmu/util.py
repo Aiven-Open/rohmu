@@ -4,8 +4,9 @@ rohmu - common utility functions
 Copyright (c) 2022 Ohmu Ltd
 See LICENSE for details
 """
+from itertools import islice
 from rohmu.typing import HasFileno
-from typing import Union
+from typing import Generator, Iterable, Tuple, TypeVar, Union
 
 import fcntl
 import logging
@@ -48,3 +49,19 @@ def set_stream_nonblocking(stream: HasFileno) -> None:
     fd = stream.fileno()
     fl = fcntl.fcntl(fd, fcntl.F_GETFL)
     fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+
+
+T = TypeVar("T")
+
+
+def batched(iterable: Iterable[T], n: int) -> Generator[Tuple[T, ...], None, None]:
+    "Batch data into tuples of length n. The last batch may be shorter."
+    # batched('ABCDEFG', 3) --> ABC DEF G
+    # NOTE: can replace with itertools version once on python 3.12
+    if n < 1:
+        raise ValueError("n must be at least one")
+    it = iter(iterable)
+    batch = tuple(islice(it, n))
+    while batch:
+        yield batch
+        batch = tuple(islice(it, n))
