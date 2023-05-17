@@ -23,6 +23,7 @@ from .base import (
     ProgressProportionCallbackType,
 )
 from botocore.response import StreamingBody
+from rohmu.util import batched
 from typing import Any, BinaryIO, Collection, Iterator, Optional, Union
 
 import boto3
@@ -214,14 +215,15 @@ class S3Transfer(BaseTransfer[Config]):
 
     def delete_keys(self, keys: Collection[str]) -> None:
         self.stats.operation(StorageOperation.delete_key, count=len(keys))
-        self.s3_client.delete_objects(
-            Bucket=self.bucket_name,
-            Delete={"Objects": [{"Key": self.format_key_for_backend(key, remove_slash_prefix=True)} for key in keys]},
-        )
-        # Note: `tree_deleted` is not used here because the operation on S3 is not atomic, i.e.
-        # it is possible for a new object to be created after `list_objects` above
-        for key in keys:
-            self.notifier.object_deleted(key=key)
+        for batch in batched(keys, 1000):  # Cannot delete more than 1000 objects at a time
+            self.s3_client.delete_objects(
+                Bucket=self.bucket_name,
+                Delete={"Objects": [{"Key": self.format_key_for_backend(key, remove_slash_prefix=True)} for key in batch]},
+            )
+            # Note: `tree_deleted` is not used here because the operation on S3 is not atomic, i.e.
+            # it is possible for a new object to be created after `list_objects` above
+            for key in batch:
+                self.notifier.object_deleted(key=key)
 
     def iter_key(
         self, key: str, *, with_metadata: bool = True, deep: bool = False, include_key: bool = False
