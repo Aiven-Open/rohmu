@@ -214,6 +214,9 @@ class S3Transfer(BaseTransfer[Config]):
         self.notifier.object_deleted(key=key)
 
     def delete_keys(self, keys: Collection[str]) -> None:
+        if not keys:
+            # S3 responds with MalformedXML if we send empty request
+            return
         self.stats.operation(StorageOperation.delete_key, count=len(keys))
         for batch in batched(keys, 1000):  # Cannot delete more than 1000 objects at a time
             self.s3_client.delete_objects(
