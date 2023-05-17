@@ -23,12 +23,15 @@ from typing import Any, BinaryIO, Iterator, Optional, TextIO, Union
 
 import contextlib
 import datetime
+import hashlib
 import json
 import os
 import shutil
 import tempfile
 
 CHUNK_SIZE = 1024 * 1024
+INTERNAL_METADATA_KEY_HASH = "_hash"
+INTERNAL_METADATA_KEYS = {INTERNAL_METADATA_KEY_HASH}
 
 
 class Config(StorageModel):
@@ -62,10 +65,12 @@ class LocalTransfer(BaseTransfer[Config]):
         if metadata is None:
             shutil.copy(source_path + ".metadata", destination_path + ".metadata")
         else:
-            self._save_metadata(destination_path, metadata)
+            new_metadata = self._filter_internal_metadata(self._get_metadata_for_key(source_key))
+            new_metadata.update(metadata)
+            self._save_metadata(destination_path, new_metadata)
         self.notifier.object_copied(key=destination_key, size=os.path.getsize(destination_path), metadata=metadata)
 
-    def get_metadata_for_key(self, key: str) -> Metadata:
+    def _get_metadata_for_key(self, key: str) -> Metadata:
         source_path = self.format_key_for_backend(key.strip("/"))
         if not os.path.exists(source_path):
             raise FileNotFoundFromStorageError(key)
@@ -75,6 +80,15 @@ class LocalTransfer(BaseTransfer[Config]):
                 return json.load(fp)
         except FileNotFoundError:
             raise FileNotFoundFromStorageError(key)
+
+    def _filter_internal_metadata(self, metadata: Metadata) -> Metadata:
+        return {key: value for key, value in metadata.items() if key in INTERNAL_METADATA_KEYS}
+
+    def _filter_metadata(self, metadata: Metadata) -> Metadata:
+        return {key: value for key, value in metadata.items() if key not in INTERNAL_METADATA_KEYS}
+
+    def get_metadata_for_key(self, key: str) -> Metadata:
+        return self._filter_metadata(self._get_metadata_for_key(key))
 
     def delete_key(self, key: str) -> None:
         self.log.debug("Deleting key: %r", key)
@@ -102,16 +116,11 @@ class LocalTransfer(BaseTransfer[Config]):
     def _skip_file_name(file_name: str) -> bool:
         return file_name.startswith(".") or file_name.endswith(".metadata") or ".metadata_tmp" in file_name
 
-    @staticmethod
-    def _yield_object(key: str, full_path: str, with_metadata: bool) -> Iterator[IterKeyItem]:
-        metadata_file = full_path + ".metadata"
-        if not os.path.exists(metadata_file):
+    def _yield_object(self, key: str, full_path: str, with_metadata: bool) -> Iterator[IterKeyItem]:
+        try:
+            metadata = self._get_metadata_for_key(key)
+        except FileNotFoundFromStorageError:
             return
-        if with_metadata:
-            with open(metadata_file, "r") as fp:
-                metadata = json.load(fp)
-        else:
-            metadata = None
         st = os.stat(full_path)
         last_modified = datetime.datetime.fromtimestamp(st.st_mtime, tz=datetime.timezone.utc)
         yield IterKeyItem(
@@ -120,7 +129,8 @@ class LocalTransfer(BaseTransfer[Config]):
                 "name": key,
                 "size": st.st_size,
                 "last_modified": last_modified,
-                "metadata": metadata,
+                "md5": metadata[INTERNAL_METADATA_KEY_HASH],
+                "metadata": self._filter_metadata(metadata) if with_metadata else None,
             },
         )
 
@@ -151,10 +161,6 @@ class LocalTransfer(BaseTransfer[Config]):
                 else:
                     yield IterKeyItem(type=KEY_TYPE_PREFIX, value=file_key)
             else:
-                # Don't return files if metadata file is not present; files are written in two phases and
-                # should be considered available only after also metadata has been written
-                if not os.path.exists(full_path + ".metadata"):
-                    continue
                 yield from self._yield_object(
                     key=os.path.join(key.strip("/"), file_name),
                     full_path=full_path,
@@ -207,18 +213,23 @@ class LocalTransfer(BaseTransfer[Config]):
         target_path = self.format_key_for_backend(key.strip("/"))
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
         bytes_written = 0
+        m = hashlib.sha256()
         with open(target_path, "wb") as output_fp:
             while True:
                 data = fd.read(1024 * 1024)
                 if not data:
                     break
+                m.update(data)
                 output_fp.write(data)
                 bytes_written += len(data)
                 if upload_progress_fn:
                     upload_progress_fn(bytes_written)
-
+        metadata = metadata.copy() if metadata is not None else {}
+        metadata[INTERNAL_METADATA_KEY_HASH] = m.hexdigest()
         self._save_metadata(target_path, metadata)
-        self.notifier.object_created(key=key, size=os.path.getsize(target_path), metadata=self.sanitize_metadata(metadata))
+        self.notifier.object_created(
+            key=key, size=os.path.getsize(target_path), metadata=self.sanitize_metadata(self._filter_metadata(metadata))
+        )
 
 
 @contextlib.contextmanager
