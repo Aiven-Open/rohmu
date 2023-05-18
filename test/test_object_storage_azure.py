@@ -1,6 +1,7 @@
 """Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
 from datetime import datetime
 from io import BytesIO
+from rohmu.errors import InvalidByteRangeError
 from tempfile import NamedTemporaryFile
 from types import ModuleType
 from typing import Any, Tuple
@@ -86,3 +87,19 @@ def test_store_file_object(azure_module: ModuleType, get_blob_client: MagicMock)
     notifier.object_created.assert_called_once_with(
         key="test_key2", size=len(test_data), metadata={"Content_Length": "9", "some_date": "2022-11-15 18:30:58.486644"}
     )
+
+
+def test_get_contents_to_fileobj_raises_error_on_invalid_byte_range(azure_module: ModuleType) -> None:
+    notifier = MagicMock()
+    transfer = azure_module.AzureTransfer(
+        bucket_name="test_bucket",
+        account_name="test_account",
+        account_key="test_key2",
+        notifier=notifier,
+    )
+    with pytest.raises(InvalidByteRangeError):
+        transfer.get_contents_to_fileobj(
+            key="testkey",
+            fileobj_to_store_to=BytesIO(),
+            byte_range=(100, 10),
+        )

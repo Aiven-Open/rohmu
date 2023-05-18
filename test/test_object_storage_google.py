@@ -1,12 +1,17 @@
 """Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
+from __future__ import annotations
+
 from contextlib import ExitStack
 from datetime import datetime
 from googleapiclient.http import MediaUploadProgress
 from io import BytesIO
 from rohmu.common.models import StorageOperation
-from rohmu.object_storage.google import GoogleTransfer, Reporter
+from rohmu.errors import InvalidByteRangeError
+from rohmu.object_storage.google import GoogleTransfer, MediaIoBaseDownloadWithByteRange, Reporter
 from tempfile import NamedTemporaryFile
-from unittest.mock import call, MagicMock, patch
+from unittest.mock import ANY, call, MagicMock, Mock, patch
+
+import pytest
 
 
 def test_store_file_from_memory() -> None:
@@ -120,3 +125,89 @@ def test_upload_size_unknown_to_reporter() -> None:
                 call(operation=StorageOperation.store_file, size=995),
             ]
         )
+
+
+def test_get_contents_to_fileobj_raises_error_on_invalid_byte_range() -> None:
+    notifier = MagicMock()
+    with ExitStack() as stack:
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer.get_or_create_bucket"))
+        transfer = GoogleTransfer(
+            project_id="test-project-id",
+            bucket_name="test-bucket",
+            notifier=notifier,
+        )
+        with pytest.raises(InvalidByteRangeError):
+            transfer.get_contents_to_fileobj(
+                key="testkey",
+                fileobj_to_store_to=BytesIO(),
+                byte_range=(100, 10),
+            )
+
+
+def _mock_request(calls: list[tuple[str, bytes]]) -> Mock:
+    results = []
+    for call_content_range, call_content in calls:
+        response = Mock()
+        response.status = 206
+        response.headers = {
+            "content-range": call_content_range,
+        }
+        response.__getitem__ = lambda self, key: self.headers[key]
+        response.__contains__ = lambda self, key: key in self.headers
+        results.append((response, call_content))
+    http_call = Mock(side_effect=lambda *args, **kwargs: results.pop(0))
+    request = Mock()
+    request.headers = {}
+    request.http.request = http_call
+    return request
+
+
+def test_media_io_download_with_byte_range() -> None:
+    mock_request = _mock_request([("3-8/13", b"lo, Wo")])
+    result = BytesIO()
+    download = MediaIoBaseDownloadWithByteRange(result, mock_request, byte_range=(3, 8))
+    status, done = download.next_chunk()
+    assert done
+    assert status.progress() == 1.0
+    assert result.getvalue() == b"lo, Wo"
+    mock_request.http.request.assert_called_once_with(ANY, ANY, headers={"range": "bytes=3-8"})
+
+
+def test_media_io_download_with_byte_range_and_tiny_chunks() -> None:
+    mock_request = _mock_request([("3-5/13", b"lo,"), ("6-8/13", b" Wo"), ("9-10/13", b"rl")])
+    result = BytesIO()
+    download = MediaIoBaseDownloadWithByteRange(result, mock_request, chunksize=3, byte_range=(3, 10))
+    status, done = download.next_chunk()
+    assert not done
+    assert status.progress() == 0.375
+    assert result.getvalue() == b"lo,"
+
+    status, done = download.next_chunk()
+    assert not done
+    assert status.progress() == 0.750
+    assert result.getvalue() == b"lo, Wo"
+
+    status, done = download.next_chunk()
+    assert done
+    assert status.progress() == 1.0
+    assert result.getvalue() == b"lo, Worl"
+
+    mock_request.http.request.assert_has_calls(
+        [
+            call(ANY, ANY, headers={"range": "bytes=3-5"}),
+            call(ANY, ANY, headers={"range": "bytes=6-8"}),
+            call(ANY, ANY, headers={"range": "bytes=9-10"}),
+        ]
+    )
+
+
+def test_media_io_download_with_byte_range_and_very_small_object() -> None:
+    mock_request = _mock_request([("3-13/13", b"lo, World!")])
+    result = BytesIO()
+    download = MediaIoBaseDownloadWithByteRange(result, mock_request, byte_range=(3, 100))
+    status, done = download.next_chunk()
+    assert done
+    assert status.progress() == 1.0
+    assert result.getvalue() == b"lo, World!"
+    mock_request.http.request.assert_called_once_with(ANY, ANY, headers={"range": "bytes=3-100"})
