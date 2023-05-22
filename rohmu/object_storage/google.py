@@ -24,11 +24,18 @@ from .base import (
 from contextlib import contextmanager
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from googleapiclient.http import build_http, MediaDownloadProgress, MediaIoBaseDownload, MediaUpload, MediaUploadProgress
+from googleapiclient.http import (
+    build_http,
+    HttpRequest,
+    MediaDownloadProgress,
+    MediaIoBaseDownload,
+    MediaUpload,
+    MediaUploadProgress,
+)
 from http.client import IncompleteRead
 from oauth2client import GOOGLE_TOKEN_URI
 from oauth2client.client import GoogleCredentials
-from typing import Optional, Tuple, Union
+from typing import BinaryIO, Optional, Tuple, Union
 
 import codecs
 import dataclasses
@@ -385,12 +392,6 @@ class GoogleTransfer(BaseTransfer[Config]):
         byte_range: Optional[Tuple[int, int]] = None,
         progress_callback: ProgressProportionCallbackType = None,
     ):
-        if byte_range:
-            # TODO. The MediaIoBaseDownload has to be copied (it
-            # doesn't expose offset handling logic, or alternatively
-            # more recent Google client should be used.
-            raise NotImplementedError("byte range fetching not supported")
-
         path = self.format_key_for_backend(key)
         self.log.debug("Starting to fetch the contents of: %r to %r", path, fileobj_to_store_to)
         next_prog_report = 0.0
@@ -400,11 +401,16 @@ class GoogleTransfer(BaseTransfer[Config]):
             reporter = Reporter(StorageOperation.get_file, size=min(obj_size, DOWNLOAD_CHUNK_SIZE))
             # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.objects.html#get_media
             req = clob.get_media(bucket=self.bucket_name, object=path)
-            download = MediaIoBaseDownload(fileobj_to_store_to, req, chunksize=DOWNLOAD_CHUNK_SIZE)
+            if byte_range is None:
+                download = MediaIoBaseDownload(fileobj_to_store_to, req, chunksize=DOWNLOAD_CHUNK_SIZE)
+            else:
+                download = MediaIoBaseDownloadHack(
+                    fileobj_to_store_to, req, chunksize=DOWNLOAD_CHUNK_SIZE, byte_range=byte_range
+                )
             done = False
             while not done:
                 status, done = self._retry_on_reset(
-                    getattr(download, "_request", None),
+                    req,
                     download.next_chunk,
                     retry_reporter=reporter,
                 )
@@ -691,3 +697,24 @@ class MediaStreamUpload(MediaUpload):
             return read_results[0]
         else:
             return b"".join(read_results)
+
+
+class MediaIoBaseDownloadHack(MediaIoBaseDownload):
+    def __init__(
+        self, fd: BinaryIO, request: HttpRequest, chunksize: int = DOWNLOAD_CHUNK_SIZE, *, byte_range: tuple[int, int]
+    ) -> None:
+        super().__init__(fd, request, chunksize)
+        self._real_chunksize = chunksize
+        self._start_range, self._end_range = byte_range
+        self._range_size = self._end_range - self._start_range + 1
+        self._cur_real_progress = 0
+
+    def next_chunk(self, num_retries: int = 0) -> tuple[MediaDownloadProgress, bool]:
+        self._progress = self._cur_real_progress + self._start_range
+        self._chunksize = min(self._real_chunksize, self._end_range - self._progress + 1)
+        download, status = super().next_chunk(num_retries)
+        self._cur_real_progress = download.resumable_progress - self._start_range
+        if self._total_size is None or self._progress >= self._end_range:
+            self._done = True
+
+        return MediaDownloadProgress(self._cur_real_progress, self._range_size), self._done
