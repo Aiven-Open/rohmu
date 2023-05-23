@@ -9,13 +9,13 @@ from __future__ import annotations
 
 from ..common.models import StorageModel
 from ..common.statsd import StatsClient, StatsdConfig
-from ..errors import FileNotFoundFromStorageError, StorageError
+from ..errors import FileNotFoundFromStorageError, InvalidByteRangeError, StorageError
 from ..notifier.interface import Notifier
 from ..notifier.null import NullNotifier
 from ..typing import AnyPath, Metadata
 from contextlib import suppress
 from io import BytesIO
-from typing import Any, BinaryIO, Callable, Collection, Generic, Iterator, NamedTuple, Optional, Type, TypeVar, Union
+from typing import Any, BinaryIO, Callable, Collection, Generic, Iterator, NamedTuple, Optional, Tuple, Type, TypeVar, Union
 
 import logging
 import os
@@ -179,15 +179,29 @@ class BaseTransfer(Generic[StorageModelT]):
             raise
 
     def get_contents_to_fileobj(
-        self, key: str, fileobj_to_store_to: BinaryIO, *, progress_callback: ProgressProportionCallbackType = None
+        self,
+        key: str,
+        fileobj_to_store_to: BinaryIO,
+        *,
+        byte_range: Optional[Tuple[int, int]] = None,
+        progress_callback: ProgressProportionCallbackType = None,
     ) -> Metadata:
         """Like `get_contents_to_file()` but writes to an open file-like object."""
         raise NotImplementedError
 
-    def get_contents_to_string(self, key: str) -> tuple[bytes, Metadata]:
-        """Returns a tuple (content-byte-string, metadata)"""
+    def _validate_byte_range(self, byte_range: Optional[Tuple[int, int]]) -> None:
+        if byte_range is not None and byte_range[0] > byte_range[1]:
+            raise InvalidByteRangeError(f"Invalid byte_range: {byte_range}. Start must be <= end.")
+
+    def get_contents_to_string(self, key: str, *, byte_range: Optional[Tuple[int, int]] = None) -> tuple[bytes, Metadata]:
+        """Returns a tuple (content-byte-string, metadata).
+
+        byte_range can be used to limit the content requested (as per RFC9110 section 14.1.2):
+        it defines range of bytes to fetch (inclusive), so e.g. [0, 499] means first 500 bytes.
+        If it is not supported for specific storage backend, NotImplementedError will be raised.
+        """
         with BytesIO() as buf:
-            metadata = self.get_contents_to_fileobj(key, buf)
+            metadata = self.get_contents_to_fileobj(key, buf, byte_range=byte_range)
             return buf.getvalue(), metadata
 
     def get_file_size(self, key: str) -> int:

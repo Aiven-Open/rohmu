@@ -35,4 +35,8 @@ class MaybeRecoverableError(Error):
 
 
 class UninitializedError(Error):
-    """Error trying to access an uninitialized resource."""
+    """Error trying to access an uninitialized resource"""
+
+
+class InvalidByteRangeError(Error):
+    """Error specifying a content-range in a request"""

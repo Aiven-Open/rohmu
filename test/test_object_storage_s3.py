@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
 from rohmu.common.models import StorageOperation
+from rohmu.errors import InvalidByteRangeError
 from rohmu.object_storage.s3 import S3Transfer
 from tempfile import NamedTemporaryFile
 from typing import Any, Iterator, Optional
@@ -104,3 +105,13 @@ def test_deletion(infra: S3Infra) -> None:
     )
     infra.transfer.delete_key("1")
     infra.s3_client.delete_object.assert_called_once_with(Bucket="test-bucket", Key="test-prefix/1")
+
+
+def test_get_contents_to_fileobj_raises_error_on_invalid_byte_range(infra: S3Infra) -> None:
+    transfer = infra.transfer
+    with pytest.raises(InvalidByteRangeError):
+        transfer.get_contents_to_fileobj(
+            key="testkey",
+            fileobj_to_store_to=BytesIO(),
+            byte_range=(100, 10),
+        )

@@ -19,7 +19,7 @@ from .base import (
     ProgressProportionCallbackType,
 )
 from pathlib import Path
-from typing import Any, BinaryIO, Iterator, Optional, TextIO, Union
+from typing import Any, BinaryIO, Iterator, Optional, TextIO, Tuple, Union
 
 import contextlib
 import datetime
@@ -168,8 +168,14 @@ class LocalTransfer(BaseTransfer[Config]):
                 )
 
     def get_contents_to_fileobj(
-        self, key: str, fileobj_to_store_to: BinaryIO, *, progress_callback: ProgressProportionCallbackType = None
+        self,
+        key: str,
+        fileobj_to_store_to: BinaryIO,
+        *,
+        byte_range: Optional[Tuple[int, int]] = None,
+        progress_callback: ProgressProportionCallbackType = None,
     ) -> Metadata:
+        self._validate_byte_range(byte_range)
         source_path = self.format_key_for_backend(key.strip("/"))
         if not os.path.exists(source_path):
             raise FileNotFoundFromStorageError(key)
@@ -177,8 +183,12 @@ class LocalTransfer(BaseTransfer[Config]):
         input_size = os.stat(source_path).st_size
         bytes_written = 0
         with open(source_path, "rb") as fp:
-            while True:
-                buf = fp.read(CHUNK_SIZE)
+            if byte_range:
+                fp.seek(byte_range[0])
+                input_size = byte_range[1] - byte_range[0] + 1
+            while bytes_written <= input_size:
+                left = min(input_size - bytes_written, CHUNK_SIZE)
+                buf = fp.read(left)
                 if not buf:
                     break
                 fileobj_to_store_to.write(buf)

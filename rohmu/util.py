@@ -6,7 +6,7 @@ See LICENSE for details
 """
 from itertools import islice
 from rohmu.typing import HasFileno
-from typing import Generator, Iterable, Tuple, TypeVar, Union
+from typing import Generator, Iterable, Optional, Tuple, TypeVar, Union
 
 import fcntl
 import logging
@@ -65,3 +65,9 @@ def batched(iterable: Iterable[T], n: int) -> Generator[Tuple[T, ...], None, Non
     while batch:
         yield batch
         batch = tuple(islice(it, n))
+
+
+def get_total_size_from_content_range(content_range: str) -> Optional[int]:
+    length = content_range.rsplit("/", 1)[1]
+    # RFC 9110 section 14.4 specifies that the * can be returned when the total length is unknown
+    return int(length) if length != "*" else None
