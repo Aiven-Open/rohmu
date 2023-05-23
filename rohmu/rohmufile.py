@@ -14,6 +14,7 @@ from .errors import InvalidConfigurationError
 from .filewrap import ThrottleSink
 from .object_storage.base import IncrementalProgressCallbackType
 from .typing import FileLike, HasWrite, Metadata
+from .rawfile import RawFile
 from contextlib import suppress
 from inspect import signature
 from typing import Callable, Optional, Union
@@ -149,6 +150,8 @@ def file_writer(
 ) -> FileLike:
     if rsa_public_key:
         fileobj = EncryptorFile(fileobj, rsa_public_key)
+    else:
+        fileobj = RawFile(fileobj)
 
     if compression_algorithm:
         fileobj = CompressionFile(fileobj, compression_algorithm, compression_level, compression_threads)
