@@ -8,7 +8,6 @@ Source0:        rohmu-rpm-src.tar
 Requires:       python3-azure-common
 Requires:       python3-azure-core
 Requires:       python3-azure-storage-blob
-Requires:       python3-boto3
 Requires:       python3-botocore
 Requires:       python3-cryptography >= 1.6
 Requires:       python3-dateutil
