@@ -24,15 +24,47 @@ from .base import (
 )
 from botocore.response import StreamingBody
 from rohmu.util import batched
-from typing import Any, BinaryIO, Collection, Iterator, Optional, Tuple, Union
+from typing import Any, BinaryIO, cast, Collection, Iterator, Optional, Tuple, TYPE_CHECKING, Union
 
-import boto3
 import botocore.client
 import botocore.config
 import botocore.exceptions
 import botocore.session
 import math
 import time
+
+if TYPE_CHECKING:
+    from mypy_boto3_s3 import S3Client
+
+
+# botocore typing stubs are incomplete. We either have to write all the stubs we need
+# or work around the problem a bit by importing the typing library only for type checking purposes.
+def create_s3_client(
+    *,
+    session: botocore.session.Session,
+    config: botocore.config.Config,
+    aws_access_key_id: Optional[str],
+    aws_secret_access_key: Optional[str],
+    aws_session_token: Optional[str],
+    region_name: str,
+    verify: Optional[bool | str] = None,
+    endpoint_url: Optional[str] = None,
+) -> S3Client:
+    s3_client = session.create_client(
+        "s3",
+        config=config,
+        aws_access_key_id=aws_access_key_id,
+        aws_secret_access_key=aws_secret_access_key,
+        aws_session_token=aws_session_token,
+        region_name=region_name,
+        verify=verify,
+        endpoint_url=endpoint_url,
+    )
+
+    if TYPE_CHECKING:
+        return cast(S3Client, s3_client)
+    else:
+        return s3_client
 
 
 def calculate_chunk_size() -> int:
@@ -108,7 +140,7 @@ class S3Transfer(BaseTransfer[Config]):
         statsd_info: Optional[StatsdConfig] = None,
     ) -> None:
         super().__init__(prefix=prefix, notifier=notifier, statsd_info=statsd_info)
-        session = boto3.Session()
+        session = botocore.session.get_session()
         self.bucket_name = bucket_name
         self.location = ""
         self.region = region
@@ -122,8 +154,8 @@ class S3Transfer(BaseTransfer[Config]):
             if proxy_info:
                 proxy_url = get_proxy_url(proxy_info)
                 custom_config["proxies"] = {"https": proxy_url}
-            self.s3_client = session.client(
-                "s3",
+            self.s3_client = create_s3_client(
+                session=session,
                 config=botocore.config.Config(**custom_config),
                 aws_access_key_id=aws_access_key_id,
                 aws_secret_access_key=aws_secret_access_key,
@@ -149,8 +181,8 @@ class S3Transfer(BaseTransfer[Config]):
                 proxies=proxies,
                 **timeouts,
             )
-            self.s3_client = session.client(
-                "s3",
+            self.s3_client = create_s3_client(
+                session=session,
                 aws_access_key_id=aws_access_key_id,
                 aws_secret_access_key=aws_secret_access_key,
                 aws_session_token=aws_session_token,

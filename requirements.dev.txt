@@ -4,8 +4,9 @@ mock
 mypy
 # Same version from pghoard
 pylint>=2.4.3,<=2.7.3
-boto3
-boto3-stubs[essential]
+botocore
+botocore-stubs[essential]
+mypy_boto3_s3
 pylint-quotes
 pytest
 pytest-cov
