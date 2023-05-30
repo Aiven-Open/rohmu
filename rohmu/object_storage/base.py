@@ -108,7 +108,7 @@ class BaseTransfer(Generic[StorageModelT]):
             # We could actually sniff from fd if it is seekable; left TODO for now.
             return default
 
-        return size > chunk_size
+        return int(size) > chunk_size
 
     @classmethod
     def from_model(cls, model: StorageModelT) -> BaseTransfer[StorageModelT]:
