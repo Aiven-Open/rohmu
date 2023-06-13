@@ -40,3 +40,7 @@ class UninitializedError(Error):
 
 class InvalidByteRangeError(Error):
     """Error specifying a content-range in a request"""
+
+
+class InvalidTransferError(Error):
+    """You tried to access a transfer object that you already returned to the pool"""

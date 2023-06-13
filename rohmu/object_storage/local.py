@@ -42,6 +42,8 @@ class Config(StorageModel):
 class LocalTransfer(BaseTransfer[Config]):
     config_model = Config
 
+    is_thread_safe = True
+
     def __init__(
         self,
         directory: Union[str, Path],

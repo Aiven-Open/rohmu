@@ -51,6 +51,8 @@ StorageModelT = TypeVar("StorageModelT", bound=StorageModel)
 class BaseTransfer(Generic[StorageModelT]):
     config_model: Type[StorageModelT]
 
+    is_thread_safe: bool = False
+
     def __init__(
         self, prefix: Optional[str], notifier: Optional[Notifier] = None, statsd_info: Optional[StatsdConfig] = None
     ) -> None:
