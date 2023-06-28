@@ -125,14 +125,15 @@ class LocalTransfer(BaseTransfer[Config]):
             return
         st = os.stat(full_path)
         last_modified = datetime.datetime.fromtimestamp(st.st_mtime, tz=datetime.timezone.utc)
+        md5 = metadata.get(INTERNAL_METADATA_KEY_HASH)
         yield IterKeyItem(
             type=KEY_TYPE_OBJECT,
             value={
                 "name": key,
                 "size": st.st_size,
                 "last_modified": last_modified,
-                "md5": metadata[INTERNAL_METADATA_KEY_HASH],
                 "metadata": self._filter_metadata(metadata) if with_metadata else None,
+                **({"md5": md5} if md5 else {}),
             },
         )
 
