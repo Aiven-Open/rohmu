@@ -1,19 +1,8 @@
 from __future__ import annotations
 
 from types import TracebackType
-from typing import Any, Dict, Optional, Type, TYPE_CHECKING, Union
-
-try:
-    from typing import Protocol
-except ImportError:
-    from typing_extensions import Protocol  # type: ignore [assignment]
-
-try:
-    # Remove when dropping support for Python 3.7
-    from pickle import PickleBuffer
-except ImportError:
-    PickleBuffer = bytes  # type: ignore [misc,assignment]
-import mmap
+from typing import Any, Dict, Optional, Protocol, Type, TYPE_CHECKING, Union
+from typing_extensions import Buffer
 
 if TYPE_CHECKING:
     from array import array
@@ -25,15 +14,7 @@ Metadata = Dict[str, Any]
 
 AnyPath = Union[str, bytes, "PathLike[str]", "PathLike[bytes]"]
 
-BinaryData = Union[
-    bytes,
-    bytearray,
-    memoryview,
-    "array[Any]",
-    mmap.mmap,
-    "ctypes._CData",
-    PickleBuffer,
-]
+BinaryData = Buffer
 
 StrOrPathLike = Union[str, "PathLike[str]"]
 
