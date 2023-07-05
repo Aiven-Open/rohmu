@@ -406,7 +406,7 @@ class DecryptorFile(FileWrap):
 class DecryptSink(Sink):
     def __init__(self, next_sink: HasWrite, file_size: int, encryption_key_data: Union[str, bytes]) -> None:
         super().__init__(next_sink)
-        if file_size <= 0:
+        if file_size < 0:
             raise ValueError("Invalid file_size: " + str(file_size))
         self.data_bytes_received = 0
         self.data_size = file_size
