@@ -16,8 +16,14 @@ import random
 import tarfile
 
 
-def test_encryptor_decryptor() -> None:
-    plaintext = b"test"
+@pytest.mark.parametrize(
+    "plaintext",
+    (
+        (b"test"),
+        (b""),
+    ),
+)
+def test_encryptor_decryptor(plaintext: bytes) -> None:
     for op in (None, "json"):
         if op == "json":
             public_key = json.loads(json.dumps(CONSTANT_TEST_RSA_PUBLIC_KEY))
@@ -29,7 +35,8 @@ def test_encryptor_decryptor() -> None:
         encryptor = Encryptor(public_key)
         decryptor = Decryptor(private_key)
         encrypted = encryptor.update(plaintext) + encryptor.finalize()
-        assert plaintext not in encrypted
+        if len(plaintext) > 0:
+            assert plaintext not in encrypted
         offset = 0
         while decryptor.expected_header_bytes() > 0:
             chunk = encrypted[offset : offset + decryptor.expected_header_bytes()]
