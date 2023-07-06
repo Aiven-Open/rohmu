@@ -23,6 +23,7 @@ from .base import (
     ProgressProportionCallbackType,
 )
 from botocore.response import StreamingBody
+from enum import Enum, unique
 from rohmu.util import batched
 from typing import Any, BinaryIO, cast, Collection, Iterator, Optional, Tuple, TYPE_CHECKING, Union
 
@@ -98,6 +99,13 @@ MULTIPART_CHUNK_SIZE = calculate_chunk_size()
 READ_BLOCK_SIZE = 1024 * 1024 * 1
 
 
+@unique
+class S3AddressingStyle(Enum):
+    auto = "auto"
+    path = "path"
+    virtual = "virtual"
+
+
 class Config(StorageModel):
     region: str
     bucket_name: str
@@ -106,6 +114,7 @@ class Config(StorageModel):
     prefix: Optional[str] = None
     host: Optional[str] = None
     port: Optional[str] = None
+    addressing_style: S3AddressingStyle = S3AddressingStyle.path
     is_secure: bool = False
     is_verify_tls: bool = False
     segment_size: int = MULTIPART_CHUNK_SIZE
@@ -128,6 +137,7 @@ class S3Transfer(BaseTransfer[Config]):
         prefix: Optional[str] = None,
         host: Optional[str] = None,
         port: Optional[int] = None,
+        addressing_style: S3AddressingStyle = S3AddressingStyle.path,
         is_secure: bool = False,
         is_verify_tls: bool = False,
         segment_size: int = MULTIPART_CHUNK_SIZE,
@@ -176,7 +186,7 @@ class S3Transfer(BaseTransfer[Config]):
             if proxy_info:
                 proxies = {"https": get_proxy_url(proxy_info)}
             boto_config = botocore.client.Config(
-                s3={"addressing_style": "path"},
+                s3={"addressing_style": addressing_style.value},
                 signature_version=signature_version,
                 proxies=proxies,
                 **timeouts,
