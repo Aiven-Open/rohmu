@@ -186,7 +186,7 @@ class S3Transfer(BaseTransfer[Config]):
             if proxy_info:
                 proxies = {"https": get_proxy_url(proxy_info)}
             boto_config = botocore.client.Config(
-                s3={"addressing_style": addressing_style.value},
+                s3={"addressing_style": S3AddressingStyle(addressing_style).value},
                 signature_version=signature_version,
                 proxies=proxies,
                 **timeouts,
