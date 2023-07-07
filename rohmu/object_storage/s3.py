@@ -83,6 +83,8 @@ def get_proxy_url(proxy_info: dict[str, Union[str, int]]) -> str:
         auth = ""
     host = proxy_info["host"]
     port = proxy_info["port"]
+
+    # Socks5h support is experimental
     if proxy_info.get("type") in {"socks5", "socks5h"}:
         schema = proxy_info.get("type")
     else:

@@ -15,10 +15,18 @@ import sys
             "region": "dummy-region",
             "bucket_name": "dummy-bucket",
             "notifier": {"notifier_type": "http", "url": "localhost"},
+            "proxy_info": {
+                "host": "proxy.test",
+                "port": "16666",
+                "type": "socks5",
+                "user": "bob",
+                "pass": "secret",
+            },
         }
     ],
 )
 @patch("rohmu.notifier.http.BackgroundHTTPNotifier")
+@patch("botocore.config.Config")
 @patch("rohmu.object_storage.s3.S3Transfer.check_or_create_bucket")
 @patch("rohmu.object_storage.s3.create_s3_client")
 @patch("rohmu.object_storage.s3.S3Transfer.from_model", wraps=S3Transfer.from_model)
@@ -28,6 +36,7 @@ def test_get_transfer_s3(
     mock_from_model: Mock,
     mock_s3_client: Mock,
     mock_check_or_create: Mock,
+    mock_botocore_config: Mock,
     mock_notifier: Mock,
     config: Config,
 ) -> None:
@@ -35,6 +44,7 @@ def test_get_transfer_s3(
     expected_config_arg = dict(config)
     expected_config_arg.pop("storage_type")
     expected_config_arg.pop("notifier")
+    expected_botocore_config = {"proxies": {"https": "socks5://bob:secret@proxy.test:16666"}}
     mock_config_model.return_value = S3Config(**expected_config_arg, notifier=None)
 
     transfer_object = get_transfer(config)
@@ -44,6 +54,7 @@ def test_get_transfer_s3(
     assert isinstance(transfer_object, S3Transfer)
     # cast was the easiest way to convince mypy
     assert cast(S3Transfer, transfer_object).bucket_name == "dummy-bucket"
+    mock_botocore_config.assert_called_once_with(**expected_botocore_config)
     mock_s3_client.assert_called_once_with(
         session=ANY,
         config=ANY,
