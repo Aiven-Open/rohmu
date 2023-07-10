@@ -83,6 +83,8 @@ def get_proxy_url(proxy_info: dict[str, Union[str, int]]) -> str:
         auth = ""
     host = proxy_info["host"]
     port = proxy_info["port"]
+
+    # Socks5h support is experimental
     if proxy_info.get("type") in {"socks5", "socks5h"}:
         schema = proxy_info.get("type")
     else:
@@ -186,7 +188,7 @@ class S3Transfer(BaseTransfer[Config]):
             if proxy_info:
                 proxies = {"https": get_proxy_url(proxy_info)}
             boto_config = botocore.client.Config(
-                s3={"addressing_style": addressing_style.value},
+                s3={"addressing_style": S3AddressingStyle(addressing_style).value},
                 signature_version=signature_version,
                 proxies=proxies,
                 **timeouts,
