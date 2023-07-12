@@ -322,7 +322,7 @@ class S3Transfer(BaseTransfer[Config]):
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
         kwargs: dict[str, Any] = {}
         if byte_range:
-            kwargs["Range"] = f"bytes {byte_range[0]}-{byte_range[1]}"
+            kwargs["Range"] = f"bytes={byte_range[0]}-{byte_range[1]}"
         try:
             # Actual usage is accounted for in
             # _read_object_to_fileobj, although that omits the initial
