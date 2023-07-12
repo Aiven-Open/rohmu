@@ -1,4 +1,5 @@
 """Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
+from botocore.response import StreamingBody
 from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
@@ -115,3 +116,20 @@ def test_get_contents_to_fileobj_raises_error_on_invalid_byte_range(infra: S3Inf
             fileobj_to_store_to=BytesIO(),
             byte_range=(100, 10),
         )
+
+
+def test_get_contents_to_fileobj_passes_the_correct_range_header(infra: S3Infra) -> None:
+    transfer = infra.transfer
+    infra.s3_client.get_object.return_value = {
+        "Body": StreamingBody(BytesIO(b"value"), 5),
+        "ContentLength": 5,
+        "Metadata": {},
+    }
+    transfer.get_contents_to_fileobj(
+        key="test_key",
+        fileobj_to_store_to=BytesIO(),
+        byte_range=(10, 100),
+    )
+    infra.s3_client.get_object.assert_called_once_with(
+        Bucket="test-bucket", Key="test-prefix/test_key", Range="bytes=10-100"
+    )
