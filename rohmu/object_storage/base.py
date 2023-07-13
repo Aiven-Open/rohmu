@@ -191,6 +191,15 @@ class BaseTransfer(Generic[StorageModelT]):
         """Like `get_contents_to_file()` but writes to an open file-like object."""
         raise NotImplementedError
 
+    def get_contents_iterator(
+        self,
+        key: str,
+        *,
+        byte_range: Optional[Tuple[int, int]] = None,
+        progress_callback: ProgressProportionCallbackType = None,
+    ) -> tuple[Metadata, Iterator[bytes]]:
+        raise NotImplementedError
+
     def _validate_byte_range(self, byte_range: Optional[Tuple[int, int]]) -> None:
         if byte_range is not None and byte_range[0] > byte_range[1]:
             raise InvalidByteRangeError(f"Invalid byte_range: {byte_range}. Start must be <= end.")

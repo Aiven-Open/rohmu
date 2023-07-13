@@ -165,33 +165,31 @@ def _mock_request(calls: list[tuple[str, bytes]]) -> Mock:
 
 def test_media_io_download_with_byte_range() -> None:
     mock_request = _mock_request([("3-8/13", b"lo, Wo")])
-    result = BytesIO()
-    download = MediaIoBaseDownloadWithByteRange(result, mock_request, byte_range=(3, 8))
-    status, done = download.next_chunk()
+    download = MediaIoBaseDownloadWithByteRange(mock_request, byte_range=(3, 8))
+    chunk, status, done = download.next_chunk()
     assert done
     assert status.progress() == 1.0
-    assert result.getvalue() == b"lo, Wo"
+    assert chunk == b"lo, Wo"
     mock_request.http.request.assert_called_once_with(ANY, ANY, headers={"range": "bytes=3-8"})
 
 
 def test_media_io_download_with_byte_range_and_tiny_chunks() -> None:
     mock_request = _mock_request([("3-5/13", b"lo,"), ("6-8/13", b" Wo"), ("9-10/13", b"rl")])
-    result = BytesIO()
-    download = MediaIoBaseDownloadWithByteRange(result, mock_request, chunksize=3, byte_range=(3, 10))
-    status, done = download.next_chunk()
+    download = MediaIoBaseDownloadWithByteRange(mock_request, chunksize=3, byte_range=(3, 10))
+    chunk, status, done = download.next_chunk()
     assert not done
     assert status.progress() == 0.375
-    assert result.getvalue() == b"lo,"
+    assert chunk == b"lo,"
 
-    status, done = download.next_chunk()
+    chunk, status, done = download.next_chunk()
     assert not done
     assert status.progress() == 0.750
-    assert result.getvalue() == b"lo, Wo"
+    assert chunk == b" Wo"
 
-    status, done = download.next_chunk()
+    chunk, status, done = download.next_chunk()
     assert done
     assert status.progress() == 1.0
-    assert result.getvalue() == b"lo, Worl"
+    assert b"rl"
 
     mock_request.http.request.assert_has_calls(
         [
@@ -204,10 +202,9 @@ def test_media_io_download_with_byte_range_and_tiny_chunks() -> None:
 
 def test_media_io_download_with_byte_range_and_very_small_object() -> None:
     mock_request = _mock_request([("3-13/13", b"lo, World!")])
-    result = BytesIO()
-    download = MediaIoBaseDownloadWithByteRange(result, mock_request, byte_range=(3, 100))
-    status, done = download.next_chunk()
+    download = MediaIoBaseDownloadWithByteRange(mock_request, byte_range=(3, 100))
+    chunk, status, done = download.next_chunk()
     assert done
     assert status.progress() == 1.0
-    assert result.getvalue() == b"lo, World!"
+    assert chunk == b"lo, World!"
     mock_request.http.request.assert_called_once_with(ANY, ANY, headers={"range": "bytes=3-100"})

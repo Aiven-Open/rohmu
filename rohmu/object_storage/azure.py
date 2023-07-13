@@ -254,34 +254,33 @@ class AzureTransfer(BaseTransfer[Config]):
 
         return int(content_range.split(" ", 1)[1].split("/", 1)[1])
 
-    def _stream_blob(
+    def _iter_blob(
         self,
         key: str,
-        fileobj: BinaryIO,
         byte_range: Optional[tuple[int, int]],
         progress_callback: ProgressProportionCallbackType,
-    ) -> None:
+    ) -> Iterator[bytes]:
         """Streams contents of given key to given fileobj. Data is read sequentially in chunks
         without any seeks. This requires duplicating some functionality of the Azure SDK, which only
         allows reading entire blob into memory at once or returning data from random offsets"""
         file_size = None
         start_range = byte_range[0] if byte_range else 0
-        chunk_size = self.conn._config.max_chunk_get_size  # type: ignore [attr-defined] # pylint: disable=protected-access
+        chunk_size = self.conn._config.max_chunk_get_size  # type: ignore[attr-defined] # pylint: disable=protected-access
         end_range = chunk_size - 1
         blob = self.conn.get_blob_client(self.container_name, key)
         while True:
             try:
-                # pylint: disable=protected-access
                 if byte_range:
                     length = min(byte_range[1] - start_range + 1, chunk_size)
                 else:
                     length = chunk_size
                 download_stream = blob.download_blob(offset=start_range, length=length)
                 if file_size is None:
-                    file_size = download_stream._file_size
+                    file_size = download_stream._file_size  # pylint: disable=protected-access
                     if byte_range:
                         file_size = min(file_size, byte_range[1] + 1)
-                download_stream.readinto(fileobj)
+                for chunk in download_stream.chunks():
+                    yield chunk
                 start_range += download_stream.size
                 if start_range >= file_size:
                     break
@@ -296,6 +295,8 @@ class AzureTransfer(BaseTransfer[Config]):
                 if ex.status_code == 416:  # Empty file
                     return
                 raise FileNotFoundFromStorageError(key) from ex
+        if progress_callback:
+            progress_callback(1, 1)
 
     def get_contents_to_fileobj(
         self,
@@ -305,18 +306,22 @@ class AzureTransfer(BaseTransfer[Config]):
         byte_range: Optional[Tuple[int, int]] = None,
         progress_callback: ProgressProportionCallbackType = None,
     ) -> Metadata:
+        metadata, chunks = self.get_contents_iterator(key, byte_range=byte_range, progress_callback=progress_callback)
+        for chunk in chunks:
+            fileobj_to_store_to.write(chunk)
+        return metadata
+
+    def get_contents_iterator(
+        self,
+        key: str,
+        *,
+        byte_range: Optional[Tuple[int, int]] = None,
+        progress_callback: ProgressProportionCallbackType = None,
+    ) -> tuple[Metadata, Iterator[bytes]]:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
         self._validate_byte_range(byte_range)
-
         self.log.debug("Starting to fetch the contents of: %r", path)
-        try:
-            self._stream_blob(path, fileobj_to_store_to, byte_range, progress_callback)
-        except azure.core.exceptions.ResourceNotFoundError as ex:  # pylint: disable=no-member
-            raise FileNotFoundFromStorageError(path) from ex
-
-        if progress_callback:
-            progress_callback(1, 1)
-        return self._metadata_for_key(path)
+        return self._metadata_for_key(path), self._iter_blob(path, byte_range, progress_callback)
 
     def get_file_size(self, key: str) -> int:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
@@ -357,13 +362,13 @@ class AzureTransfer(BaseTransfer[Config]):
         seekable = hasattr(fd, "seekable") and fd.seekable()
         if not seekable:
             original_tell = getattr(fd, "tell", None)
-            fd.tell = lambda: None  # type: ignore [assignment,method-assign,return-value]
+            fd.tell = lambda: None  # type: ignore[assignment,method-assign,return-value]
         sanitized_metadata = self.sanitize_metadata(metadata, replace_hyphen_with="_")
         try:
             blob_client = self.conn.get_blob_client(self.container_name, path)
             blob_client.upload_blob(
                 fd,
-                blob_type=BlobType.BlockBlob,  # type: ignore [arg-type]
+                blob_type=BlobType.BlockBlob,  # type: ignore[arg-type]
                 content_settings=content_settings,
                 metadata=sanitized_metadata,
                 raw_response_hook=progress_callback,
@@ -373,7 +378,7 @@ class AzureTransfer(BaseTransfer[Config]):
         finally:
             if not seekable:
                 if original_tell is not None:
-                    fd.tell = original_tell  # type: ignore [method-assign]
+                    fd.tell = original_tell  # type: ignore[method-assign]
                 else:
                     delattr(fd, "tell")
 

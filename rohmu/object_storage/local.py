@@ -178,28 +178,44 @@ class LocalTransfer(BaseTransfer[Config]):
         byte_range: Optional[Tuple[int, int]] = None,
         progress_callback: ProgressProportionCallbackType = None,
     ) -> Metadata:
+        metadata, chunks = self.get_contents_iterator(key, byte_range=byte_range, progress_callback=progress_callback)
+        for chunk in chunks:
+            fileobj_to_store_to.write(chunk)
+        return metadata
+
+    def get_contents_iterator(
+        self,
+        key: str,
+        *,
+        byte_range: Optional[Tuple[int, int]] = None,
+        progress_callback: ProgressProportionCallbackType = None,
+    ) -> Tuple[Metadata, Iterator[bytes]]:
         self._validate_byte_range(byte_range)
+        metadata = self.get_metadata_for_key(key)
         source_path = self.format_key_for_backend(key.strip("/"))
-        if not os.path.exists(source_path):
+        try:
+            input_file = open(source_path, "rb")
+        except FileNotFoundError:
             raise FileNotFoundFromStorageError(key)
 
-        input_size = os.stat(source_path).st_size
-        bytes_written = 0
-        with open(source_path, "rb") as fp:
-            if byte_range:
-                fp.seek(byte_range[0])
-                input_size = byte_range[1] - byte_range[0] + 1
-            while bytes_written <= input_size:
-                left = min(input_size - bytes_written, CHUNK_SIZE)
-                buf = fp.read(left)
-                if not buf:
-                    break
-                fileobj_to_store_to.write(buf)
-                bytes_written += len(buf)
-                if progress_callback:
-                    progress_callback(bytes_written, input_size)
+        def iter_chunks() -> Iterator[bytes]:
+            with input_file as fp:
+                input_size = os.fstat(input_file.fileno()).st_size
+                bytes_written = 0
+                if byte_range:
+                    fp.seek(byte_range[0])
+                    input_size = byte_range[1] - byte_range[0] + 1
+                while bytes_written <= input_size:
+                    left = min(input_size - bytes_written, CHUNK_SIZE)
+                    buf = fp.read(left)
+                    if not buf:
+                        break
+                    yield buf
+                    bytes_written += len(buf)
+                    if progress_callback:
+                        progress_callback(bytes_written, input_size)
 
-        return self.get_metadata_for_key(key)
+        return metadata, iter_chunks()
 
     def get_file_size(self, key: str) -> int:
         source_path = self.format_key_for_backend(key.strip("/"))

@@ -27,19 +27,11 @@ from .base import (
 from contextlib import contextmanager
 from googleapiclient.discovery import build, Resource
 from googleapiclient.errors import HttpError
-from googleapiclient.http import (
-    build_http,
-    HttpRequest,
-    MediaDownloadProgress,
-    MediaIoBaseDownload,
-    MediaUpload,
-    MediaUploadProgress,
-)
+from googleapiclient.http import build_http, HttpRequest, MediaDownloadProgress, MediaUpload, MediaUploadProgress
 from http.client import IncompleteRead
 from oauth2client import GOOGLE_TOKEN_URI
 from oauth2client.client import GoogleCredentials
 from typing import Any, BinaryIO, Callable, Dict, Iterable, Iterator, Optional, TextIO, Tuple, TypeVar, Union
-from typing_extensions import Protocol
 
 import codecs
 import dataclasses
@@ -411,12 +403,26 @@ class GoogleTransfer(BaseTransfer[Config]):
         byte_range: Optional[Tuple[int, int]] = None,
         progress_callback: ProgressProportionCallbackType = None,
     ) -> Metadata:
+        self.log.debug("Starting to fetch the contents of: %r to %r", key, fileobj_to_store_to)
+        metadata, chunks = self.get_contents_iterator(key, byte_range=byte_range, progress_callback=progress_callback)
+        for chunk in chunks:
+            fileobj_to_store_to.write(chunk)
+        return metadata
+
+    def get_contents_iterator(
+        self,
+        key: str,
+        *,
+        byte_range: Optional[Tuple[int, int]] = None,
+        progress_callback: ProgressProportionCallbackType = None,
+    ) -> tuple[Metadata, Iterator[bytes]]:
         path = self.format_key_for_backend(key)
-        self.log.debug("Starting to fetch the contents of: %r to %r", path, fileobj_to_store_to)
-        next_prog_report = 0.0
-        last_log_output = 0.0
+        self.log.debug("Starting to fetch the contents of: %r from %r", key, path)
         self._validate_byte_range(byte_range)
-        with self._object_client(not_found=path) as clob:
+        # The dances around the clob context manager are awful, this won't stay like that
+        clob_context = self._object_client(not_found=path)
+        clob = clob_context.__enter__()
+        try:
             metadata, obj_size = self._metadata_for_key(clob, path)
             if byte_range is None:
                 size_to_download = obj_size
@@ -428,35 +434,40 @@ class GoogleTransfer(BaseTransfer[Config]):
             )
             # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.objects.html#get_media
             req: HttpRequest = clob.get_media(bucket=self.bucket_name, object=path)
-            download: MediaDownloadProtocol
-            if byte_range is None:
-                download = MediaIoBaseDownload(fileobj_to_store_to, req, chunksize=DOWNLOAD_CHUNK_SIZE)
-            else:
-                download = MediaIoBaseDownloadWithByteRange(
-                    fileobj_to_store_to, req, chunksize=DOWNLOAD_CHUNK_SIZE, byte_range=byte_range
-                )
+            download = MediaIoBaseDownloadWithByteRange(req, chunksize=DOWNLOAD_CHUNK_SIZE, byte_range=byte_range)
+        except:
+            clob_context.__exit__(None, None, None)
+            raise
 
-            done = False
-            while not done:
-                status, done = self._retry_on_reset(req, download.next_chunk, retry_reporter=reporter)
-                if status:
-                    reporter.report_status(self.stats, status)
-                    progress_pct = status.progress() * 100
-                    now = time.monotonic()
-                    if (now - last_log_output) >= 5.0:
-                        self.log.debug("Download of %r: %d%%", path, progress_pct)
-                        last_log_output = now
+        def iter_chunks() -> Iterator[bytes]:
+            try:
+                next_prog_report = 0.0
+                last_log_output = 0.0
+                done = False
+                while not done:
+                    chunk, status, done = self._retry_on_reset(req, download.next_chunk, retry_reporter=reporter)
+                    yield chunk
+                    if status:
+                        reporter.report_status(self.stats, status)
+                        progress_pct = status.progress() * 100
+                        now = time.monotonic()
+                        if (now - last_log_output) >= 5.0:
+                            self.log.debug("Download of %r: %d%%", path, progress_pct)
+                            last_log_output = now
 
-                    if progress_callback and progress_pct > next_prog_report:
-                        progress_callback(progress_pct, 100)
-                        next_prog_report = progress_pct + 0.1
-                elif done:
-                    reporter.report_status(self.stats, MediaDownloadProgress(size_to_download, size_to_download))
-                else:
-                    reporter.report(self.stats)
-            if progress_callback:
-                progress_callback(100, 100)
-            return metadata
+                        if progress_callback and progress_pct > next_prog_report:
+                            progress_callback(progress_pct, 100)
+                            next_prog_report = progress_pct + 0.1
+                    elif done:
+                        reporter.report_status(self.stats, MediaDownloadProgress(size_to_download, size_to_download))
+                    else:
+                        reporter.report(self.stats)
+                if progress_callback:
+                    progress_callback(100, 100)
+            finally:
+                clob_context.__exit__(None, None, None)
+
+        return metadata, iter_chunks()
 
     def get_file_size(self, key: str) -> int:
         path = self.format_key_for_backend(key)
@@ -723,24 +734,19 @@ class MediaStreamUpload(MediaUpload):
             return b"".join(read_results)
 
 
-class MediaDownloadProtocol(Protocol):
-    def next_chunk(self) -> tuple[MediaDownloadProgress, bool]:
-        ...
-
-
 class MediaIoBaseDownloadWithByteRange:
     """This class is mostly a copy of the googleapiclient's MediaIOBaseDownload class,
     but with the addition of the support for fetching a specific byte_range.
 
+    And the content is returned instead of written to a file object.
     """
 
     def __init__(
         self,
-        fd: BinaryIO,
         request: HttpRequest,
         chunksize: int = DOWNLOAD_CHUNK_SIZE,
         *,
-        byte_range: tuple[int, int],
+        byte_range: tuple[int, int] | None,
     ) -> None:
         """Constructor.
 
@@ -752,14 +758,13 @@ class MediaIoBaseDownloadWithByteRange:
           chunksize: int, File will be downloaded in chunks of this many bytes.
           byte_range: tuple[int, int], The byterange to fetch
         """
-        self._fd = fd
         self._http = request.http
         self._uri = request.uri
         self._chunksize = chunksize
-        self._start_position, self._end_position = byte_range
+        self._start_position, self._end_position = byte_range if byte_range is not None else (0, None)
         self._num_bytes_downloaded = 0
-        self._range_size = self._end_position - self._start_position + 1
-        if self._range_size < 0:
+        self._range_size = self._end_position - self._start_position + 1 if self._end_position is not None else None
+        if self._range_size is not None and self._range_size < 0:
             raise InvalidByteRangeError(f"Invalid byte_range: {byte_range}. Start must be < end.")
         self._done = False
 
@@ -771,11 +776,11 @@ class MediaIoBaseDownloadWithByteRange:
             if k.lower() not in ("accept", "accept-encoding", "user-agent"):
                 self._headers[k] = v
 
-    def next_chunk(self) -> tuple[MediaDownloadProgress, bool]:
+    def next_chunk(self) -> tuple[bytes, MediaDownloadProgress, bool]:
         """Get the next chunk of the download.
 
         Returns:
-          (status, done): The value of done will be True when the media has been fully
+          (chunk, status, done): The value of done will be True when the media has been fully
              downloaded or the total size of the media is unknown.
 
         Raises:
@@ -785,7 +790,7 @@ class MediaIoBaseDownloadWithByteRange:
         headers = self._headers.copy()
         chunk_start = self._num_bytes_downloaded + self._start_position
         chunk_end = chunk_start + self._chunksize - 1
-        if self._end_position < chunk_end:
+        if self._end_position is not None and self._end_position < chunk_end:
             chunk_end = self._end_position
         headers["range"] = f"bytes={chunk_start}-{chunk_end}"
         resp, content = self._http.request(self._uri, "GET", headers=headers)
@@ -795,25 +800,26 @@ class MediaIoBaseDownloadWithByteRange:
             if "content-location" in resp and resp["content-location"] != self._uri:
                 self._uri = resp["content-location"]
             self._num_bytes_downloaded += len(content)
-            self._fd.write(content)
-
             if "content-range" in resp:
                 total_size = get_total_size_from_content_range(resp["content-range"])
             elif "content-length" in resp:
                 # By RFC 9110 if we end up here this is a 200 OK response and this is the total size of the object
                 total_size = int(resp["content-length"])
 
-            size_to_download = (
-                self._range_size if total_size is None else min(self._range_size, total_size - self._start_position)
-            )
+            if self._range_size is None:
+                size_to_download = total_size
+            else:
+                size_to_download = (
+                    self._range_size if total_size is None else min(self._range_size, total_size - self._start_position)
+                )
             if self._num_bytes_downloaded == size_to_download:
                 self._done = True
-            return MediaDownloadProgress(self._num_bytes_downloaded, size_to_download), self._done
+            return content, MediaDownloadProgress(self._num_bytes_downloaded, size_to_download), self._done
         elif resp.status == 416:
             # 416 is Range Not Satisfiable
             # This typically occurs with a zero byte file
             total_size = get_total_size_from_content_range(resp["content-range"])
             if total_size == 0:
                 self._done = True
-                return MediaDownloadProgress(self._num_bytes_downloaded, total_size), self._done
+                return b"", MediaDownloadProgress(self._num_bytes_downloaded, total_size), self._done
         raise HttpError(resp, content, uri=self._uri)

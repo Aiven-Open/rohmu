@@ -325,7 +325,7 @@ class S3Transfer(BaseTransfer[Config]):
             kwargs["Range"] = f"bytes {byte_range[0]}-{byte_range[1]}"
         try:
             # Actual usage is accounted for in
-            # _read_object_to_fileobj, although that omits the initial
+            # _iter_object, although that omits the initial
             # get_object call if it fails.
             response = self.s3_client.get_object(Bucket=self.bucket_name, Key=path, **kwargs)
         except botocore.exceptions.ClientError as ex:
@@ -336,17 +336,17 @@ class S3Transfer(BaseTransfer[Config]):
                 raise StorageError("Fetching the remote object {} failed".format(path)) from ex
         return response["Body"], response["ContentLength"], response["Metadata"]
 
-    def _read_object_to_fileobj(
-        self, fileobj: BinaryIO, streaming_body: StreamingBody, body_length: int, cb: ProgressProportionCallbackType = None
-    ) -> None:
+    def _iter_object(
+        self, streaming_body: StreamingBody, body_length: int, cb: ProgressProportionCallbackType = None
+    ) -> Iterator[bytes]:
         data_read = 0
         while data_read < body_length:
             read_amount = body_length - data_read
             if read_amount > READ_BLOCK_SIZE:
                 read_amount = READ_BLOCK_SIZE
             data = streaming_body.read(amt=read_amount)
-            fileobj.write(data)
             data_read += len(data)
+            yield data
             if cb:
                 cb(data_read, body_length)
             self.stats.operation(operation=StorageOperation.get_file, size=len(data))
@@ -361,10 +361,21 @@ class S3Transfer(BaseTransfer[Config]):
         byte_range: Optional[Tuple[int, int]] = None,
         progress_callback: ProgressProportionCallbackType = None,
     ) -> Metadata:
+        metadata, chunks = self.get_contents_iterator(key, byte_range=byte_range, progress_callback=progress_callback)
+        for chunk in chunks:
+            fileobj_to_store_to.write(chunk)
+        return metadata
+
+    def get_contents_iterator(
+        self,
+        key: str,
+        *,
+        byte_range: Optional[Tuple[int, int]] = None,
+        progress_callback: ProgressProportionCallbackType = None,
+    ) -> tuple[Metadata, Iterator[bytes]]:
         self._validate_byte_range(byte_range)
         stream, length, metadata = self._get_object_stream(key, byte_range)
-        self._read_object_to_fileobj(fileobj_to_store_to, stream, length, cb=progress_callback)
-        return metadata
+        return metadata, self._iter_object(stream, length, cb=progress_callback)
 
     def get_file_size(self, key: str) -> int:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
