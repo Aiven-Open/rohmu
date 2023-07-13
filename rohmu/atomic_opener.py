@@ -92,7 +92,7 @@ def _atomic_opener(
         else:
             yield cast(TextIO, file_obj)
         file_obj.flush()
-        path = "/proc/self/fd/{0}".format(fd)
+        path = f"/proc/self/fd/{fd}"
         os.link(path, str(final_path), src_dir_fd=0, follow_symlinks=True)
         _after_link_hook()
     finally:

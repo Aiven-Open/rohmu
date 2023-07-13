@@ -178,7 +178,8 @@ class S3Transfer(BaseTransfer[Config]):
                 self.location = self.region
         else:
             scheme = "https" if is_secure else "http"
-            custom_url = "{scheme}://{host}:{port}".format(scheme=scheme, host=host, port=port)
+            # FIXME: netloc will break with IPv6 host
+            custom_url = f"{scheme}://{host}:{port}"
             if self.region:
                 signature_version = "s3v4"
                 self.location = self.region
@@ -230,7 +231,7 @@ class S3Transfer(BaseTransfer[Config]):
             if status_code == 404:
                 raise FileNotFoundFromStorageError(source_key)
             else:
-                raise StorageError("Copying {!r} to {!r} failed: {!r}".format(source_key, destination_key, ex)) from ex
+                raise StorageError(f"Copying {source_key!r} to {destination_key!r} failed: {ex!r}") from ex
 
     def get_metadata_for_key(self, key: str) -> Metadata:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
@@ -245,7 +246,7 @@ class S3Transfer(BaseTransfer[Config]):
             if status_code == 404:
                 raise FileNotFoundFromStorageError(key)
             else:
-                raise StorageError("Metadata lookup failed for {}".format(key)) from ex
+                raise StorageError(f"Metadata lookup failed for {key}") from ex
 
         return response["Metadata"]
 
@@ -333,7 +334,7 @@ class S3Transfer(BaseTransfer[Config]):
             if status_code == 404:
                 raise FileNotFoundFromStorageError(path)
             else:
-                raise StorageError("Fetching the remote object {} failed".format(path)) from ex
+                raise StorageError(f"Fetching the remote object {path} failed") from ex
         return response["Body"], response["ContentLength"], response["Metadata"]
 
     def _iter_object(
@@ -342,8 +343,7 @@ class S3Transfer(BaseTransfer[Config]):
         data_read = 0
         while data_read < body_length:
             read_amount = body_length - data_read
-            if read_amount > READ_BLOCK_SIZE:
-                read_amount = READ_BLOCK_SIZE
+            read_amount = min(read_amount, READ_BLOCK_SIZE)
             data = streaming_body.read(amt=read_amount)
             data_read += len(data)
             yield data
@@ -387,7 +387,7 @@ class S3Transfer(BaseTransfer[Config]):
             if ex.response.get("ResponseMetadata", {}).get("HTTPStatusCode") == 404:
                 raise FileNotFoundFromStorageError(path)
             else:
-                raise StorageError("File size lookup failed for {}".format(path)) from ex
+                raise StorageError(f"File size lookup failed for {path}") from ex
 
     def multipart_upload_file_object(
         self,
@@ -429,7 +429,7 @@ class S3Transfer(BaseTransfer[Config]):
         try:
             cmu_response = self.s3_client.create_multipart_upload(**args)
         except botocore.exceptions.ClientError as ex:
-            raise StorageError("Failed to initiate multipart upload for {}".format(path)) from ex
+            raise StorageError(f"Failed to initiate multipart upload for {path}") from ex
 
         mp_id = cmu_response["UploadId"]
 
@@ -462,7 +462,7 @@ class S3Transfer(BaseTransfer[Config]):
                                 UploadId=mp_id,
                             )
                         finally:
-                            err = "Multipart upload of {0} failed: {1.__class__.__name__}: {1}".format(path, ex)
+                            err = f"Multipart upload of {path} failed: {ex.__class__.__name__}: {ex}"
                             raise StorageError(err) from ex
                     else:
                         time.sleep(1.0)
@@ -504,7 +504,7 @@ class S3Transfer(BaseTransfer[Config]):
                     UploadId=mp_id,
                 )
             finally:
-                raise StorageError("Failed to complete multipart upload for {}".format(path)) from ex
+                raise StorageError(f"Failed to complete multipart upload for {path}") from ex
 
         self.notifier.object_created(key=key, size=bytes_sent, metadata=sanitized_metadata)
         self.log.info(
@@ -582,7 +582,7 @@ class S3Transfer(BaseTransfer[Config]):
         except botocore.exceptions.ClientError as ex:
             status_code = ex.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
             if status_code == 301:
-                raise InvalidConfigurationError("Wrong region for bucket {}, check configuration".format(self.bucket_name))
+                raise InvalidConfigurationError(f"Wrong region for bucket {self.bucket_name}, check configuration")
             elif status_code == 403:
                 self.log.warning("Access denied on bucket check, assuming write permissions")
             elif status_code == 404:

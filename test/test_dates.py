@@ -17,7 +17,8 @@ def test_parse_timestamp() -> None:
     # split local_aware such as "2021-02-08T09:58:27.988218-05:00" into date, time, tzoffset components
     str_date, str_localtime_aware = local_aware.isoformat().split("T", 1)
     str_localtime_naive = re.split("[+-]", str_localtime_aware, maxsplit=1)[0]
-    str_local_aware_named = "{}T{} {}".format(str_date, str_localtime_naive, local_aware.tzname())
+    tz_name = local_aware.tzname()
+    str_local_aware_named = f"{str_date}T{str_localtime_naive} {tz_name}"
 
     assert parse_timestamp(str_local_aware_named) == local_aware
     local_naive = parse_timestamp(str_local_aware_named, with_tz=False, assume_local=True)

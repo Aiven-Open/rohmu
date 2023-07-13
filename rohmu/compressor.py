@@ -36,7 +36,7 @@ def CompressionFile(dst_fp: FileLike, algorithm: str, level: int = 0, threads: i
         return zstd_open(dst_fp, "wb", level=level, threads=threads)
 
     if algorithm:
-        raise InvalidConfigurationError("invalid compression algorithm: {!r}".format(algorithm))
+        raise InvalidConfigurationError(f"invalid compression algorithm: {algorithm!r}")
 
     return dst_fp
 
@@ -54,7 +54,7 @@ class CompressionStream(Stream):
         elif algorithm == "zstd":
             self._compressor = zstd.ZstdCompressor(level=level).compressobj()
         else:
-            raise InvalidConfigurationError("invalid compression algorithm: {!r}".format(algorithm))
+            raise InvalidConfigurationError(f"invalid compression algorithm: {algorithm!r}")
 
     def _process_chunk(self, data: bytes) -> bytes:
         return self._compressor.compress(data)
@@ -75,7 +75,7 @@ def DecompressionFile(src_fp: FileLike, algorithm: str) -> FileLike:
         return zstd_open(src_fp, "rb")
 
     if algorithm:
-        raise InvalidConfigurationError("invalid compression algorithm: {!r}".format(algorithm))
+        raise InvalidConfigurationError(f"invalid compression algorithm: {algorithm!r}")
 
     return src_fp
 
@@ -92,7 +92,7 @@ class DecompressSink(Sink):
             return lzma.LZMADecompressor()
         elif alg == "zstd":
             return zstd.ZstdDecompressor().decompressobj()
-        raise InvalidConfigurationError("invalid compression algorithm: {!r}".format(alg))
+        raise InvalidConfigurationError(f"invalid compression algorithm: {alg!r}")
 
     def write(self, data: BinaryData) -> int:
         data = bytes(data) if not isinstance(data, bytes) else data

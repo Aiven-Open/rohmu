@@ -141,7 +141,7 @@ class SwiftTransfer(BaseTransfer[Config]):
 
     @staticmethod
     def _metadata_to_headers(metadata: Metadata) -> dict[str, str]:
-        return {"x-object-meta-{}".format(name): str(value) for name, value in metadata.items()}
+        return {f"x-object-meta-{name}": str(value) for name, value in metadata.items()}
 
     def get_metadata_for_key(self, key: str) -> Metadata:
         path = self.format_key_for_backend(key)
@@ -363,8 +363,9 @@ class SwiftTransfer(BaseTransfer[Config]):
         # upload segments of a file like `backup-bucket/site-name/basebackup/2016-03-22_0`
         # to as `backup-bucket/site-name/basebackup_segments/2016-03-22_0/{:08x}`
         segment_no = 0
-        segment_path = "{}_segments/{}/".format(os.path.dirname(path), os.path.basename(path))
-        segment_key_format = "{}{{:08x}}".format(segment_path).format
+        dirname, basename = os.path.dirname(path), os.path.basename(path)
+        segment_path = f"{dirname}_segments/{basename}/"
+        segment_key_format = f"{segment_path}{{:08x}}".format
         remaining = content_length
         while remaining > 0:
             this_segment_size = min(self.segment_size, remaining)
@@ -378,5 +379,6 @@ class SwiftTransfer(BaseTransfer[Config]):
             if upload_progress_fn:
                 upload_progress_fn(content_length - remaining)
         self.log.info("Uploaded %r segments of %r to %r", segment_no, path, segment_path)
-        headers["x-object-manifest"] = "{}/{}".format(self.container_name, segment_path.lstrip("/"))
+        stripped_segment_path = segment_path.lstrip("/")
+        headers["x-object-manifest"] = f"{self.container_name}/{stripped_segment_path}"
         self.conn.put_object(self.container_name, path, contents="", headers=headers, content_length=0)

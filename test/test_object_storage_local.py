@@ -1,5 +1,6 @@
 """Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
 from io import BytesIO
+from pathlib import Path
 from rohmu.errors import InvalidByteRangeError
 from rohmu.object_storage.base import KEY_TYPE_OBJECT
 from rohmu.object_storage.local import LocalTransfer
@@ -24,7 +25,7 @@ def test_store_file_from_disk() -> None:
             tmpfile.flush()
             transfer.store_file_from_disk(key="test_key1", filepath=tmpfile.name)
 
-        assert open(os.path.join(destdir, "test_key1"), "rb").read() == test_data
+        assert Path(os.path.join(destdir, "test_key1")).read_bytes() == test_data
         notifier.object_created.assert_called_once_with(
             key="test_key1", size=len(test_data), metadata={"Content-Length": "9"}
         )
@@ -42,7 +43,7 @@ def test_store_file_object() -> None:
 
         transfer.store_file_object(key="test_key2", fd=file_object)
 
-        assert open(os.path.join(destdir, "test_key2"), "rb").read() == test_data
+        assert Path(os.path.join(destdir, "test_key2")).read_bytes() == test_data
         notifier.object_created.assert_called_once_with(key="test_key2", size=len(test_data), metadata={})
 
         data, _ = transfer.get_contents_to_string("test_key2")

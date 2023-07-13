@@ -142,7 +142,7 @@ class BaseTransfer(Generic[StorageModelT]):
         if not self.prefix:
             return key
         if not key.startswith(self.prefix):
-            raise StorageError("Key {!r} does not start with expected prefix {!r}".format(key, self.prefix))
+            raise StorageError(f"Key {key!r} does not start with expected prefix {self.prefix!r}")
         return key[len(self.prefix) :]
 
     def delete_key(self, key: str) -> None:

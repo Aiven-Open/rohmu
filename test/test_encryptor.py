@@ -84,7 +84,7 @@ def test_decryptorfile(tmpdir: LocalPath) -> None:
     plaintext = repeat * plaintext1
     encryptor = Encryptor(CONSTANT_TEST_RSA_PUBLIC_KEY)
     ciphertext = encryptor.update(plaintext) + encryptor.finalize()
-    plain_fp = open(tmpdir.join("plain").strpath, mode="w+b")
+    plain_fp = open(tmpdir.join("plain").strpath, mode="w+b")  # pylint: disable=consider-using-with
     plain_fp.write(ciphertext)
     plain_fp.seek(0)
     fp = DecryptorFile(plain_fp, CONSTANT_TEST_RSA_PRIVATE_KEY)  # pylint: disable=redefined-variable-type

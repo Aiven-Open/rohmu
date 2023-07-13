@@ -282,7 +282,7 @@ class DecryptorFile(FileWrap):
                 break
             data += next_chunk
         if not data or len(data) != required_bytes:
-            raise EncryptorError("Failed to read {} bytes of header or footer data".format(required_bytes))
+            raise EncryptorError(f"Failed to read {required_bytes} bytes of header or footer data")
         return data
 
     def _move_decrypt_offset_to_plaintext_offset(self) -> None:

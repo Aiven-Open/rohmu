@@ -23,7 +23,8 @@ import time
 
 def _fileobj_name(input_obj: FileLike) -> str:
     if hasattr(input_obj, "name"):
-        return "open file {!r}".format(getattr(input_obj, "name"))
+        object_name = getattr(input_obj, "name")
+        return f"open file {object_name!r}"
 
     return repr(input_obj)
 
@@ -41,7 +42,7 @@ def _get_encryption_key_data(
             key_data = key_lookup(key_id)
 
     if not key_data:
-        raise InvalidConfigurationError("File is encrypted with key {!r} but key not found".format(key_id))
+        raise InvalidConfigurationError(f"File is encrypted with key {key_id!r} but key not found")
     return key_data
 
 
@@ -221,7 +222,8 @@ def log_compression_result(
         ratio = ""
     else:
         action = "Compressed"
-        ratio = " ({:.0%})".format(result_size / original_size)
+        raw_ratio = result_size / original_size
+        ratio = f" ({raw_ratio:.0%})"
 
     if encrypted:
         action += " and encrypted"
