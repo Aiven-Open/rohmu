@@ -15,7 +15,22 @@ from ..notifier.null import NullNotifier
 from ..typing import AnyPath, Metadata
 from contextlib import suppress
 from io import BytesIO
-from typing import Any, BinaryIO, Callable, Collection, Generic, Iterator, NamedTuple, Optional, Tuple, Type, TypeVar, Union
+from typing import (
+    Any,
+    BinaryIO,
+    Callable,
+    Collection,
+    Generic,
+    Iterable,
+    Iterator,
+    NamedTuple,
+    Optional,
+    Protocol,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import logging
 import os
@@ -52,6 +67,7 @@ class BaseTransfer(Generic[StorageModelT]):
     config_model: Type[StorageModelT]
 
     is_thread_safe: bool = False
+    supports_concurrent_upload: bool = False
 
     def __init__(
         self, prefix: Optional[str], notifier: Optional[Notifier] = None, statsd_info: Optional[StatsdConfig] = None
@@ -309,6 +325,86 @@ class BaseTransfer(Generic[StorageModelT]):
         multipart: Optional[bool] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
     ) -> None:
+        raise NotImplementedError
+
+    def create_concurrent_upload(self, key: str, metadata: Optional[Metadata] = None) -> ConcurrentUpload:
+        """Starts a concurrent upload to the object storage.
+
+        :param key: the key of the object to upload
+        :param metadata: metadata to be associated with the object
+
+
+        Returns a ConcurrentUpload instance that can be used to upload multiple chunks in parallel.
+
+        This method will raise a NotImplementedError if supports_concurrent_upload is False.
+        """
+        raise NotImplementedError
+
+    # We may want to exclude this API endpoint for the first implementation and add support for resuming later on
+    def get_concurrent_upload(self, upload_id: str) -> ConcurrentUpload:
+        """Returns the concurrent upload instance with the given id.
+
+        :param upload_id: id of the upload to resume
+
+        Retrieve the state of the given upload object and returns it. May cache return value.
+
+        This call can be used to continue an upload even after restarts.
+
+        This method will raise a NotImplementedError if supports_concurrent_upload is False.
+        """
+        raise NotImplementedError
+
+
+class ConcurrentUpload(Protocol):
+    """A ConcurrentUpload is a thread-safe object that lets up upload multiple chunks of data concurrently.
+
+    Chunks can be uploaded concurrently in non-monotonic order.
+
+    After finishing uploading all the chunks you can complete the upload in order to create the object by calling
+    the `complete` method. You can also `abort` the upload.
+
+    """
+
+    @property
+    def upload_id(self) -> str:
+        """The identifier for this concurrent upload.
+
+        The users should treat this as an opaque identifier. The exact format depends on the transfer class.
+        """
+        raise NotImplementedError
+
+    def list_uploaded_chunks(self) -> Iterable[int]:
+        """List the chunks uploaded successfully in order.
+
+        A user can use this method to understand where they should start re-sending chunks after resuming an upload."""
+        raise NotImplementedError
+
+    def upload_chunk(self, chunk_number: int, fd: BinaryIO) -> None:
+        """Synchronously uploads a chunk. Returns an ETag for the uploaded chunk.
+
+        This method is thread-safe, so you can call it concurrently from multiple threads to upload different chunks.
+
+        What happens if multiple threads try to upload the same chunk_number concurrently is unspecified.
+        """
+        raise NotImplementedError
+
+    # NOTE: we do not support the UploadPartCopy of S3 for now... not all backends allow a good implementation for that
+    #       however in that case we would have something like upload_chunk_from(bucket, key, byte_range) or similar
+
+    def complete(self) -> None:
+        """Completes the upload. After this method returns successfully the object will be present in the object storage.
+
+        All operations on this concurrent upload will fail afterwards.
+        """
+        raise NotImplementedError
+
+    def abort(self) -> None:
+        """Aborts the upload.
+
+        This clears all uploaded data and terminates the upload.
+
+        All operations on this concurrent upload will fail afterwards.
+        """
         raise NotImplementedError
 
 
