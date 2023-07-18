@@ -9,12 +9,13 @@ See LICENSE for details
 from __future__ import annotations
 
 from ..common.models import ProxyInfo, StorageModel, StorageOperation
-from ..common.statsd import StatsdConfig
-from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
+from ..common.statsd import StatsClient, StatsdConfig
+from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError, UninitializedError
 from ..notifier.interface import Notifier
 from ..typing import Metadata
 from .base import (
     BaseTransfer,
+    ConcurrentUpload,
     get_total_memory,
     IncrementalProgressCallbackType,
     IterKeyItem,
@@ -25,12 +26,15 @@ from .base import (
 from botocore.response import StreamingBody
 from enum import Enum, unique
 from rohmu.util import batched
-from typing import Any, BinaryIO, cast, Collection, Iterator, Optional, Tuple, TYPE_CHECKING, Union
+from typing import Any, BinaryIO, cast, Collection, Iterable, Iterator, Optional, Tuple, TYPE_CHECKING, Union
 
+import base64
 import botocore.client
 import botocore.config
 import botocore.exceptions
 import botocore.session
+import json
+import logging
 import math
 import time
 
@@ -166,7 +170,7 @@ class S3Transfer(BaseTransfer[Config]):
             if proxy_info:
                 proxy_url = get_proxy_url(proxy_info)
                 custom_config["proxies"] = {"https": proxy_url}
-            self.s3_client = create_s3_client(
+            self._s3_client_factory = lambda: create_s3_client(
                 session=session,
                 config=botocore.config.Config(**custom_config),
                 aws_access_key_id=aws_access_key_id,
@@ -193,7 +197,7 @@ class S3Transfer(BaseTransfer[Config]):
                 proxies=proxies,
                 **timeouts,
             )
-            self.s3_client = create_s3_client(
+            self._s3_client_factory = lambda: create_s3_client(
                 session=session,
                 aws_access_key_id=aws_access_key_id,
                 aws_secret_access_key=aws_secret_access_key,
@@ -203,11 +207,12 @@ class S3Transfer(BaseTransfer[Config]):
                 region_name=region,
                 verify=is_verify_tls,
             )
-
+        self.s3_client = self._s3_client_factory()
         self.check_or_create_bucket()
 
         self.multipart_chunk_size = segment_size
         self.encrypted = encrypted
+        self._mpu_cache: dict[str, AWSConcurrentUpload] = {}
         self.log.debug("S3Transfer initialized")
 
     def copy_file(
@@ -592,6 +597,29 @@ class S3Transfer(BaseTransfer[Config]):
             self.stats.operation(StorageOperation.create_bucket)
             self.s3_client.create_bucket(**args)
 
+    def create_concurrent_upload(self, key: str, metadata: Optional[Metadata] = None) -> ConcurrentUpload:
+        upload = AWSConcurrentUpload(
+            s3_client=self._s3_client_factory(),
+            stats=self.stats,
+            notifier=self.notifier,
+            path=self.format_key_for_backend(key, remove_slash_prefix=True),
+            bucket_name=self.bucket_name,
+            encrypted=self.encrypted,
+            metadata=self.sanitize_metadata(metadata) if metadata is not None else None,
+        )
+        upload.start()
+        self._mpu_cache[upload.upload_id] = upload
+        return upload
+
+    def get_concurrent_upload(self, upload_id: str) -> ConcurrentUpload:
+        try:
+            return self._mpu_cache[upload_id]
+        except KeyError:
+            pass
+        upload = AWSConcurrentUpload.resume(self, upload_id)
+        self._mpu_cache[upload_id] = upload
+        return upload
+
     @classmethod
     def _read_bytes(cls, stream: BinaryIO, length: int) -> Optional[bytes]:
         bytes_remaining = length
@@ -610,3 +638,170 @@ class S3Transfer(BaseTransfer[Config]):
             return read_results[0]
         else:
             return b"".join(read_results)
+
+
+class AWSConcurrentUpload:
+    def __init__(
+        self,
+        *,
+        s3_client: S3Client,
+        stats: StatsClient,
+        notifier: Notifier,
+        path: str,
+        bucket_name: str,
+        encrypted: bool = False,
+        metadata: Optional[dict[str, str]] = None,
+    ) -> None:
+        self.log = logging.getLogger(AWSConcurrentUpload.__name__)
+        self.stats = stats
+        self.notifier = notifier
+        self.s3_client = s3_client
+        self.path = path
+        self.bucket_name = bucket_name
+        self.encrypted = encrypted
+        self._aws_upload_id = "<uninitialized>"
+        self._chunks_to_etags: dict[int, str] = {}
+        self._started = False
+        self._completed = False
+        self._aborted = False
+        self._metadata = metadata
+
+    def _check_started(self) -> None:
+        if not self._started:
+            raise UninitializedError("Upload is not initialized")
+
+    def _check_not_started(self) -> None:
+        if self._started:
+            raise StorageError("Upload {} for {} was already started".format(self._aws_upload_id, self.path))
+
+    def _check_not_finished(self) -> None:
+        if self._completed or self._aborted:
+            raise StorageError("Upload {} for {} was already completed or aborted".format(self._aws_upload_id, self.path))
+
+    @property
+    def upload_id(self) -> str:
+        self._check_started()
+        info = {
+            "cloud": "aws",
+            "upload_id": self._aws_upload_id,
+            "path": self.path,
+            "bucket_name": self.bucket_name,
+            "encrypted": self.encrypted,
+        }
+        return base64.b64encode(json.dumps(info).encode("ascii")).decode("ascii")
+
+    @classmethod
+    def resume(cls, transfer: S3Transfer, upload_id: str) -> AWSConcurrentUpload:
+        info = json.loads(base64.b64decode(upload_id.encode("ascii")))
+        if info.pop("cloud") != "aws":
+            raise StorageError("Upload {} is not for AWS".format(upload_id))
+        aws_upload_id = info.pop("upload_id")
+        upload = cls(
+            s3_client=transfer._s3_client_factory(),  # pylint: disable=protected-access
+            stats=transfer.stats,
+            notifier=transfer.notifier,
+            **info,
+        )
+        upload._do_resume(aws_upload_id)  # pylint: disable=protected-access
+        return upload
+
+    def _do_resume(self, aws_upload_id: str) -> None:
+        self._check_not_started()
+        self.log.debug("Resuming to upload multipart file: %r", self.path)
+        self._aws_upload_id = aws_upload_id
+        self._chunks_to_etags = dict(self._list_uploaded_chunks_and_etags())
+        self._started = True
+
+    def start(self) -> None:
+        self._check_not_started()
+        self.log.debug("Starting to upload multipart file: %r", self.path)
+        args: dict[str, Any] = {
+            "Bucket": self.bucket_name,
+            "Key": self.path,
+        }
+        # TODO: mimetype? cache control?
+        if self._metadata:
+            args["Metadata"] = self._metadata
+        if self.encrypted:
+            args["ServerSideEncryption"] = "AES256"
+        self.stats.operation(StorageOperation.create_multipart_upload)
+        try:
+            cmu_response = self.s3_client.create_multipart_upload(**args)
+        except botocore.exceptions.ClientError as ex:
+            raise StorageError("Failed to initiate multipart upload for {}".format(self.path)) from ex
+
+        self._aws_upload_id = cmu_response["UploadId"]
+        self._started = True
+
+    def list_uploaded_chunks(self) -> Iterable[int]:
+        self._check_started()
+        return (chunk_number for chunk_number, _ in self._list_uploaded_chunks_and_etags())
+
+    def _list_uploaded_chunks_and_etags(self) -> Iterable[tuple[int, str]]:
+        # NOTE: let users check for started state. Here we only care that _aws_upload_id is valid
+        kwargs: dict[str, Any] = {"Bucket": self.bucket_name, "Key": self.path, "UploadId": self._aws_upload_id}
+        while True:
+            try:
+                response = self.s3_client.list_parts(**kwargs)
+            except botocore.exceptions.ClientError as ex:
+                raise StorageError("Error listing parts for upload {} for {}".format(self._aws_upload_id, self.path)) from ex
+            yield from ((chunk["PartNumber"], chunk["ETag"]) for chunk in response["Parts"])
+            if not response["IsTruncated"]:
+                break
+            kwargs["PartNumberMarker"] = response["NextPartNumberMarker"]
+
+    def upload_chunk(self, chunk_number: int, fd: BinaryIO) -> None:
+        self._check_started()
+        self._check_not_finished()
+        try:
+            response = self.s3_client.upload_part(
+                Bucket=self.bucket_name,
+                Key=self.path,
+                UploadId=self._aws_upload_id,
+                Body=fd,
+                PartNumber=chunk_number,
+            )
+            self._chunks_to_etags[chunk_number] = response["ETag"]
+        except botocore.exceptions.ClientError as ex:
+            raise StorageError("Failed to upload chunk {}of multipart upload for {}".format(chunk_number, self.path)) from ex
+
+    def complete(self) -> None:
+        self._check_started()
+        if self._completed:
+            return
+        elif self._aborted:
+            raise StorageError("Upload {} for {} was already aborted".format(self._aws_upload_id, self.path))
+        try:
+            parts = sorted(
+                ({"ETag": etag, "PartNumber": number} for number, etag in self._chunks_to_etags.items()),
+                key=lambda part: cast(int, part["PartNumber"]),
+            )
+            self.s3_client.complete_multipart_upload(
+                Bucket=self.bucket_name,
+                Key=self.path,
+                MultipartUpload={"Parts": parts},  # type: ignore[typeddict-item]
+                UploadId=self._aws_upload_id,
+                RequestPayer="requester",
+            )
+            self._completed = True
+            # NOTE: metadata is not available if we are resuming. size is never available.
+            self.notifier.object_created(key=self.path, size=None, metadata=self._metadata)
+        except botocore.exceptions.ClientError as ex:
+            raise StorageError("Failed to complete multipart upload for {}".format(self.path)) from ex
+
+    def abort(self) -> None:
+        self._check_started()
+        if self._aborted:
+            return
+        elif self._completed:
+            raise StorageError("Upload {} for {} was already completed".format(self._aws_upload_id, self.path))
+        try:
+            self.s3_client.abort_multipart_upload(
+                Bucket=self.bucket_name,
+                Key=self.path,
+                UploadId=self._aws_upload_id,
+                RequestPayer="requester",
+            )
+            self._aborted = True
+        except botocore.exceptions.ClientError as ex:
+            raise StorageError("Failed to abort multipart upload for {}".format(self.path)) from ex

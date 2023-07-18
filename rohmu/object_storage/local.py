@@ -39,7 +39,7 @@ class Config(StorageModel):
     prefix: Optional[str] = None
 
 
-class LocalTransfer(BaseTransfer[Config]):
+class LocalTransfer(BaseTransfer[Config]):  # pylint: disable=abstract-method
     config_model = Config
 
     is_thread_safe = True

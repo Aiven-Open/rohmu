@@ -180,7 +180,7 @@ class Config(StorageModel):
 ResType = TypeVar("ResType")
 
 
-class GoogleTransfer(BaseTransfer[Config]):
+class GoogleTransfer(BaseTransfer[Config]):  # pylint: disable=abstract-method
     config_model = Config
 
     def __init__(

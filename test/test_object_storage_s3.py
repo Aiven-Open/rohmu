@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
 from rohmu.common.models import StorageOperation
-from rohmu.errors import InvalidByteRangeError
+from rohmu.errors import InvalidByteRangeError, StorageError
 from rohmu.object_storage.s3 import S3Transfer
 from tempfile import NamedTemporaryFile
 from typing import Any, Iterator, Optional
@@ -133,3 +133,89 @@ def test_get_contents_to_fileobj_passes_the_correct_range_header(infra: S3Infra)
     infra.s3_client.get_object.assert_called_once_with(
         Bucket="test-bucket", Key="test-prefix/test_key", Range="bytes=10-100"
     )
+
+
+def test_concurrent_upload_complete(infra: S3Infra) -> None:
+    metadata = {"some-date": datetime(2022, 11, 15, 18, 30, 58, 486644)}
+    infra.s3_client.create_multipart_upload.return_value = {"UploadId": "<aws-mpu-id>"}
+    upload = infra.transfer.create_concurrent_upload("test_key", metadata=metadata)
+    upload.upload_chunk(1, BytesIO(b"Hello, "))
+    # we can upload chunks in non-monotonically increasing order
+    upload.upload_chunk(3, BytesIO(b"!"))
+    upload.upload_chunk(2, BytesIO(b"World"))
+    upload.complete()
+
+    notifier = infra.notifier
+    s3_client = infra.s3_client
+
+    s3_client.create_multipart_upload.assert_called()
+    s3_client.upload_part.assert_called()
+    s3_client.complete_multipart_upload.assert_called()
+
+    # we notify the creation of the object
+    notifier.object_created.assert_called_once_with(
+        key="test-prefix/test_key",
+        size=None,
+        metadata={"some-date": "2022-11-15 18:30:58.486644"},
+    )
+    with pytest.raises(StorageError):
+        # cannot upload parts after completing an upload
+        upload.upload_chunk(4, BytesIO(b"Other data"))
+    with pytest.raises(StorageError):
+        # cannot upload parts after completing an upload
+        upload.abort()
+
+
+def test_concurrent_upload_abort(infra: S3Infra) -> None:
+    infra.s3_client.create_multipart_upload.return_value = {"UploadId": "<aws-mpu-id>"}
+    upload = infra.transfer.create_concurrent_upload("test_key")
+    upload.upload_chunk(1, BytesIO(b"Hello, "))
+    upload.abort()
+
+    notifier = infra.notifier
+    s3_client = infra.s3_client
+
+    s3_client.create_multipart_upload.assert_called()
+    s3_client.upload_part.assert_called()
+    s3_client.complete_multipart_upload.assert_not_called()
+    s3_client.abort_multipart_upload.assert_called()
+
+    # no notification is sent in this case!
+    notifier.object_created.assert_not_called()
+
+    with pytest.raises(StorageError):
+        # cannot upload parts after aborting an upload
+        upload.upload_chunk(4, BytesIO(b"Other data"))
+
+    with pytest.raises(StorageError):
+        # cannot complete an upload after an abort
+        upload.complete()
+
+
+def test_concurrent_upload_resumption(infra: S3Infra) -> None:
+    metadata = {"some-date": datetime(2022, 11, 15, 18, 30, 58, 486644)}
+    infra.s3_client.create_multipart_upload.return_value = {"UploadId": "<aws-mpu-id>"}
+    upload = infra.transfer.create_concurrent_upload("test_key", metadata=metadata)
+    upload.upload_chunk(1, BytesIO(b"Hello, "))
+    # we can upload chunks in non-monotonically increasing order
+    upload.upload_chunk(3, BytesIO(b"!"))
+
+    new_upload = infra.transfer.get_concurrent_upload(upload.upload_id)
+    # we expect to have the instance cached
+    assert upload is new_upload
+
+    # simulate restart of the in-memory state
+    infra.transfer._mpu_cache.clear()  # pylint: disable=protected-access
+    infra.s3_client.list_parts.return_value = {
+        "IsTruncated": False,
+        "Parts": [
+            {"ETag": "first-etag", "PartNumber": 1},
+            {"ETag": "second-etag", "PartNumber": 2},
+            {"ETag": "third-etag", "PartNumber": 3},
+        ],
+    }
+    # we expect that a new instance gets created
+    new_upload = infra.transfer.get_concurrent_upload(upload.upload_id)
+    assert upload is not new_upload
+    # when resuming we need to fetch the etags associated with the parts already uploaded
+    infra.s3_client.list_parts.assert_called()

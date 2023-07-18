@@ -66,7 +66,7 @@ class Config(StorageModel):
     proxy_info: Optional[ProxyInfo] = None
 
 
-class AzureTransfer(BaseTransfer[Config]):
+class AzureTransfer(BaseTransfer[Config]):  # pylint: disable=abstract-method
     config_model = Config
 
     def __init__(
