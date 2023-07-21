@@ -82,3 +82,28 @@ jobs:
         uses: codecov/codecov-action@f32b3a3741e1053eb607407145bc9619351dc93b
         with:
           verbose: true
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - id: checkout-src-docs
+        uses: actions/checkout@v3
+        with:
+          persist-credentials: false
+          path: pr
+
+      - id: checkout-gh-pages
+        uses: actions/checkout@v3
+        with:
+          persist-credentials: false
+          path: gh-pages
+          ref: gh-pages
+
+      - id: prepare-python
+        uses: actions/setup-python@v4
+
+      - id: prepare-sphinx
+        run: pip install sphinx==4.5.0 sphinx-rtd-theme==1.0.0
+
+      - id: run-sphinx
+        run: sphinx-build -b html pr/docs gh-pages -E -d $GITHUB_WORKSPACE/.doctree
