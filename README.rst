@@ -5,7 +5,7 @@ providing functionality for compression, encryption and transferring
 data between the database and an object storage. Rohmu supports main
 public clouds such as GCP, AWS and Azure for backup storage. Rohmu is
 used in various backup tools such as
-`PGHhoard <https://github.com/aiven/pghoard>`__ for PostgreSQL,
+`PGHoard <https://github.com/aiven/pghoard>`__ for PostgreSQL,
 `MyHoard <https://github.com/aiven/myhoard>`__ for MySQL and
 `Astacus <https://github.com/aiven/astacus>`__ for M3 and ClickHouse and
 other databases.
