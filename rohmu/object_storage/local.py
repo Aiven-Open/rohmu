@@ -5,13 +5,18 @@ Copyright (c) 2016 Ohmu Ltd
 Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
-from ..common.models import StorageModel
+from __future__ import annotations
+
+from ..common.models import StorageModel, StorageOperation
 from ..common.statsd import StatsdConfig
-from ..errors import FileNotFoundFromStorageError
+from ..errors import FileNotFoundFromStorageError, StorageError
 from ..notifier.interface import Notifier
 from ..typing import Metadata
+from ..util import BinaryStreamsConcatenation
 from .base import (
     BaseTransfer,
+    ConcurrentUploadData,
+    ConcurrentUploadId,
     IncrementalProgressCallbackType,
     IterKeyItem,
     KEY_TYPE_OBJECT,
@@ -28,6 +33,7 @@ import json
 import os
 import shutil
 import tempfile
+import uuid
 
 CHUNK_SIZE = 1024 * 1024
 INTERNAL_METADATA_KEY_HASH = "_hash"
@@ -43,6 +49,7 @@ class LocalTransfer(BaseTransfer[Config]):
     config_model = Config
 
     is_thread_safe = True
+    supports_concurrent_upload = True
 
     def __init__(
         self,
@@ -244,6 +251,68 @@ class LocalTransfer(BaseTransfer[Config]):
             key=key, size=os.path.getsize(target_path), metadata=self.sanitize_metadata(self._filter_metadata(metadata))
         )
 
+    def create_concurrent_upload(
+        self, key: str, metadata: Optional[Metadata] = None, mimetype: Optional[str] = None
+    ) -> ConcurrentUploadId:
+        upload_id = uuid.uuid4().hex
+        chunks_dir = self.format_key_for_backend("concurrent_upload_" + upload_id)
+        os.makedirs(chunks_dir, exist_ok=True)
+        self.stats.operation(StorageOperation.create_multipart_upload)
+
+        upload = ConcurrentUploadData("local", upload_id, key)
+        upload_id = self._new_concurrent_upload(upload, metadata)
+        self._concurrent_uploads[upload_id] = (upload, metadata, {})
+        return upload_id
+
+    def upload_concurrent_chunk(
+        self,
+        upload_id: ConcurrentUploadId,
+        chunk_number: int,
+        fd: BinaryIO,
+        upload_progress_fn: IncrementalProgressCallbackType = None,
+    ) -> None:
+        concurrent_data, _, chunks = self._get_concurrent_upload(upload_id)
+        chunks_dir = self.format_key_for_backend("concurrent_upload_" + concurrent_data.backend_id)
+        try:
+            with atomic_create_file_binary(os.path.join(chunks_dir, str(chunk_number))) as chunk_fp:
+                for data in iter(lambda: fd.read(CHUNK_SIZE), b""):
+                    chunk_fp.write(data)
+            chunks[chunk_number] = "no-etag"
+        except OSError as ex:
+            raise StorageError(
+                "Failed to upload chunk {} of multipart upload for {}".format(chunk_number, concurrent_data.key)
+            ) from ex
+
+    def complete_concurrent_upload(self, upload_id: ConcurrentUploadId) -> None:
+        concurrent_data, metadata, chunks = self._get_concurrent_upload(upload_id)
+        chunks_dir = self.format_key_for_backend("concurrent_upload_" + concurrent_data.backend_id)
+        try:
+            chunk_filenames = sorted(
+                (str(chunk_number) for chunk_number in chunks),
+                key=int,
+            )
+            chunk_files = (open(os.path.join(chunks_dir, chunk_file), "rb") for chunk_file in chunk_filenames)
+            stream = BinaryStreamsConcatenation(chunk_files)
+        except OSError as ex:
+            raise StorageError("Failed to complete multipart upload for {}".format(concurrent_data.key)) from ex
+        self.store_file_object(
+            concurrent_data.key,
+            stream,  # type: ignore[arg-type]
+            metadata=metadata,
+        )
+        try:
+            shutil.rmtree(chunks_dir)
+        except OSError as ex:
+            self.log.exception("Could not clean up temporary directory %r", chunks_dir)
+
+    def abort_concurrent_upload(self, upload_id: ConcurrentUploadId) -> None:
+        concurrent_data, _, _ = self._get_concurrent_upload(upload_id)
+        chunks_dir = self.format_key_for_backend("concurrent_upload_" + concurrent_data.backend_id)
+        try:
+            shutil.rmtree(chunks_dir)
+        except OSError as ex:
+            raise StorageError("Failed to abort multipart upload for {}".format(concurrent_data.key)) from ex
+
 
 @contextlib.contextmanager
 def atomic_create_file(file_path: str) -> Iterator[TextIO]:
@@ -253,6 +322,21 @@ def atomic_create_file(file_path: str) -> Iterator[TextIO]:
     )
     try:
         with os.fdopen(fd, "w") as out_file:
+            yield out_file
+
+        os.rename(tmp_file_path, file_path)
+    except Exception:  # pytest: disable=broad-except
+        with contextlib.suppress(Exception):
+            os.unlink(tmp_file_path)
+        raise
+
+
+@contextlib.contextmanager
+def atomic_create_file_binary(file_path: str) -> Iterator[BinaryIO]:
+    """Open a temporary file for writing, rename to final name when done"""
+    fd, tmp_file_path = tempfile.mkstemp(prefix=os.path.basename(file_path), dir=os.path.dirname(file_path))
+    try:
+        with os.fdopen(fd, "wb") as out_file:
             yield out_file
 
         os.rename(tmp_file_path, file_path)

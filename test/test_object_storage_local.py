@@ -1,11 +1,14 @@
 """Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from io import BytesIO
-from rohmu.errors import InvalidByteRangeError
+from rohmu.errors import FileNotFoundFromStorageError, InvalidByteRangeError
 from rohmu.object_storage.base import KEY_TYPE_OBJECT
 from rohmu.object_storage.local import LocalTransfer
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 from unittest.mock import MagicMock
 
+import hashlib
 import json
 import os
 import pytest
@@ -106,3 +109,120 @@ def test_can_handle_metadata_without_md5() -> None:
         last_modified = result.pop("last_modified")
         assert last_modified is not None
         assert result == expected_value
+
+
+def test_can_upload_files_concurrently() -> None:
+    with TemporaryDirectory() as destdir:
+        notifier = MagicMock()
+        transfer = LocalTransfer(
+            directory=destdir,
+            notifier=notifier,
+        )
+        upload_id = transfer.create_concurrent_upload(key="test_key1", metadata={"some-key": "some-value"})
+        # should end up with b"Hello, World!\nHello, World!"
+        expected_data = b"Hello, World!\nHello, World!"
+        transfer.upload_concurrent_chunk(upload_id, 3, BytesIO(b"Hello"))
+        transfer.upload_concurrent_chunk(upload_id, 4, BytesIO(b", "))
+        transfer.upload_concurrent_chunk(upload_id, 1, BytesIO(b"Hello, World!"))
+        transfer.upload_concurrent_chunk(upload_id, 7, BytesIO(b"!"))
+        transfer.upload_concurrent_chunk(upload_id, 2, BytesIO(b"\n"))
+        transfer.upload_concurrent_chunk(upload_id, 6, BytesIO(b"ld"))
+        transfer.upload_concurrent_chunk(upload_id, 5, BytesIO(b"Wor"))
+        transfer.complete_concurrent_upload(upload_id)
+
+        # we can read the metadata
+        assert transfer.get_metadata_for_key("test_key1") == {"some-key": "some-value"}
+        # and we can also load the file information iterating over the storage
+        item = next(transfer.iter_key("test_key1", with_metadata=True, include_key=True))
+        assert item.type == KEY_TYPE_OBJECT
+        result = item.value
+        assert isinstance(result, dict)
+
+        hasher = hashlib.sha256()
+        hasher.update(expected_data)
+        md5 = hasher.hexdigest()  # yes, currently we return an "md5" that is really the sha256 of the contents.
+        expected_value = {
+            "md5": md5,
+            "name": "test_key1",
+            "size": len(expected_data),
+            "metadata": {"some-key": "some-value"},
+        }
+        last_modified = result.pop("last_modified")
+        assert last_modified is not None
+        assert result == expected_value
+        # TODO: test that we cleanup temporary files
+
+
+def test_can_upload_files_concurrently_with_threads() -> None:
+    with TemporaryDirectory() as destdir:
+        notifier = MagicMock()
+        transfer = LocalTransfer(
+            directory=destdir,
+            notifier=notifier,
+        )
+        upload_id = transfer.create_concurrent_upload(key="test_key1", metadata={"some-key": "some-value"})
+        # should end up with b"Hello, World!\nHello, World!"
+        expected_data = b"Hello, World!\nHello, World!"
+
+        with ThreadPoolExecutor() as pool:
+            pool.map(
+                partial(transfer.upload_concurrent_chunk, upload_id),
+                [3, 4, 1, 7, 2, 6, 5],
+                [
+                    BytesIO(b"Hello"),
+                    BytesIO(b", "),
+                    BytesIO(b"Hello, World!"),
+                    BytesIO(b"!"),
+                    BytesIO(b"\n"),
+                    BytesIO(b"ld"),
+                    BytesIO(b"Wor"),
+                ],
+            )
+
+        transfer.complete_concurrent_upload(upload_id)
+
+        # we can read the metadata
+        assert transfer.get_metadata_for_key("test_key1") == {"some-key": "some-value"}
+        # and we can also load the file information iterating over the storage
+        item = next(transfer.iter_key("test_key1", with_metadata=True, include_key=True))
+        assert item.type == KEY_TYPE_OBJECT
+        result = item.value
+        assert isinstance(result, dict)
+
+        hasher = hashlib.sha256()
+        hasher.update(expected_data)
+        md5 = hasher.hexdigest()  # yes, currently we return an "md5" that is really the sha256 of the contents.
+        expected_value = {
+            "md5": md5,
+            "name": "test_key1",
+            "size": len(expected_data),
+            "metadata": {"some-key": "some-value"},
+        }
+        last_modified = result.pop("last_modified")
+        assert last_modified is not None
+        assert result == expected_value
+
+
+def test_upload_files_concurrently_can_be_aborted() -> None:
+    with TemporaryDirectory() as destdir:
+        notifier = MagicMock()
+        transfer = LocalTransfer(
+            directory=destdir,
+            notifier=notifier,
+        )
+        upload_id = transfer.create_concurrent_upload(key="test_key1", metadata={"some-key": "some-value"})
+        # should end up with b"Hello, World!\nHello, World!"
+        transfer.upload_concurrent_chunk(upload_id, 3, BytesIO(b"Hello"))
+        transfer.upload_concurrent_chunk(upload_id, 4, BytesIO(b", "))
+        transfer.upload_concurrent_chunk(upload_id, 1, BytesIO(b"Hello, World!"))
+        transfer.upload_concurrent_chunk(upload_id, 7, BytesIO(b"!"))
+        transfer.upload_concurrent_chunk(upload_id, 2, BytesIO(b"\n"))
+        transfer.upload_concurrent_chunk(upload_id, 6, BytesIO(b"ld"))
+        transfer.upload_concurrent_chunk(upload_id, 5, BytesIO(b"Wor"))
+        transfer.abort_concurrent_upload(upload_id)
+
+        # we should not be able to find this
+        with pytest.raises(FileNotFoundFromStorageError):
+            transfer.get_metadata_for_key("test_key1")
+
+        # TODO: test that we cleanup temporary files
