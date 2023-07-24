@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from io import BytesIO
-from rohmu.util import BinaryStreamsConcatenation, get_total_size_from_content_range
+from io import BytesIO, UnsupportedOperation
+from rohmu.util import BinaryStreamsConcatenation, get_total_size_from_content_range, ProgressStream
 from typing import Optional
 
 import pytest
@@ -41,3 +41,33 @@ def test_binary_stream_concatenation(
     for output_chunk in iter(lambda: concatenation.read(chunk_size), b""):
         outputs.append(output_chunk)
     assert outputs == expected_outputs
+
+
+def test_progress_stream() -> None:
+    stream = BytesIO(b"Hello, World!\nSecond line\nThis is a longer third line\n")
+    progress_stream = ProgressStream(stream)
+    assert progress_stream.readable()
+    assert not progress_stream.writable()
+    assert not progress_stream.seekable()
+
+    assert progress_stream.read(14) == b"Hello, World!\n"
+    assert progress_stream.bytes_read == 14
+    assert progress_stream.readlines() == [b"Second line\n", b"This is a longer third line\n"]
+    assert progress_stream.bytes_read == 54
+
+    with pytest.raises(UnsupportedOperation):
+        progress_stream.seek(0)
+    with pytest.raises(UnsupportedOperation):
+        progress_stream.truncate(0)
+    with pytest.raises(UnsupportedOperation):
+        progress_stream.write(b"Something")
+    with pytest.raises(UnsupportedOperation):
+        progress_stream.writelines([b"Something"])
+    with pytest.raises(UnsupportedOperation):
+        progress_stream.fileno()
+
+    assert not progress_stream.closed
+    with progress_stream:
+        # check that __exit__ closes the file
+        pass
+    assert progress_stream.closed

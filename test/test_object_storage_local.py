@@ -211,15 +211,24 @@ def test_upload_files_concurrently_can_be_aborted() -> None:
             notifier=notifier,
         )
         upload_id = transfer.create_concurrent_upload(key="test_key1", metadata={"some-key": "some-value"})
+
+        total = 0
+
+        def inc_progress(size: int) -> None:
+            nonlocal total
+            total += size
+
         # should end up with b"Hello, World!\nHello, World!"
-        transfer.upload_concurrent_chunk(upload_id, 3, BytesIO(b"Hello"))
-        transfer.upload_concurrent_chunk(upload_id, 4, BytesIO(b", "))
-        transfer.upload_concurrent_chunk(upload_id, 1, BytesIO(b"Hello, World!"))
-        transfer.upload_concurrent_chunk(upload_id, 7, BytesIO(b"!"))
-        transfer.upload_concurrent_chunk(upload_id, 2, BytesIO(b"\n"))
-        transfer.upload_concurrent_chunk(upload_id, 6, BytesIO(b"ld"))
-        transfer.upload_concurrent_chunk(upload_id, 5, BytesIO(b"Wor"))
+        transfer.upload_concurrent_chunk(upload_id, 3, BytesIO(b"Hello"), upload_progress_fn=inc_progress)
+        transfer.upload_concurrent_chunk(upload_id, 4, BytesIO(b", "), upload_progress_fn=inc_progress)
+        transfer.upload_concurrent_chunk(upload_id, 1, BytesIO(b"Hello, World!"), upload_progress_fn=inc_progress)
+        transfer.upload_concurrent_chunk(upload_id, 7, BytesIO(b"!"), upload_progress_fn=inc_progress)
+        transfer.upload_concurrent_chunk(upload_id, 2, BytesIO(b"\n"), upload_progress_fn=inc_progress)
+        transfer.upload_concurrent_chunk(upload_id, 6, BytesIO(b"ld"), upload_progress_fn=inc_progress)
+        transfer.upload_concurrent_chunk(upload_id, 5, BytesIO(b"Wor"), upload_progress_fn=inc_progress)
         transfer.abort_concurrent_upload(upload_id)
+
+        assert total == 27
 
         # we should not be able to find this
         with pytest.raises(FileNotFoundFromStorageError):

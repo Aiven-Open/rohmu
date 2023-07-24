@@ -4,15 +4,19 @@ rohmu - common utility functions
 Copyright (c) 2022 Ohmu Ltd
 See LICENSE for details
 """
-from io import BytesIO
+from __future__ import annotations
+
+from io import BytesIO, UnsupportedOperation
 from itertools import islice
 from rohmu.typing import HasFileno
 from typing import BinaryIO, Generator, Iterable, Optional, Tuple, TypeVar, Union
+from typing_extensions import Buffer
 
 import fcntl
 import logging
 import os
 import platform
+import types
 
 LOG = logging.getLogger("rohmu.util")
 
@@ -109,3 +113,94 @@ class BinaryStreamsConcatenation:
                 break
 
         return result.getvalue()
+
+
+class ProgressStream(BinaryIO):
+    """Wrapper for binary streams that can report the amount of bytes read through it."""
+
+    def __init__(self, raw_stream: BinaryIO) -> None:
+        self.raw_stream = raw_stream
+        self.bytes_read = 0
+
+    def seekable(self) -> bool:
+        return False
+
+    def writable(self) -> bool:
+        return False
+
+    def readable(self) -> bool:
+        return True
+
+    @property
+    def closed(self) -> bool:
+        return self.raw_stream.closed
+
+    @property
+    def name(self) -> str:
+        return self.raw_stream.name
+
+    @property
+    def mode(self) -> str:
+        return self.raw_stream.mode
+
+    def read(self, n: int = -1) -> bytes:
+        data = self.raw_stream.read(n)
+        self.bytes_read += len(data)
+        return data
+
+    def readline(self, limit: int = -1) -> bytes:
+        line = self.raw_stream.readline(limit)
+        self.bytes_read += len(line)
+        return line
+
+    def readlines(self, hint: int = -1) -> list[bytes]:
+        lines = self.raw_stream.readlines(hint)
+        self.bytes_read += sum(map(len, lines))
+        return lines
+
+    def __iter__(self) -> "ProgressStream":
+        return self
+
+    def __next__(self) -> bytes:
+        data = next(self.raw_stream)
+        self.bytes_read += len(data)
+        return data
+
+    def __enter__(self) -> "ProgressStream":
+        self.raw_stream.__enter__()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[types.TracebackType],
+    ) -> None:
+        return self.raw_stream.__exit__(exc_type, exc_val, exc_tb)
+
+    def close(self) -> None:
+        self.raw_stream.close()
+
+    def flush(self) -> None:
+        self.raw_stream.flush()
+
+    def isatty(self) -> bool:
+        return self.raw_stream.isatty()
+
+    def tell(self) -> int:
+        return self.raw_stream.tell()
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        raise UnsupportedOperation("seek")
+
+    def truncate(self, size: Optional[int] = None) -> int:
+        raise UnsupportedOperation("truncate")
+
+    def write(self, s: Union[bytes, Buffer]) -> int:
+        raise UnsupportedOperation("write")
+
+    def writelines(self, __lines: Union[Iterable[bytes], Iterable[Buffer]]) -> None:
+        raise UnsupportedOperation("writelines")
+
+    def fileno(self) -> int:
+        raise UnsupportedOperation("fileno")

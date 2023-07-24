@@ -12,7 +12,7 @@ from ..common.statsd import StatsdConfig
 from ..errors import FileNotFoundFromStorageError, StorageError
 from ..notifier.interface import Notifier
 from ..typing import Metadata
-from ..util import BinaryStreamsConcatenation
+from ..util import BinaryStreamsConcatenation, ProgressStream
 from .base import (
     BaseTransfer,
     ConcurrentUploadData,
@@ -275,8 +275,13 @@ class LocalTransfer(BaseTransfer[Config]):
         chunks_dir = self.format_key_for_backend("concurrent_upload_" + concurrent_data.backend_id)
         try:
             with atomic_create_file_binary(os.path.join(chunks_dir, str(chunk_number))) as chunk_fp:
-                for data in iter(lambda: fd.read(CHUNK_SIZE), b""):
+                wrapped_fd = ProgressStream(fd)
+                for data in iter(lambda: wrapped_fd.read(CHUNK_SIZE), b""):
                     chunk_fp.write(data)
+                bytes_read = wrapped_fd.bytes_read
+            if upload_progress_fn:
+                upload_progress_fn(bytes_read)
+            self.stats.operation(StorageOperation.store_file, size=bytes_read)
             chunks[chunk_number] = "no-etag"
         except OSError as ex:
             raise StorageError(

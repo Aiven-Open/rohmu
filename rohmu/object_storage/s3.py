@@ -26,7 +26,8 @@ from .base import (
 )
 from botocore.response import StreamingBody
 from enum import Enum, unique
-from rohmu.util import batched
+from functools import partial
+from rohmu.util import batched, ProgressStream
 from typing import Any, BinaryIO, cast, Collection, Iterator, Optional, Tuple, TYPE_CHECKING, Union
 
 import botocore.client
@@ -630,6 +631,7 @@ class S3Transfer(BaseTransfer[Config]):
             key=lambda part: part["PartNumber"],
         )
         try:
+            self.stats.operation(StorageOperation.multipart_complete)
             self.s3_client.complete_multipart_upload(
                 Bucket=self.bucket_name,
                 Key=backend_key,
@@ -647,6 +649,7 @@ class S3Transfer(BaseTransfer[Config]):
         concurrent_data, _, _ = self._get_concurrent_upload(upload_id)
         backend_key = self.format_key_for_backend(concurrent_data.key, remove_slash_prefix=True)
         try:
+            self.stats.operation(StorageOperation.multipart_aborted)
             self.s3_client.abort_multipart_upload(
                 Bucket=self.bucket_name,
                 Key=backend_key,
@@ -671,13 +674,20 @@ class S3Transfer(BaseTransfer[Config]):
         concurrent_data, _, chunks = self._get_concurrent_upload(upload_id)
         backend_key = self.format_key_for_backend(concurrent_data.key, remove_slash_prefix=True)
         try:
-            response = self.s3_client.upload_part(
+            upload_func = partial(
+                self.s3_client.upload_part,
                 Bucket=self.bucket_name,
                 Key=backend_key,
                 UploadId=concurrent_data.backend_id,
-                Body=fd,
                 PartNumber=chunk_number,
             )
+            body = ProgressStream(fd)
+            response = upload_func(Body=body)
+            if upload_progress_fn:
+                upload_progress_fn(body.bytes_read)
+            else:
+                response = upload_func(Body=fd)
+            self.stats.operation(StorageOperation.store_file, size=body.bytes_read)
             chunks[chunk_number] = response["ETag"]
         except botocore.exceptions.ClientError as ex:
             raise StorageError(
