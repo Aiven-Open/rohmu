@@ -1,4 +1,6 @@
 """Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
+from __future__ import annotations
+
 from botocore.response import StreamingBody
 from dataclasses import dataclass
 from datetime import datetime
@@ -7,7 +9,7 @@ from rohmu.common.models import StorageOperation
 from rohmu.errors import InvalidByteRangeError
 from rohmu.object_storage.s3 import S3Transfer
 from tempfile import NamedTemporaryFile
-from typing import Any, Iterator, Optional
+from typing import Any, BinaryIO, Iterator, Optional
 from unittest.mock import MagicMock
 
 import pytest
@@ -133,3 +135,72 @@ def test_get_contents_to_fileobj_passes_the_correct_range_header(infra: S3Infra)
     infra.s3_client.get_object.assert_called_once_with(
         Bucket="test-bucket", Key="test-prefix/test_key", Range="bytes=10-100"
     )
+
+
+def test_concurrent_upload_complete(infra: S3Infra) -> None:
+    metadata = {"some-date": datetime(2022, 11, 15, 18, 30, 58, 486644)}
+    infra.s3_client.create_multipart_upload.return_value = {"UploadId": "<aws-mpu-id>"}
+
+    def upload_part_side_effect(Body: BinaryIO, **_kwargs: Any) -> dict[str, str]:
+        # to check the progress function we need to actually consume the body
+        Body.read()
+        return {"ETag": "some-etag"}
+
+    infra.s3_client.upload_part.side_effect = upload_part_side_effect
+    transfer = infra.transfer
+    upload_id = transfer.create_concurrent_upload("test_key", metadata=metadata)
+
+    total = 0
+
+    def inc_progress(size: int) -> None:
+        nonlocal total
+        total += size
+
+    transfer.upload_concurrent_chunk(upload_id, 1, BytesIO(b"Hello, "), upload_progress_fn=inc_progress)
+    # we can upload chunks in non-monotonically increasing order
+    transfer.upload_concurrent_chunk(upload_id, 3, BytesIO(b"!"), upload_progress_fn=inc_progress)
+    transfer.upload_concurrent_chunk(upload_id, 2, BytesIO(b"World"), upload_progress_fn=inc_progress)
+    transfer.complete_concurrent_upload(upload_id)
+
+    notifier = infra.notifier
+    s3_client = infra.s3_client
+
+    s3_client.create_multipart_upload.assert_called()
+    s3_client.upload_part.assert_called()
+    s3_client.complete_multipart_upload.assert_called_once_with(
+        Bucket=transfer.bucket_name,
+        Key="test-prefix/test_key",
+        MultipartUpload={"Parts": [{"ETag": "some-etag", "PartNumber": part} for part in (1, 2, 3)]},
+        UploadId="<aws-mpu-id>",
+        RequestPayer="requester",
+    )
+
+    # we notify the creation of the object
+    notifier.object_created.assert_called_once_with(
+        key="test-prefix/test_key",
+        size=None,
+        metadata={"some-date": "2022-11-15 18:30:58.486644"},
+    )
+
+    assert total == 13
+
+
+def test_concurrent_upload_abort(infra: S3Infra) -> None:
+    infra.s3_client.create_multipart_upload.return_value = {"UploadId": "<aws-mpu-id>"}
+    transfer = infra.transfer
+    upload_id = transfer.create_concurrent_upload("test_key")
+    transfer.upload_concurrent_chunk(upload_id, 1, BytesIO(b"Hello, "))
+    transfer.abort_concurrent_upload(upload_id)
+
+    notifier = infra.notifier
+    s3_client = infra.s3_client
+
+    s3_client.create_multipart_upload.assert_called()
+    s3_client.upload_part.assert_called()
+    s3_client.complete_multipart_upload.assert_not_called()
+    s3_client.abort_multipart_upload.assert_called()
+
+    # no notification is sent in this case!
+    notifier.object_created.assert_not_called()
+
+    # TODO: check that we cleaned up temporary data
