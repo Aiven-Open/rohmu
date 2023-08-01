@@ -258,11 +258,11 @@ class LocalTransfer(BaseTransfer[Config]):
         self, key: str, metadata: Optional[Metadata] = None, mimetype: Optional[str] = None
     ) -> ConcurrentUploadId:
         upload_id = uuid.uuid4().hex
-        chunks_dir = self.format_key_for_backend("concurrent_upload_" + upload_id)
+        upload = ConcurrentUploadData("local", upload_id, key)
+        chunks_dir = self._get_chunks_dir(upload)
         os.makedirs(chunks_dir, exist_ok=True)
         self.stats.operation(StorageOperation.create_multipart_upload)
 
-        upload = ConcurrentUploadData("local", upload_id, key)
         upload_id = self._new_concurrent_upload(upload, metadata)
         self._concurrent_uploads[upload_id] = (upload, metadata, {})
         return upload_id
@@ -275,7 +275,7 @@ class LocalTransfer(BaseTransfer[Config]):
         upload_progress_fn: IncrementalProgressCallbackType = None,
     ) -> None:
         concurrent_data, _, chunks = self._get_concurrent_upload(upload_id)
-        chunks_dir = self.format_key_for_backend("concurrent_upload_" + concurrent_data.backend_id)
+        chunks_dir = self._get_chunks_dir(concurrent_data)
         try:
             with atomic_create_file_binary(os.path.join(chunks_dir, str(chunk_number))) as chunk_fp:
                 wrapped_fd = ProgressStream(fd)
@@ -293,7 +293,7 @@ class LocalTransfer(BaseTransfer[Config]):
 
     def complete_concurrent_upload(self, upload_id: ConcurrentUploadId) -> None:
         concurrent_data, metadata, chunks = self._get_concurrent_upload(upload_id)
-        chunks_dir = self.format_key_for_backend("concurrent_upload_" + concurrent_data.backend_id)
+        chunks_dir = self._get_chunks_dir(concurrent_data)
         try:
             chunk_filenames = sorted(
                 (str(chunk_number) for chunk_number in chunks),
@@ -315,11 +315,14 @@ class LocalTransfer(BaseTransfer[Config]):
 
     def abort_concurrent_upload(self, upload_id: ConcurrentUploadId) -> None:
         concurrent_data, _, _ = self._get_concurrent_upload(upload_id)
-        chunks_dir = self.format_key_for_backend("concurrent_upload_" + concurrent_data.backend_id)
+        chunks_dir = self._get_chunks_dir(concurrent_data)
         try:
             shutil.rmtree(chunks_dir)
         except OSError as ex:
             raise StorageError("Failed to abort multipart upload for {}".format(concurrent_data.key)) from ex
+
+    def _get_chunks_dir(self, concurrent_data: ConcurrentUploadData) -> str:
+        return self.format_key_for_backend(".concurrent_upload_" + concurrent_data.backend_id)
 
 
 @contextlib.contextmanager

@@ -1,4 +1,5 @@
 """Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
+from base64 import b64decode
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from io import BytesIO
@@ -129,6 +130,13 @@ def test_can_upload_files_concurrently() -> None:
         transfer.upload_concurrent_chunk(upload_id, 2, BytesIO(b"\n"))
         transfer.upload_concurrent_chunk(upload_id, 6, BytesIO(b"ld"))
         transfer.upload_concurrent_chunk(upload_id, 5, BytesIO(b"Wor"))
+
+        # we don't see the temporary files created during upload
+        assert transfer.list_prefixes(key="/") == []
+        assert transfer.list_path(key="/", deep=True) == []
+        backend_id = json.loads(b64decode(upload_id.encode("ascii")).decode("ascii"))["backend_id"]
+        assert os.path.exists(os.path.join(destdir, f".concurrent_upload_{backend_id}"))
+
         transfer.complete_concurrent_upload(upload_id)
 
         # we can read the metadata
@@ -151,7 +159,8 @@ def test_can_upload_files_concurrently() -> None:
         last_modified = result.pop("last_modified")
         assert last_modified is not None
         assert result == expected_value
-        # TODO: test that we cleanup temporary files
+        # we don't leave around spurious temporary files
+        assert not os.path.exists(os.path.join(destdir, f".concurrent_upload_{upload_id}"))
 
 
 def test_can_upload_files_concurrently_with_threads() -> None:
