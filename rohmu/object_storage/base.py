@@ -66,6 +66,7 @@ class BaseTransfer(Generic[StorageModelT]):
 
     is_thread_safe: bool = False
     supports_concurrent_upload: bool = False
+    _concurrent_uploads: dict[str, tuple[ConcurrentUploadData, Optional[Metadata], dict[int, str]]]
 
     def __init__(
         self, prefix: Optional[str], notifier: Optional[Notifier] = None, statsd_info: Optional[StatsdConfig] = None
@@ -78,7 +79,6 @@ class BaseTransfer(Generic[StorageModelT]):
         self.prefix = prefix
         self.notifier = notifier or NullNotifier()
         self.stats = StatsClient(statsd_info)
-        self._concurrent_uploads: dict[str, tuple[ConcurrentUploadData, Optional[Metadata], dict[int, str]]] = {}
 
     @staticmethod
     def _incremental_to_proportional_progress(

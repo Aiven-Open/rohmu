@@ -135,6 +135,7 @@ class S3Transfer(BaseTransfer[Config]):
     config_model = Config
 
     supports_concurrent_upload = True
+    _concurrent_uploads: dict[str, tuple[ConcurrentUploadData, Optional[Metadata], dict[int, str]]] = {}
 
     def __init__(
         self,

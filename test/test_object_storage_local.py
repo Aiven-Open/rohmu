@@ -2,6 +2,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from io import BytesIO
+from itertools import cycle
 from rohmu.errors import FileNotFoundFromStorageError, InvalidByteRangeError
 from rohmu.object_storage.base import KEY_TYPE_OBJECT
 from rohmu.object_storage.local import LocalTransfer
@@ -203,6 +204,60 @@ def test_can_upload_files_concurrently_with_threads() -> None:
         assert result == expected_value
 
 
+def test_can_upload_files_concurrently_with_threads_using_different_transfer_instances() -> None:
+    with TemporaryDirectory() as destdir:
+        notifier = MagicMock()
+        first_transfer = LocalTransfer(
+            directory=destdir,
+            notifier=notifier,
+        )
+        second_transfer = LocalTransfer(
+            directory=destdir,
+            notifier=notifier,
+        )
+        upload_id = first_transfer.create_concurrent_upload(key="test_key1", metadata={"some-key": "some-value"})
+        # should end up with b"Hello, World!\nHello, World!"
+        expected_data = b"Hello, World!\nHello, World!"
+
+        with ThreadPoolExecutor() as pool:
+            data_chunks = [
+                BytesIO(b"Hello"),
+                BytesIO(b", "),
+                BytesIO(b"Hello, World!"),
+                BytesIO(b"!"),
+                BytesIO(b"\n"),
+                BytesIO(b"ld"),
+                BytesIO(b"Wor"),
+            ]
+            futures = []
+            for i, data, transfer in zip([3, 4, 1, 7, 2, 6, 5], data_chunks, cycle([first_transfer, second_transfer])):
+                futures.append(pool.submit(partial(transfer.upload_concurrent_chunk, upload_id), i, data))
+            for future in futures:
+                future.result()
+        first_transfer.complete_concurrent_upload(upload_id)
+
+        # we can read the metadata
+        assert first_transfer.get_metadata_for_key("test_key1") == {"some-key": "some-value"}
+        # and we can also load the file information iterating over the storage
+        item = next(first_transfer.iter_key("test_key1", with_metadata=True, include_key=True))
+        assert item.type == KEY_TYPE_OBJECT
+        result = item.value
+        assert isinstance(result, dict)
+
+        hasher = hashlib.sha256()
+        hasher.update(expected_data)
+        md5 = hasher.hexdigest()
+        expected_value = {
+            "md5": md5,
+            "name": "test_key1",
+            "size": len(expected_data),
+            "metadata": {"some-key": "some-value"},
+        }
+        last_modified = result.pop("last_modified")
+        assert last_modified is not None
+        assert result == expected_value
+
+
 def test_upload_files_concurrently_can_be_aborted() -> None:
     with TemporaryDirectory() as destdir:
         notifier = MagicMock()
@@ -233,5 +288,3 @@ def test_upload_files_concurrently_can_be_aborted() -> None:
         # we should not be able to find this
         with pytest.raises(FileNotFoundFromStorageError):
             transfer.get_metadata_for_key("test_key1")
-
-        # TODO: test that we cleanup temporary files

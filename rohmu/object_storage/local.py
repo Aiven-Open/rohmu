@@ -51,6 +51,9 @@ class LocalTransfer(BaseTransfer[Config]):
     is_thread_safe = True
     supports_concurrent_upload = True
 
+    # state of concurrent uploads is shared between instances of the class to allow easy use of the transfer pool
+    _concurrent_uploads: dict[str, tuple[ConcurrentUploadData, Optional[Metadata], dict[int, str]]] = {}
+
     def __init__(
         self,
         directory: Union[str, Path],
