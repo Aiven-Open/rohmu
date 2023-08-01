@@ -13,13 +13,11 @@ from ..errors import FileNotFoundFromStorageError, InvalidByteRangeError, Storag
 from ..notifier.interface import Notifier
 from ..notifier.null import NullNotifier
 from ..typing import AnyPath, Metadata
-from base64 import b64encode
 from contextlib import suppress
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, field
 from io import BytesIO
 from typing import Any, BinaryIO, Callable, Collection, Generic, Iterator, NamedTuple, Optional, Tuple, Type, TypeVar, Union
 
-import json
 import logging
 import os
 import platform
@@ -51,14 +49,13 @@ class Config(StorageModel):
 StorageModelT = TypeVar("StorageModelT", bound=StorageModel)
 
 
-@dataclass(frozen=True)
-class ConcurrentUploadData:
+@dataclass(frozen=True, unsafe_hash=True)
+class ConcurrentUpload:
     backend: str
     backend_id: str
     key: str
-
-
-ConcurrentUploadId = str
+    metadata: Optional[Metadata]
+    chunks_to_etags: dict[int, str] = field(default_factory=dict, hash=False, compare=False)
 
 
 class BaseTransfer(Generic[StorageModelT]):
@@ -66,7 +63,6 @@ class BaseTransfer(Generic[StorageModelT]):
 
     is_thread_safe: bool = False
     supports_concurrent_upload: bool = False
-    _concurrent_uploads: dict[str, tuple[ConcurrentUploadData, Optional[Metadata], dict[int, str]]]
 
     def __init__(
         self, prefix: Optional[str], notifier: Optional[Notifier] = None, statsd_info: Optional[StatsdConfig] = None
@@ -326,19 +322,13 @@ class BaseTransfer(Generic[StorageModelT]):
     ) -> None:
         raise NotImplementedError
 
-    def _new_concurrent_upload(self, data: ConcurrentUploadData, metadata: Optional[Metadata]) -> ConcurrentUploadId:
-        upload_id = b64encode(json.dumps(asdict(data)).encode("ascii")).decode("ascii")
-        self._concurrent_uploads[upload_id] = (data, metadata, {})
-        return upload_id
-
-    def _get_concurrent_upload(
-        self, upload_id: ConcurrentUploadId
-    ) -> tuple[ConcurrentUploadData, Optional[Metadata], dict[int, str]]:
-        return self._concurrent_uploads[upload_id]
-
     def create_concurrent_upload(
-        self, key: str, metadata: Optional[Metadata] = None, mimetype: Optional[str] = None
-    ) -> ConcurrentUploadId:
+        self,
+        key: str,
+        metadata: Optional[Metadata] = None,
+        mimetype: Optional[str] = None,
+        cache_control: Optional[str] = None,
+    ) -> ConcurrentUpload:
         """Starts a concurrent upload to the object storage.
         :param key: the key of the object to upload
         :param metadata: metadata to be associated with the object
@@ -348,7 +338,7 @@ class BaseTransfer(Generic[StorageModelT]):
 
     def upload_concurrent_chunk(
         self,
-        upload_id: ConcurrentUploadId,
+        upload: ConcurrentUpload,
         chunk_number: int,
         fd: BinaryIO,
         upload_progress_fn: IncrementalProgressCallbackType = None,
@@ -359,11 +349,11 @@ class BaseTransfer(Generic[StorageModelT]):
         """
         raise NotImplementedError
 
-    def complete_concurrent_upload(self, upload_id: ConcurrentUploadId) -> None:
+    def complete_concurrent_upload(self, upload: ConcurrentUpload) -> None:
         """Completes the concurrent upload."""
         raise NotImplementedError
 
-    def abort_concurrent_upload(self, upload_id: ConcurrentUploadId) -> None:
+    def abort_concurrent_upload(self, upload: ConcurrentUpload) -> None:
         """Aborts the concurrent upload."""
         raise NotImplementedError
 

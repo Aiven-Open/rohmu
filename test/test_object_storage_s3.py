@@ -148,7 +148,7 @@ def test_concurrent_upload_complete(infra: S3Infra) -> None:
 
     infra.s3_client.upload_part.side_effect = upload_part_side_effect
     transfer = infra.transfer
-    upload_id = transfer.create_concurrent_upload("test_key", metadata=metadata)
+    upload = transfer.create_concurrent_upload("test_key", metadata=metadata)
 
     total = 0
 
@@ -156,11 +156,11 @@ def test_concurrent_upload_complete(infra: S3Infra) -> None:
         nonlocal total
         total += size
 
-    transfer.upload_concurrent_chunk(upload_id, 1, BytesIO(b"Hello, "), upload_progress_fn=inc_progress)
+    transfer.upload_concurrent_chunk(upload, 1, BytesIO(b"Hello, "), upload_progress_fn=inc_progress)
     # we can upload chunks in non-monotonically increasing order
-    transfer.upload_concurrent_chunk(upload_id, 3, BytesIO(b"!"), upload_progress_fn=inc_progress)
-    transfer.upload_concurrent_chunk(upload_id, 2, BytesIO(b"World"), upload_progress_fn=inc_progress)
-    transfer.complete_concurrent_upload(upload_id)
+    transfer.upload_concurrent_chunk(upload, 3, BytesIO(b"!"), upload_progress_fn=inc_progress)
+    transfer.upload_concurrent_chunk(upload, 2, BytesIO(b"World"), upload_progress_fn=inc_progress)
+    transfer.complete_concurrent_upload(upload)
 
     notifier = infra.notifier
     s3_client = infra.s3_client
@@ -175,12 +175,8 @@ def test_concurrent_upload_complete(infra: S3Infra) -> None:
         RequestPayer="requester",
     )
 
-    # we notify the creation of the object
-    notifier.object_created.assert_called_once_with(
-        key="test-prefix/test_key",
-        size=None,
-        metadata={"some-date": "2022-11-15 18:30:58.486644"},
-    )
+    # currently we do NOT notify object creation. To notify we really need the size
+    notifier.object_created.assert_not_called()
 
     assert total == 13
 
@@ -188,9 +184,9 @@ def test_concurrent_upload_complete(infra: S3Infra) -> None:
 def test_concurrent_upload_abort(infra: S3Infra) -> None:
     infra.s3_client.create_multipart_upload.return_value = {"UploadId": "<aws-mpu-id>"}
     transfer = infra.transfer
-    upload_id = transfer.create_concurrent_upload("test_key")
-    transfer.upload_concurrent_chunk(upload_id, 1, BytesIO(b"Hello, "))
-    transfer.abort_concurrent_upload(upload_id)
+    upload = transfer.create_concurrent_upload("test_key")
+    transfer.upload_concurrent_chunk(upload, 1, BytesIO(b"Hello, "))
+    transfer.abort_concurrent_upload(upload)
 
     notifier = infra.notifier
     s3_client = infra.s3_client
@@ -200,7 +196,5 @@ def test_concurrent_upload_abort(infra: S3Infra) -> None:
     s3_client.complete_multipart_upload.assert_not_called()
     s3_client.abort_multipart_upload.assert_called()
 
-    # no notification is sent in this case!
+    # no notification is sent
     notifier.object_created.assert_not_called()
-
-    # TODO: check that we cleaned up temporary data

@@ -1,5 +1,4 @@
 """Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
-from base64 import b64decode
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from io import BytesIO
@@ -120,24 +119,23 @@ def test_can_upload_files_concurrently() -> None:
             directory=destdir,
             notifier=notifier,
         )
-        upload_id = transfer.create_concurrent_upload(key="test_key1", metadata={"some-key": "some-value"})
+        upload = transfer.create_concurrent_upload(key="test_key1", metadata={"some-key": "some-value"})
         # should end up with b"Hello, World!\nHello, World!"
         expected_data = b"Hello, World!\nHello, World!"
-        transfer.upload_concurrent_chunk(upload_id, 3, BytesIO(b"Hello"))
-        transfer.upload_concurrent_chunk(upload_id, 4, BytesIO(b", "))
-        transfer.upload_concurrent_chunk(upload_id, 1, BytesIO(b"Hello, World!"))
-        transfer.upload_concurrent_chunk(upload_id, 7, BytesIO(b"!"))
-        transfer.upload_concurrent_chunk(upload_id, 2, BytesIO(b"\n"))
-        transfer.upload_concurrent_chunk(upload_id, 6, BytesIO(b"ld"))
-        transfer.upload_concurrent_chunk(upload_id, 5, BytesIO(b"Wor"))
+        transfer.upload_concurrent_chunk(upload, 3, BytesIO(b"Hello"))
+        transfer.upload_concurrent_chunk(upload, 4, BytesIO(b", "))
+        transfer.upload_concurrent_chunk(upload, 1, BytesIO(b"Hello, World!"))
+        transfer.upload_concurrent_chunk(upload, 7, BytesIO(b"!"))
+        transfer.upload_concurrent_chunk(upload, 2, BytesIO(b"\n"))
+        transfer.upload_concurrent_chunk(upload, 6, BytesIO(b"ld"))
+        transfer.upload_concurrent_chunk(upload, 5, BytesIO(b"Wor"))
 
         # we don't see the temporary files created during upload
         assert transfer.list_prefixes(key="/") == []
         assert transfer.list_path(key="/", deep=True) == []
-        backend_id = json.loads(b64decode(upload_id.encode("ascii")).decode("ascii"))["backend_id"]
-        assert os.path.exists(os.path.join(destdir, f".concurrent_upload_{backend_id}"))
+        assert os.path.exists(os.path.join(destdir, f".concurrent_upload_{upload.backend_id}"))
 
-        transfer.complete_concurrent_upload(upload_id)
+        transfer.complete_concurrent_upload(upload)
 
         # we can read the metadata
         assert transfer.get_metadata_for_key("test_key1") == {"some-key": "some-value"}
@@ -160,7 +158,7 @@ def test_can_upload_files_concurrently() -> None:
         assert last_modified is not None
         assert result == expected_value
         # we don't leave around spurious temporary files
-        assert not os.path.exists(os.path.join(destdir, f".concurrent_upload_{upload_id}"))
+        assert not os.path.exists(os.path.join(destdir, f".concurrent_upload_{upload}"))
 
 
 def test_can_upload_files_concurrently_with_threads() -> None:
@@ -170,13 +168,13 @@ def test_can_upload_files_concurrently_with_threads() -> None:
             directory=destdir,
             notifier=notifier,
         )
-        upload_id = transfer.create_concurrent_upload(key="test_key1", metadata={"some-key": "some-value"})
+        upload = transfer.create_concurrent_upload(key="test_key1", metadata={"some-key": "some-value"})
         # should end up with b"Hello, World!\nHello, World!"
         expected_data = b"Hello, World!\nHello, World!"
 
         with ThreadPoolExecutor() as pool:
             pool.map(
-                partial(transfer.upload_concurrent_chunk, upload_id),
+                partial(transfer.upload_concurrent_chunk, upload),
                 [3, 4, 1, 7, 2, 6, 5],
                 [
                     BytesIO(b"Hello"),
@@ -189,7 +187,7 @@ def test_can_upload_files_concurrently_with_threads() -> None:
                 ],
             )
 
-        transfer.complete_concurrent_upload(upload_id)
+        transfer.complete_concurrent_upload(upload)
 
         # we can read the metadata
         assert transfer.get_metadata_for_key("test_key1") == {"some-key": "some-value"}
@@ -224,7 +222,7 @@ def test_can_upload_files_concurrently_with_threads_using_different_transfer_ins
             directory=destdir,
             notifier=notifier,
         )
-        upload_id = first_transfer.create_concurrent_upload(key="test_key1", metadata={"some-key": "some-value"})
+        upload = first_transfer.create_concurrent_upload(key="test_key1", metadata={"some-key": "some-value"})
         # should end up with b"Hello, World!\nHello, World!"
         expected_data = b"Hello, World!\nHello, World!"
 
@@ -240,10 +238,10 @@ def test_can_upload_files_concurrently_with_threads_using_different_transfer_ins
             ]
             futures = []
             for i, data, transfer in zip([3, 4, 1, 7, 2, 6, 5], data_chunks, cycle([first_transfer, second_transfer])):
-                futures.append(pool.submit(partial(transfer.upload_concurrent_chunk, upload_id), i, data))
+                futures.append(pool.submit(partial(transfer.upload_concurrent_chunk, upload), i, data))
             for future in futures:
                 future.result()
-        first_transfer.complete_concurrent_upload(upload_id)
+        first_transfer.complete_concurrent_upload(upload)
 
         # we can read the metadata
         assert first_transfer.get_metadata_for_key("test_key1") == {"some-key": "some-value"}
@@ -274,7 +272,7 @@ def test_upload_files_concurrently_can_be_aborted() -> None:
             directory=destdir,
             notifier=notifier,
         )
-        upload_id = transfer.create_concurrent_upload(key="test_key1", metadata={"some-key": "some-value"})
+        upload = transfer.create_concurrent_upload(key="test_key1", metadata={"some-key": "some-value"})
 
         total = 0
 
@@ -283,14 +281,14 @@ def test_upload_files_concurrently_can_be_aborted() -> None:
             total += size
 
         # should end up with b"Hello, World!\nHello, World!"
-        transfer.upload_concurrent_chunk(upload_id, 3, BytesIO(b"Hello"), upload_progress_fn=inc_progress)
-        transfer.upload_concurrent_chunk(upload_id, 4, BytesIO(b", "), upload_progress_fn=inc_progress)
-        transfer.upload_concurrent_chunk(upload_id, 1, BytesIO(b"Hello, World!"), upload_progress_fn=inc_progress)
-        transfer.upload_concurrent_chunk(upload_id, 7, BytesIO(b"!"), upload_progress_fn=inc_progress)
-        transfer.upload_concurrent_chunk(upload_id, 2, BytesIO(b"\n"), upload_progress_fn=inc_progress)
-        transfer.upload_concurrent_chunk(upload_id, 6, BytesIO(b"ld"), upload_progress_fn=inc_progress)
-        transfer.upload_concurrent_chunk(upload_id, 5, BytesIO(b"Wor"), upload_progress_fn=inc_progress)
-        transfer.abort_concurrent_upload(upload_id)
+        transfer.upload_concurrent_chunk(upload, 3, BytesIO(b"Hello"), upload_progress_fn=inc_progress)
+        transfer.upload_concurrent_chunk(upload, 4, BytesIO(b", "), upload_progress_fn=inc_progress)
+        transfer.upload_concurrent_chunk(upload, 1, BytesIO(b"Hello, World!"), upload_progress_fn=inc_progress)
+        transfer.upload_concurrent_chunk(upload, 7, BytesIO(b"!"), upload_progress_fn=inc_progress)
+        transfer.upload_concurrent_chunk(upload, 2, BytesIO(b"\n"), upload_progress_fn=inc_progress)
+        transfer.upload_concurrent_chunk(upload, 6, BytesIO(b"ld"), upload_progress_fn=inc_progress)
+        transfer.upload_concurrent_chunk(upload, 5, BytesIO(b"Wor"), upload_progress_fn=inc_progress)
+        transfer.abort_concurrent_upload(upload)
 
         assert total == 27
 

@@ -15,8 +15,7 @@ from ..typing import Metadata
 from ..util import BinaryStreamsConcatenation, ProgressStream
 from .base import (
     BaseTransfer,
-    ConcurrentUploadData,
-    ConcurrentUploadId,
+    ConcurrentUpload,
     IncrementalProgressCallbackType,
     IterKeyItem,
     KEY_TYPE_OBJECT,
@@ -50,9 +49,6 @@ class LocalTransfer(BaseTransfer[Config]):
 
     is_thread_safe = True
     supports_concurrent_upload = True
-
-    # state of concurrent uploads is shared between instances of the class to allow easy use of the transfer pool
-    _concurrent_uploads: dict[str, tuple[ConcurrentUploadData, Optional[Metadata], dict[int, str]]] = {}
 
     def __init__(
         self,
@@ -255,27 +251,27 @@ class LocalTransfer(BaseTransfer[Config]):
         )
 
     def create_concurrent_upload(
-        self, key: str, metadata: Optional[Metadata] = None, mimetype: Optional[str] = None
-    ) -> ConcurrentUploadId:
+        self,
+        key: str,
+        metadata: Optional[Metadata] = None,
+        mimetype: Optional[str] = None,
+        cache_control: Optional[str] = None,
+    ) -> ConcurrentUpload:
         upload_id = uuid.uuid4().hex
-        upload = ConcurrentUploadData("local", upload_id, key)
+        upload = ConcurrentUpload("local", upload_id, key, metadata, {})
         chunks_dir = self._get_chunks_dir(upload)
         os.makedirs(chunks_dir, exist_ok=True)
         self.stats.operation(StorageOperation.create_multipart_upload)
-
-        upload_id = self._new_concurrent_upload(upload, metadata)
-        self._concurrent_uploads[upload_id] = (upload, metadata, {})
-        return upload_id
+        return upload
 
     def upload_concurrent_chunk(
         self,
-        upload_id: ConcurrentUploadId,
+        upload: ConcurrentUpload,
         chunk_number: int,
         fd: BinaryIO,
         upload_progress_fn: IncrementalProgressCallbackType = None,
     ) -> None:
-        concurrent_data, _, chunks = self._get_concurrent_upload(upload_id)
-        chunks_dir = self._get_chunks_dir(concurrent_data)
+        chunks_dir = self._get_chunks_dir(upload)
         try:
             with atomic_create_file_binary(os.path.join(chunks_dir, str(chunk_number))) as chunk_fp:
                 wrapped_fd = ProgressStream(fd)
@@ -285,44 +281,42 @@ class LocalTransfer(BaseTransfer[Config]):
             if upload_progress_fn:
                 upload_progress_fn(bytes_read)
             self.stats.operation(StorageOperation.store_file, size=bytes_read)
-            chunks[chunk_number] = "no-etag"
+            upload.chunks_to_etags[chunk_number] = "no-etag"
         except OSError as ex:
             raise StorageError(
-                "Failed to upload chunk {} of multipart upload for {}".format(chunk_number, concurrent_data.key)
+                "Failed to upload chunk {} of multipart upload for {}".format(chunk_number, upload.key)
             ) from ex
 
-    def complete_concurrent_upload(self, upload_id: ConcurrentUploadId) -> None:
-        concurrent_data, metadata, chunks = self._get_concurrent_upload(upload_id)
-        chunks_dir = self._get_chunks_dir(concurrent_data)
+    def complete_concurrent_upload(self, upload: ConcurrentUpload) -> None:
+        chunks_dir = self._get_chunks_dir(upload)
         try:
             chunk_filenames = sorted(
-                (str(chunk_number) for chunk_number in chunks),
+                (str(chunk_number) for chunk_number in upload.chunks_to_etags),
                 key=int,
             )
             chunk_files = (open(os.path.join(chunks_dir, chunk_file), "rb") for chunk_file in chunk_filenames)
             stream = BinaryStreamsConcatenation(chunk_files)
         except OSError as ex:
-            raise StorageError("Failed to complete multipart upload for {}".format(concurrent_data.key)) from ex
+            raise StorageError("Failed to complete multipart upload for {}".format(upload.key)) from ex
         self.store_file_object(
-            concurrent_data.key,
+            upload.key,
             stream,  # type: ignore[arg-type]
-            metadata=metadata,
+            metadata=upload.metadata,
         )
         try:
             shutil.rmtree(chunks_dir)
-        except OSError as ex:
+        except OSError:
             self.log.exception("Could not clean up temporary directory %r", chunks_dir)
 
-    def abort_concurrent_upload(self, upload_id: ConcurrentUploadId) -> None:
-        concurrent_data, _, _ = self._get_concurrent_upload(upload_id)
-        chunks_dir = self._get_chunks_dir(concurrent_data)
+    def abort_concurrent_upload(self, upload: ConcurrentUpload) -> None:
+        chunks_dir = self._get_chunks_dir(upload)
         try:
             shutil.rmtree(chunks_dir)
         except OSError as ex:
-            raise StorageError("Failed to abort multipart upload for {}".format(concurrent_data.key)) from ex
+            raise StorageError("Failed to abort multipart upload for {}".format(upload.key)) from ex
 
-    def _get_chunks_dir(self, concurrent_data: ConcurrentUploadData) -> str:
-        return self.format_key_for_backend(".concurrent_upload_" + concurrent_data.backend_id)
+    def _get_chunks_dir(self, upload: ConcurrentUpload) -> str:
+        return self.format_key_for_backend(".concurrent_upload_" + upload.backend_id)
 
 
 @contextlib.contextmanager

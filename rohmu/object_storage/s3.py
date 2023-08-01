@@ -15,8 +15,7 @@ from ..notifier.interface import Notifier
 from ..typing import Metadata
 from .base import (
     BaseTransfer,
-    ConcurrentUploadData,
-    ConcurrentUploadId,
+    ConcurrentUpload,
     get_total_memory,
     IncrementalProgressCallbackType,
     IterKeyItem,
@@ -135,7 +134,6 @@ class S3Transfer(BaseTransfer[Config]):
     config_model = Config
 
     supports_concurrent_upload = True
-    _concurrent_uploads: dict[str, tuple[ConcurrentUploadData, Optional[Metadata], dict[int, str]]] = {}
 
     def __init__(
         self,
@@ -396,31 +394,18 @@ class S3Transfer(BaseTransfer[Config]):
         progress_fn: ProgressProportionCallbackType = None,
         size: Optional[int] = None,
     ) -> None:
-        path = self.format_key_for_backend(key, remove_slash_prefix=True)
         start_of_multipart_upload = time.monotonic()
         bytes_sent = 0
 
         chunks: int = 1
         if size is not None:
             chunks = math.ceil(size / self.multipart_chunk_size)
+        args, sanitized_metadata, path = self._init_args_for_multipart(key, metadata, mimetype, cache_control)
         self.log.debug("Starting to upload multipart file: %r, size: %s, chunks: %s", path, size, chunks)
 
         parts: list[CompletedPartTypeDef] = []
         part_number = 1
 
-        args: dict[str, Any] = {
-            "Bucket": self.bucket_name,
-            "Key": path,
-        }
-        sanitized_metadata = metadata
-        if metadata:
-            sanitized_metadata = args["Metadata"] = self.sanitize_metadata(metadata)
-        if self.encrypted:
-            args["ServerSideEncryption"] = "AES256"
-        if cache_control is not None:
-            args["CacheControl"] = cache_control
-        if mimetype is not None:
-            args["ContentType"] = mimetype
         self.stats.operation(StorageOperation.create_multipart_upload)
         try:
             cmu_response = self.s3_client.create_multipart_upload(**args)
@@ -600,35 +585,26 @@ class S3Transfer(BaseTransfer[Config]):
             self.s3_client.create_bucket(**args)
 
     def create_concurrent_upload(
-        self, key: str, metadata: Optional[Metadata] = None, mimetype: Optional[str] = None
-    ) -> ConcurrentUploadId:
-        args: dict[str, Any] = {
-            "Bucket": self.bucket_name,
-            "Key": self.format_key_for_backend(key, remove_slash_prefix=True),
-        }
-        if metadata:
-            metadata = self.sanitize_metadata(metadata)
-            args["Metadata"] = metadata
-        if self.encrypted:
-            args["ServerSideEncryption"] = "AES256"
-        if mimetype:
-            args["ContentType"] = mimetype
+        self,
+        key: str,
+        metadata: Optional[Metadata] = None,
+        mimetype: Optional[str] = None,
+        cache_control: Optional[str] = None,
+    ) -> ConcurrentUpload:
+        args, metadata, path = self._init_args_for_multipart(key, metadata, mimetype, cache_control)
 
         self.stats.operation(StorageOperation.create_multipart_upload)
         try:
             cmu_response = self.s3_client.create_multipart_upload(**args)
         except botocore.exceptions.ClientError as ex:
-            raise StorageError("Failed to initiate multipart upload for {}".format(key)) from ex
+            raise StorageError("Failed to initiate multipart upload for {}".format(path)) from ex
 
-        upload = ConcurrentUploadData("aws", cmu_response["UploadId"], key)
-        upload_id = self._new_concurrent_upload(upload, metadata)
-        return upload_id
+        return ConcurrentUpload("aws", cmu_response["UploadId"], key, metadata, {})
 
-    def complete_concurrent_upload(self, upload_id: ConcurrentUploadId) -> None:
-        concurrent_data, metadata, chunks = self._get_concurrent_upload(upload_id)
-        backend_key = self.format_key_for_backend(concurrent_data.key, remove_slash_prefix=True)
+    def complete_concurrent_upload(self, upload: ConcurrentUpload) -> None:
+        backend_key = self.format_key_for_backend(upload.key, remove_slash_prefix=True)
         sorted_chunks: list[CompletedPartTypeDef] = sorted(
-            ({"ETag": etag, "PartNumber": number} for number, etag in chunks.items()),
+            ({"ETag": etag, "PartNumber": number} for number, etag in upload.chunks_to_etags.items()),
             key=lambda part: part["PartNumber"],
         )
         try:
@@ -637,33 +613,28 @@ class S3Transfer(BaseTransfer[Config]):
                 Bucket=self.bucket_name,
                 Key=backend_key,
                 MultipartUpload={"Parts": sorted_chunks},
-                UploadId=concurrent_data.backend_id,
+                UploadId=upload.backend_id,
                 RequestPayer="requester",
             )
-            del self._concurrent_uploads[upload_id]
-            # NOTE: metadata is not available if we are resuming. size is never available.
-            self.notifier.object_created(key=backend_key, size=None, metadata=metadata)
         except botocore.exceptions.ClientError as ex:
-            raise StorageError("Failed to complete multipart upload for {}".format(concurrent_data.key)) from ex
+            raise StorageError("Failed to complete multipart upload for {}".format(upload.key)) from ex
 
-    def abort_concurrent_upload(self, upload_id: ConcurrentUploadId) -> None:
-        concurrent_data, _, _ = self._get_concurrent_upload(upload_id)
-        backend_key = self.format_key_for_backend(concurrent_data.key, remove_slash_prefix=True)
+    def abort_concurrent_upload(self, upload: ConcurrentUpload) -> None:
+        backend_key = self.format_key_for_backend(upload.key, remove_slash_prefix=True)
         try:
             self.stats.operation(StorageOperation.multipart_aborted)
             self.s3_client.abort_multipart_upload(
                 Bucket=self.bucket_name,
                 Key=backend_key,
-                UploadId=concurrent_data.backend_id,
+                UploadId=upload.backend_id,
                 RequestPayer="requester",
             )
-            del self._concurrent_uploads[upload_id]
         except botocore.exceptions.ClientError as ex:
-            raise StorageError("Failed to abort multipart upload for {}".format(concurrent_data.key)) from ex
+            raise StorageError("Failed to abort multipart upload for {}".format(upload.key)) from ex
 
     def upload_concurrent_chunk(
         self,
-        upload_id: ConcurrentUploadId,
+        upload: ConcurrentUpload,
         chunk_number: int,
         fd: BinaryIO,
         upload_progress_fn: IncrementalProgressCallbackType = None,
@@ -672,14 +643,13 @@ class S3Transfer(BaseTransfer[Config]):
         This method is thread-safe, so you can call it concurrently from multiple threads to upload different chunks.
         What happens if multiple threads try to upload the same chunk_number concurrently is unspecified.
         """
-        concurrent_data, _, chunks = self._get_concurrent_upload(upload_id)
-        backend_key = self.format_key_for_backend(concurrent_data.key, remove_slash_prefix=True)
+        backend_key = self.format_key_for_backend(upload.key, remove_slash_prefix=True)
         try:
             upload_func = partial(
                 self.s3_client.upload_part,
                 Bucket=self.bucket_name,
                 Key=backend_key,
-                UploadId=concurrent_data.backend_id,
+                UploadId=upload.backend_id,
                 PartNumber=chunk_number,
             )
             body = ProgressStream(fd)
@@ -689,11 +659,30 @@ class S3Transfer(BaseTransfer[Config]):
             else:
                 response = upload_func(Body=fd)
             self.stats.operation(StorageOperation.store_file, size=body.bytes_read)
-            chunks[chunk_number] = response["ETag"]
+            upload.chunks_to_etags[chunk_number] = response["ETag"]
         except botocore.exceptions.ClientError as ex:
             raise StorageError(
-                "Failed to upload chunk {} of multipart upload for {}".format(chunk_number, concurrent_data.key)
+                "Failed to upload chunk {} of multipart upload for {}".format(chunk_number, upload.key)
             ) from ex
+
+    def _init_args_for_multipart(
+        self, key: str, metadata: Optional[Metadata], mimetype: Optional[str], cache_control: Optional[str]
+    ) -> tuple[dict[str, Any], Optional[dict[str, str]], str]:
+        path = self.format_key_for_backend(key, remove_slash_prefix=True)
+        args: dict[str, Any] = {
+            "Bucket": self.bucket_name,
+            "Key": path,
+        }
+        if metadata:
+            metadata = self.sanitize_metadata(metadata)
+            args["Metadata"] = metadata
+        if self.encrypted:
+            args["ServerSideEncryption"] = "AES256"
+        if mimetype:
+            args["ContentType"] = mimetype
+        if cache_control:
+            args["CacheControl"] = cache_control
+        return args, metadata, path
 
     @classmethod
     def _read_bytes(cls, stream: BinaryIO, length: int) -> Optional[bytes]:
