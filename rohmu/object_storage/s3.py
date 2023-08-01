@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from ..common.models import ProxyInfo, StorageModel, StorageOperation
 from ..common.statsd import StatsdConfig
-from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
+from ..errors import ConcurrentUploadError, FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
 from ..notifier.interface import Notifier
 from ..typing import Metadata
 from .base import (
@@ -597,7 +597,7 @@ class S3Transfer(BaseTransfer[Config]):
         try:
             cmu_response = self.s3_client.create_multipart_upload(**args)
         except botocore.exceptions.ClientError as ex:
-            raise StorageError("Failed to initiate multipart upload for {}".format(path)) from ex
+            raise ConcurrentUploadError("Failed to initiate multipart upload for {}".format(path)) from ex
 
         return ConcurrentUpload("aws", cmu_response["UploadId"], key, metadata, {})
 
@@ -617,7 +617,7 @@ class S3Transfer(BaseTransfer[Config]):
                 RequestPayer="requester",
             )
         except botocore.exceptions.ClientError as ex:
-            raise StorageError("Failed to complete multipart upload for {}".format(upload.key)) from ex
+            raise ConcurrentUploadError("Failed to complete multipart upload for {}".format(upload.key)) from ex
 
     def abort_concurrent_upload(self, upload: ConcurrentUpload) -> None:
         backend_key = self.format_key_for_backend(upload.key, remove_slash_prefix=True)
@@ -630,7 +630,7 @@ class S3Transfer(BaseTransfer[Config]):
                 RequestPayer="requester",
             )
         except botocore.exceptions.ClientError as ex:
-            raise StorageError("Failed to abort multipart upload for {}".format(upload.key)) from ex
+            raise ConcurrentUploadError("Failed to abort multipart upload for {}".format(upload.key)) from ex
 
     def upload_concurrent_chunk(
         self,
@@ -661,7 +661,7 @@ class S3Transfer(BaseTransfer[Config]):
             self.stats.operation(StorageOperation.store_file, size=body.bytes_read)
             upload.chunks_to_etags[chunk_number] = response["ETag"]
         except botocore.exceptions.ClientError as ex:
-            raise StorageError(
+            raise ConcurrentUploadError(
                 "Failed to upload chunk {} of multipart upload for {}".format(chunk_number, upload.key)
             ) from ex
 

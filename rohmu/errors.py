@@ -44,3 +44,7 @@ class InvalidByteRangeError(Error):
 
 class InvalidTransferError(Error):
     """You tried to access a transfer object that you already returned to the pool"""
+
+
+class ConcurrentUploadError(StorageError):
+    """A generic error related to concurrent uploads"""

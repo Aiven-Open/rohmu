@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from ..common.models import StorageModel, StorageOperation
 from ..common.statsd import StatsdConfig
-from ..errors import FileNotFoundFromStorageError, StorageError
+from ..errors import ConcurrentUploadError, FileNotFoundFromStorageError
 from ..notifier.interface import Notifier
 from ..typing import Metadata
 from ..util import BinaryStreamsConcatenation, ProgressStream
@@ -260,7 +260,10 @@ class LocalTransfer(BaseTransfer[Config]):
         upload_id = uuid.uuid4().hex
         upload = ConcurrentUpload("local", upload_id, key, metadata, {})
         chunks_dir = self._get_chunks_dir(upload)
-        os.makedirs(chunks_dir, exist_ok=True)
+        try:
+            os.makedirs(chunks_dir, exist_ok=True)
+        except OSError as ex:
+            raise ConcurrentUploadError("Failed to initiate multipart upload for {}".format(key)) from ex
         self.stats.operation(StorageOperation.create_multipart_upload)
         return upload
 
@@ -283,7 +286,7 @@ class LocalTransfer(BaseTransfer[Config]):
             self.stats.operation(StorageOperation.store_file, size=bytes_read)
             upload.chunks_to_etags[chunk_number] = "no-etag"
         except OSError as ex:
-            raise StorageError(
+            raise ConcurrentUploadError(
                 "Failed to upload chunk {} of multipart upload for {}".format(chunk_number, upload.key)
             ) from ex
 
@@ -297,7 +300,7 @@ class LocalTransfer(BaseTransfer[Config]):
             chunk_files = (open(os.path.join(chunks_dir, chunk_file), "rb") for chunk_file in chunk_filenames)
             stream = BinaryStreamsConcatenation(chunk_files)
         except OSError as ex:
-            raise StorageError("Failed to complete multipart upload for {}".format(upload.key)) from ex
+            raise ConcurrentUploadError("Failed to complete multipart upload for {}".format(upload.key)) from ex
         self.store_file_object(
             upload.key,
             stream,  # type: ignore[arg-type]
@@ -313,7 +316,7 @@ class LocalTransfer(BaseTransfer[Config]):
         try:
             shutil.rmtree(chunks_dir)
         except OSError as ex:
-            raise StorageError("Failed to abort multipart upload for {}".format(upload.key)) from ex
+            raise ConcurrentUploadError("Failed to abort multipart upload for {}".format(upload.key)) from ex
 
     def _get_chunks_dir(self, upload: ConcurrentUpload) -> str:
         return self.format_key_for_backend(".concurrent_upload_" + upload.backend_id)
