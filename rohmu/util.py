@@ -123,7 +123,8 @@ class ProgressStream(BinaryIO):
         self.bytes_read = 0
 
     def seekable(self) -> bool:
-        return False
+        """A progress stream is seekable if the underlying stream is."""
+        return self.raw_stream.seekable()
 
     def writable(self) -> bool:
         return False
@@ -191,7 +192,15 @@ class ProgressStream(BinaryIO):
         return self.raw_stream.tell()
 
     def seek(self, offset: int, whence: int = 0) -> int:
-        raise UnsupportedOperation("seek")
+        """Seek the underlying file if this operation is supported.
+
+        NOTE: Calling this method will reset the bytes_read field!
+
+        """
+        result = self.raw_stream.seek(offset, whence)
+
+        self.bytes_read = 0
+        return result
 
     def truncate(self, size: Optional[int] = None) -> int:
         raise UnsupportedOperation("truncate")

@@ -48,15 +48,14 @@ def test_progress_stream() -> None:
     progress_stream = ProgressStream(stream)
     assert progress_stream.readable()
     assert not progress_stream.writable()
-    assert not progress_stream.seekable()
+    # stream is seekable if underlying stream is
+    assert progress_stream.seekable()
 
     assert progress_stream.read(14) == b"Hello, World!\n"
     assert progress_stream.bytes_read == 14
     assert progress_stream.readlines() == [b"Second line\n", b"This is a longer third line\n"]
     assert progress_stream.bytes_read == 54
 
-    with pytest.raises(UnsupportedOperation):
-        progress_stream.seek(0)
     with pytest.raises(UnsupportedOperation):
         progress_stream.truncate(0)
     with pytest.raises(UnsupportedOperation):
@@ -65,6 +64,13 @@ def test_progress_stream() -> None:
         progress_stream.writelines([b"Something"])
     with pytest.raises(UnsupportedOperation):
         progress_stream.fileno()
+
+    # seeking the stream, in any position, resets the bytes_read counter
+    progress_stream.seek(10)
+    assert progress_stream.bytes_read == 0
+    # the seek works as expected on the stream
+    assert progress_stream.read(10) == b"ld!\nSecond"
+    assert progress_stream.bytes_read == 10
 
     assert not progress_stream.closed
     with progress_stream:
