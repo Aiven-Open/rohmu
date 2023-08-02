@@ -254,8 +254,8 @@ class LocalTransfer(BaseTransfer[Config]):
         self,
         key: str,
         metadata: Optional[Metadata] = None,
-        mimetype: Optional[str] = None,
-        cache_control: Optional[str] = None,
+        mimetype: Optional[str] = None,  # pylint: disable=unused-argument
+        cache_control: Optional[str] = None,  # pylint: disable=unused-argument
     ) -> ConcurrentUpload:
         upload_id = uuid.uuid4().hex
         upload = ConcurrentUpload("local", upload_id, key, metadata, {})

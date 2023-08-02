@@ -7,6 +7,7 @@ from datetime import datetime
 from io import BytesIO
 from rohmu.common.models import StorageOperation
 from rohmu.errors import InvalidByteRangeError
+from rohmu.object_storage.base import TransferWithConcurrentUploadSupport
 from rohmu.object_storage.s3 import S3Transfer
 from tempfile import NamedTemporaryFile
 from typing import Any, BinaryIO, Iterator, Optional
@@ -147,7 +148,7 @@ def test_concurrent_upload_complete(infra: S3Infra) -> None:
         return {"ETag": "some-etag"}
 
     infra.s3_client.upload_part.side_effect = upload_part_side_effect
-    transfer = infra.transfer
+    transfer: TransferWithConcurrentUploadSupport = infra.transfer
     upload = transfer.create_concurrent_upload("test_key", metadata=metadata)
 
     total = 0
@@ -168,7 +169,7 @@ def test_concurrent_upload_complete(infra: S3Infra) -> None:
     s3_client.create_multipart_upload.assert_called()
     s3_client.upload_part.assert_called()
     s3_client.complete_multipart_upload.assert_called_once_with(
-        Bucket=transfer.bucket_name,
+        Bucket=infra.transfer.bucket_name,
         Key="test-prefix/test_key",
         MultipartUpload={"Parts": [{"ETag": "some-etag", "PartNumber": part} for part in (1, 2, 3)]},
         UploadId="<aws-mpu-id>",

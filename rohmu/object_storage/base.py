@@ -16,7 +16,21 @@ from ..typing import AnyPath, Metadata
 from contextlib import suppress
 from dataclasses import dataclass, field
 from io import BytesIO
-from typing import Any, BinaryIO, Callable, Collection, Generic, Iterator, NamedTuple, Optional, Tuple, Type, TypeVar, Union
+from typing import (
+    Any,
+    BinaryIO,
+    Callable,
+    Collection,
+    Generic,
+    Iterator,
+    NamedTuple,
+    Optional,
+    Protocol,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import logging
 import os
@@ -322,6 +336,8 @@ class BaseTransfer(Generic[StorageModelT]):
     ) -> None:
         raise NotImplementedError
 
+
+class TransferWithConcurrentUploadSupport(Protocol):
     def create_concurrent_upload(
         self,
         key: str,
@@ -334,7 +350,6 @@ class BaseTransfer(Generic[StorageModelT]):
         :param metadata: metadata to be associated with the object
         :returns: concurrent upload id
         """
-        raise NotImplementedError
 
     def upload_concurrent_chunk(
         self,
@@ -347,15 +362,12 @@ class BaseTransfer(Generic[StorageModelT]):
         This method is thread-safe, so you can call it concurrently from multiple threads to upload different chunks.
         What happens if multiple threads try to upload the same chunk_number concurrently is unspecified.
         """
-        raise NotImplementedError
 
     def complete_concurrent_upload(self, upload: ConcurrentUpload) -> None:
         """Completes the concurrent upload."""
-        raise NotImplementedError
 
     def abort_concurrent_upload(self, upload: ConcurrentUpload) -> None:
         """Aborts the concurrent upload."""
-        raise NotImplementedError
 
 
 def get_total_memory() -> Optional[int]:
