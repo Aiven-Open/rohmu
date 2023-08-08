@@ -10,8 +10,8 @@ from rohmu.errors import InvalidByteRangeError
 from rohmu.object_storage.base import TransferWithConcurrentUploadSupport
 from rohmu.object_storage.s3 import S3Transfer
 from tempfile import NamedTemporaryFile
-from typing import Any, BinaryIO, Iterator, Optional
-from unittest.mock import MagicMock
+from typing import Any, BinaryIO, Callable, Iterator, Optional
+from unittest.mock import ANY, call, MagicMock
 
 import pytest
 
@@ -138,7 +138,8 @@ def test_get_contents_to_fileobj_passes_the_correct_range_header(infra: S3Infra)
     )
 
 
-def test_concurrent_upload_complete(infra: S3Infra) -> None:
+@pytest.mark.parametrize("with_progress", [True, False])
+def test_concurrent_upload_complete(infra: S3Infra, with_progress: bool) -> None:
     metadata = {"some-date": datetime(2022, 11, 15, 18, 30, 58, 486644)}
     infra.s3_client.create_multipart_upload.return_value = {"UploadId": "<aws-mpu-id>"}
 
@@ -151,23 +152,38 @@ def test_concurrent_upload_complete(infra: S3Infra) -> None:
     transfer: TransferWithConcurrentUploadSupport = infra.transfer
     upload = transfer.create_concurrent_upload("test_key", metadata=metadata)
 
-    total = 0
+    total_progress = 0
+    upload_progress_fn: Optional[Callable[[int], None]] = None
+    if with_progress:
 
-    def inc_progress(size: int) -> None:
-        nonlocal total
-        total += size
+        def inc_progress(size: int) -> None:
+            nonlocal total_progress
+            total_progress += size
 
-    transfer.upload_concurrent_chunk(upload, 1, BytesIO(b"Hello, "), upload_progress_fn=inc_progress)
+        upload_progress_fn = inc_progress
+
+    transfer.upload_concurrent_chunk(upload, 1, BytesIO(b"Hello, "), upload_progress_fn=upload_progress_fn)
     # we can upload chunks in non-monotonically increasing order
-    transfer.upload_concurrent_chunk(upload, 3, BytesIO(b"!"), upload_progress_fn=inc_progress)
-    transfer.upload_concurrent_chunk(upload, 2, BytesIO(b"World"), upload_progress_fn=inc_progress)
+    transfer.upload_concurrent_chunk(upload, 3, BytesIO(b"!"), upload_progress_fn=upload_progress_fn)
+    transfer.upload_concurrent_chunk(upload, 2, BytesIO(b"World"), upload_progress_fn=upload_progress_fn)
     transfer.complete_concurrent_upload(upload)
 
     notifier = infra.notifier
     s3_client = infra.s3_client
 
     s3_client.create_multipart_upload.assert_called()
-    s3_client.upload_part.assert_called()
+    s3_client.upload_part.assert_has_calls(
+        [
+            call(
+                Bucket=infra.transfer.bucket_name,
+                Key="test-prefix/test_key",
+                UploadId="<aws-mpu-id>",
+                PartNumber=part_number,
+                Body=ANY,
+            )
+            for part_number in (1, 3, 2)
+        ]
+    )
     s3_client.complete_multipart_upload.assert_called_once_with(
         Bucket=infra.transfer.bucket_name,
         Key="test-prefix/test_key",
@@ -179,7 +195,8 @@ def test_concurrent_upload_complete(infra: S3Infra) -> None:
     # currently we do NOT notify object creation. To notify we really need the size
     notifier.object_created.assert_not_called()
 
-    assert total == 13
+    if with_progress:
+        assert total_progress == 13
 
 
 def test_concurrent_upload_abort(infra: S3Infra) -> None:

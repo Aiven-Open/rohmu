@@ -656,8 +656,6 @@ class S3Transfer(BaseTransfer[Config]):
             response = upload_func(Body=body)
             if upload_progress_fn:
                 upload_progress_fn(body.bytes_read)
-            else:
-                response = upload_func(Body=fd)
             self.stats.operation(StorageOperation.store_file, size=body.bytes_read)
             upload.chunks_to_etags[chunk_number] = response["ETag"]
         except botocore.exceptions.ClientError as ex:
