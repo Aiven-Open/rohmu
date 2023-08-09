@@ -1,12 +1,7 @@
 from __future__ import annotations
 
 from types import TracebackType
-from typing import Any, Dict, Optional, Type, TYPE_CHECKING, Union
-
-try:
-    from typing import Protocol
-except ImportError:
-    from typing_extensions import Protocol  # type: ignore [assignment]
+from typing import Any, Dict, Optional, Protocol, Type, TYPE_CHECKING, Union
 
 try:
     # Remove when dropping support for Python 3.7

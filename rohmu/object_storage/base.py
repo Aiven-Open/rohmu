@@ -14,8 +14,23 @@ from ..notifier.interface import Notifier
 from ..notifier.null import NullNotifier
 from ..typing import AnyPath, Metadata
 from contextlib import suppress
+from dataclasses import dataclass, field
 from io import BytesIO
-from typing import Any, BinaryIO, Callable, Collection, Generic, Iterator, NamedTuple, Optional, Tuple, Type, TypeVar, Union
+from typing import (
+    Any,
+    BinaryIO,
+    Callable,
+    Collection,
+    Generic,
+    Iterator,
+    NamedTuple,
+    Optional,
+    Protocol,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import logging
 import os
@@ -48,10 +63,20 @@ class Config(StorageModel):
 StorageModelT = TypeVar("StorageModelT", bound=StorageModel)
 
 
+@dataclass(frozen=True, unsafe_hash=True)
+class ConcurrentUpload:
+    backend: str
+    backend_id: str
+    key: str
+    metadata: Optional[Metadata]
+    chunks_to_etags: dict[int, str] = field(default_factory=dict, hash=False, compare=False)
+
+
 class BaseTransfer(Generic[StorageModelT]):
     config_model: Type[StorageModelT]
 
     is_thread_safe: bool = False
+    supports_concurrent_upload: bool = False
 
     def __init__(
         self, prefix: Optional[str], notifier: Optional[Notifier] = None, statsd_info: Optional[StatsdConfig] = None
@@ -310,6 +335,39 @@ class BaseTransfer(Generic[StorageModelT]):
         upload_progress_fn: IncrementalProgressCallbackType = None,
     ) -> None:
         raise NotImplementedError
+
+
+class TransferWithConcurrentUploadSupport(Protocol):
+    def create_concurrent_upload(
+        self,
+        key: str,
+        metadata: Optional[Metadata] = None,
+        mimetype: Optional[str] = None,
+        cache_control: Optional[str] = None,
+    ) -> ConcurrentUpload:
+        """Starts a concurrent upload to the object storage.
+        :param key: the key of the object to upload
+        :param metadata: metadata to be associated with the object
+        :returns: concurrent upload id
+        """
+
+    def upload_concurrent_chunk(
+        self,
+        upload: ConcurrentUpload,
+        chunk_number: int,
+        fd: BinaryIO,
+        upload_progress_fn: IncrementalProgressCallbackType = None,
+    ) -> None:
+        """Synchronously uploads a chunk. Returns an ETag for the uploaded chunk.
+        This method is thread-safe, so you can call it concurrently from multiple threads to upload different chunks.
+        What happens if multiple threads try to upload the same chunk_number concurrently is unspecified.
+        """
+
+    def complete_concurrent_upload(self, upload: ConcurrentUpload) -> None:
+        """Completes the concurrent upload."""
+
+    def abort_concurrent_upload(self, upload: ConcurrentUpload) -> None:
+        """Aborts the concurrent upload."""
 
 
 def get_total_memory() -> Optional[int]:

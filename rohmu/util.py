@@ -4,14 +4,19 @@ rohmu - common utility functions
 Copyright (c) 2022 Ohmu Ltd
 See LICENSE for details
 """
+from __future__ import annotations
+
+from io import BytesIO, UnsupportedOperation
 from itertools import islice
 from rohmu.typing import HasFileno
-from typing import Generator, Iterable, Optional, Tuple, TypeVar, Union
+from typing import BinaryIO, Generator, Iterable, Optional, Tuple, TypeVar, Union
+from typing_extensions import Buffer
 
 import fcntl
 import logging
 import os
 import platform
+import types
 
 LOG = logging.getLogger("rohmu.util")
 
@@ -71,3 +76,140 @@ def get_total_size_from_content_range(content_range: str) -> Optional[int]:
     length = content_range.rsplit("/", 1)[1]
     # RFC 9110 section 14.4 specifies that the * can be returned when the total length is unknown
     return int(length) if length != "*" else None
+
+
+class BinaryStreamsConcatenation:
+    """Concatenate a sequence of binary streams.
+    The concatenation only allows for the read() call.
+    """
+
+    def __init__(self, files: Iterable[BinaryIO]) -> None:
+        self._iter_files = iter(files)
+        self._current_file: Optional[BinaryIO] = None
+
+    def _read_chunk(self, size: int = -1) -> bytes:
+        if self._current_file is None:
+            self._current_file = next(self._iter_files, None)
+            if self._current_file is None:
+                return b""
+        data = self._current_file.read(size) if size > 0 else self._current_file.read()
+        if not data:
+            self._current_file.close()
+            self._current_file = next(self._iter_files, None)
+        return data
+
+    def read(self, size: int = -1) -> bytes:
+        result = BytesIO()
+        size_left = size
+        while True:
+            chunk = self._read_chunk(size_left)
+            if not chunk and self._current_file is None:
+                # we finished reading all files
+                break
+            result.write(chunk)
+            size_left -= len(chunk)
+            if size > 0 and size_left == 0:
+                # we finished reading the amount requested
+                break
+
+        return result.getvalue()
+
+
+class ProgressStream(BinaryIO):
+    """Wrapper for binary streams that can report the amount of bytes read through it."""
+
+    def __init__(self, raw_stream: BinaryIO) -> None:
+        self.raw_stream = raw_stream
+        self.bytes_read = 0
+
+    def seekable(self) -> bool:
+        """A progress stream is seekable if the underlying stream is."""
+        return self.raw_stream.seekable()
+
+    def writable(self) -> bool:
+        return False
+
+    def readable(self) -> bool:
+        return True
+
+    @property
+    def closed(self) -> bool:
+        return self.raw_stream.closed
+
+    @property
+    def name(self) -> str:
+        return self.raw_stream.name
+
+    @property
+    def mode(self) -> str:
+        return self.raw_stream.mode
+
+    def read(self, n: int = -1) -> bytes:
+        data = self.raw_stream.read(n)
+        self.bytes_read += len(data)
+        return data
+
+    def readline(self, limit: int = -1) -> bytes:
+        line = self.raw_stream.readline(limit)
+        self.bytes_read += len(line)
+        return line
+
+    def readlines(self, hint: int = -1) -> list[bytes]:
+        lines = self.raw_stream.readlines(hint)
+        self.bytes_read += sum(map(len, lines))
+        return lines
+
+    def __iter__(self) -> "ProgressStream":
+        return self
+
+    def __next__(self) -> bytes:
+        data = next(self.raw_stream)
+        self.bytes_read += len(data)
+        return data
+
+    def __enter__(self) -> "ProgressStream":
+        self.raw_stream.__enter__()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[types.TracebackType],
+    ) -> None:
+        return self.raw_stream.__exit__(exc_type, exc_val, exc_tb)
+
+    def close(self) -> None:
+        self.raw_stream.close()
+
+    def flush(self) -> None:
+        self.raw_stream.flush()
+
+    def isatty(self) -> bool:
+        return self.raw_stream.isatty()
+
+    def tell(self) -> int:
+        return self.raw_stream.tell()
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        """Seek the underlying file if this operation is supported.
+
+        NOTE: Calling this method will reset the bytes_read field!
+
+        """
+        result = self.raw_stream.seek(offset, whence)
+
+        self.bytes_read = 0
+        return result
+
+    def truncate(self, size: Optional[int] = None) -> int:
+        raise UnsupportedOperation("truncate")
+
+    def write(self, s: Union[bytes, Buffer]) -> int:
+        raise UnsupportedOperation("write")
+
+    def writelines(self, __lines: Union[Iterable[bytes], Iterable[Buffer]]) -> None:
+        raise UnsupportedOperation("writelines")
+
+    def fileno(self) -> int:
+        raise UnsupportedOperation("fileno")

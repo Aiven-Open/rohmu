@@ -1,14 +1,17 @@
 """Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
+from __future__ import annotations
+
 from botocore.response import StreamingBody
 from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
 from rohmu.common.models import StorageOperation
 from rohmu.errors import InvalidByteRangeError
+from rohmu.object_storage.base import TransferWithConcurrentUploadSupport
 from rohmu.object_storage.s3 import S3Transfer
 from tempfile import NamedTemporaryFile
-from typing import Any, Iterator, Optional
-from unittest.mock import MagicMock
+from typing import Any, BinaryIO, Callable, Iterator, Optional
+from unittest.mock import ANY, call, MagicMock
 
 import pytest
 
@@ -133,3 +136,83 @@ def test_get_contents_to_fileobj_passes_the_correct_range_header(infra: S3Infra)
     infra.s3_client.get_object.assert_called_once_with(
         Bucket="test-bucket", Key="test-prefix/test_key", Range="bytes=10-100"
     )
+
+
+@pytest.mark.parametrize("with_progress", [True, False])
+def test_concurrent_upload_complete(infra: S3Infra, with_progress: bool) -> None:
+    metadata = {"some-date": datetime(2022, 11, 15, 18, 30, 58, 486644)}
+    infra.s3_client.create_multipart_upload.return_value = {"UploadId": "<aws-mpu-id>"}
+
+    def upload_part_side_effect(Body: BinaryIO, **_kwargs: Any) -> dict[str, str]:
+        # to check the progress function we need to actually consume the body
+        Body.read()
+        return {"ETag": "some-etag"}
+
+    infra.s3_client.upload_part.side_effect = upload_part_side_effect
+    transfer: TransferWithConcurrentUploadSupport = infra.transfer
+    upload = transfer.create_concurrent_upload("test_key", metadata=metadata)
+
+    total_progress = 0
+    upload_progress_fn: Optional[Callable[[int], None]] = None
+    if with_progress:
+
+        def inc_progress(size: int) -> None:
+            nonlocal total_progress
+            total_progress += size
+
+        upload_progress_fn = inc_progress
+
+    transfer.upload_concurrent_chunk(upload, 1, BytesIO(b"Hello, "), upload_progress_fn=upload_progress_fn)
+    # we can upload chunks in non-monotonically increasing order
+    transfer.upload_concurrent_chunk(upload, 3, BytesIO(b"!"), upload_progress_fn=upload_progress_fn)
+    transfer.upload_concurrent_chunk(upload, 2, BytesIO(b"World"), upload_progress_fn=upload_progress_fn)
+    transfer.complete_concurrent_upload(upload)
+
+    notifier = infra.notifier
+    s3_client = infra.s3_client
+
+    s3_client.create_multipart_upload.assert_called()
+    s3_client.upload_part.assert_has_calls(
+        [
+            call(
+                Bucket=infra.transfer.bucket_name,
+                Key="test-prefix/test_key",
+                UploadId="<aws-mpu-id>",
+                PartNumber=part_number,
+                Body=ANY,
+            )
+            for part_number in (1, 3, 2)
+        ]
+    )
+    s3_client.complete_multipart_upload.assert_called_once_with(
+        Bucket=infra.transfer.bucket_name,
+        Key="test-prefix/test_key",
+        MultipartUpload={"Parts": [{"ETag": "some-etag", "PartNumber": part} for part in (1, 2, 3)]},
+        UploadId="<aws-mpu-id>",
+        RequestPayer="requester",
+    )
+
+    # currently we do NOT notify object creation. To notify we really need the size
+    notifier.object_created.assert_not_called()
+
+    if with_progress:
+        assert total_progress == 13
+
+
+def test_concurrent_upload_abort(infra: S3Infra) -> None:
+    infra.s3_client.create_multipart_upload.return_value = {"UploadId": "<aws-mpu-id>"}
+    transfer = infra.transfer
+    upload = transfer.create_concurrent_upload("test_key")
+    transfer.upload_concurrent_chunk(upload, 1, BytesIO(b"Hello, "))
+    transfer.abort_concurrent_upload(upload)
+
+    notifier = infra.notifier
+    s3_client = infra.s3_client
+
+    s3_client.create_multipart_upload.assert_called()
+    s3_client.upload_part.assert_called()
+    s3_client.complete_multipart_upload.assert_not_called()
+    s3_client.abort_multipart_upload.assert_called()
+
+    # no notification is sent
+    notifier.object_created.assert_not_called()
