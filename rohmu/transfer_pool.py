@@ -7,8 +7,8 @@ See LICENSE for details
 
 from __future__ import annotations
 
-from . import get_transfer as rohmu_get_transfer
 from .errors import InvalidTransferError
+from .factory import get_transfer as rohmu_get_transfer
 from .object_storage.base import BaseTransfer, StorageModel
 from contextlib import contextmanager
 from typing import Any, Callable, Generator, Optional

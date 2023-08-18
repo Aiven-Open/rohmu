@@ -7,7 +7,7 @@ See LICENSE for details
 
 from __future__ import annotations
 
-from . import IO_BLOCK_SIZE
+from .common.constants import IO_BLOCK_SIZE
 from .compressor import CompressionFile, DecompressionFile, DecompressSink
 from .encryptor import DecryptorFile, DecryptSink, EncryptorFile
 from .errors import InvalidConfigurationError

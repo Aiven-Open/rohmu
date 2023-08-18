@@ -1,4 +1,4 @@
-from rohmu import Config, get_class_for_transfer, get_transfer
+from rohmu.factory import Config, get_class_for_transfer, get_transfer
 from rohmu.object_storage.s3 import Config as S3Config, S3Transfer
 from typing import cast
 from unittest.mock import ANY, MagicMock, Mock, patch
