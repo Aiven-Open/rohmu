@@ -32,8 +32,8 @@ class _TestSession:
         pass
 
     def __exit__(
-        self, type: Type[BaseException], value: BaseException, traceback: TracebackType
-    ) -> None:  # pylint: disable=redefined-builtin
+        self, type: Type[BaseException], value: BaseException, traceback: TracebackType  # pylint: disable=redefined-builtin
+    ) -> None:
         pass
 
 

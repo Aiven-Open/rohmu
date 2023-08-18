@@ -4,7 +4,7 @@ rohmu - content encryption
 Copyright (c) 2016 Ohmu Ltd
 See LICENSE for details
 """
-from . import IO_BLOCK_SIZE
+from .common.constants import IO_BLOCK_SIZE
 from .errors import UninitializedError
 from .filewrap import FileWrap, Sink, Stream
 from .typing import BinaryData, FileLike, HasRead, HasWrite

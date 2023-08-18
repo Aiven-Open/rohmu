@@ -4,7 +4,7 @@ rohmu - file-like interface for snappy
 Copyright (c) 2016 Ohmu Ltd
 See LICENSE for details
 """
-from . import IO_BLOCK_SIZE
+from .common.constants import IO_BLOCK_SIZE
 from .filewrap import FileWrap
 from .typing import BinaryData, FileLike
 from typing import Optional
