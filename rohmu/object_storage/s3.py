@@ -8,24 +8,29 @@ See LICENSE for details
 
 from __future__ import annotations
 
-from ..common.models import ProxyInfo, StorageModel, StorageOperation
-from ..common.statsd import StatsdConfig
-from ..errors import ConcurrentUploadError, FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
-from ..notifier.interface import Notifier
-from ..typing import Metadata
-from .base import (
+from botocore.response import StreamingBody
+from functools import partial
+from rohmu.common.models import StorageOperation
+from rohmu.common.statsd import StatsdConfig
+from rohmu.errors import ConcurrentUploadError, FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
+from rohmu.notifier.interface import Notifier
+from rohmu.object_storage.base import (
     BaseTransfer,
     ConcurrentUpload,
-    get_total_memory,
     IncrementalProgressCallbackType,
     IterKeyItem,
     KEY_TYPE_OBJECT,
     KEY_TYPE_PREFIX,
     ProgressProportionCallbackType,
 )
-from botocore.response import StreamingBody
-from enum import Enum, unique
-from functools import partial
+from rohmu.object_storage.config import (  # pylint: disable=unused-import
+    calculate_s3_chunk_size as calculate_chunk_size,
+    S3_MULTIPART_CHUNK_SIZE as MULTIPART_CHUNK_SIZE,
+    S3_READ_BLOCK_SIZE as READ_BLOCK_SIZE,
+    S3AddressingStyle,
+    S3ObjectStorageConfig as Config,
+)
+from rohmu.typing import Metadata
 from rohmu.util import batched, ProgressStream
 from typing import Any, BinaryIO, cast, Collection, Iterator, Optional, Tuple, TYPE_CHECKING, Union
 
@@ -71,12 +76,6 @@ def create_s3_client(
         return s3_client
 
 
-def calculate_chunk_size() -> int:
-    total_mem_mib = get_total_memory() or 0
-    # At least 5 MiB, at most 524 MiB. Max block size used for hosts with ~210+ GB of memory
-    return max(min(int(total_mem_mib / 400), 524), 5) * 1024 * 1024
-
-
 def get_proxy_url(proxy_info: dict[str, Union[str, int]]) -> str:
     username = proxy_info.get("user")
     password = proxy_info.get("pass")
@@ -94,40 +93,6 @@ def get_proxy_url(proxy_info: dict[str, Union[str, int]]) -> str:
         schema = "http"
     proxy_url = f"{schema}://{auth}{host}:{port}"
     return proxy_url
-
-
-# Set chunk size based on host memory. S3 supports up to 10k chunks and up to 5 TiB individual
-# files. Minimum chunk size is 5 MiB, which means max ~50 GB files can be uploaded. In order to get
-# to that 5 TiB increase the block size based on host memory; we don't want to use the max for all
-# hosts to avoid allocating too large portion of all available memory.
-MULTIPART_CHUNK_SIZE = calculate_chunk_size()
-READ_BLOCK_SIZE = 1024 * 1024 * 1
-
-
-@unique
-class S3AddressingStyle(Enum):
-    auto = "auto"
-    path = "path"
-    virtual = "virtual"
-
-
-class Config(StorageModel):
-    region: str
-    bucket_name: str
-    aws_access_key_id: Optional[str] = None
-    aws_secret_access_key: Optional[str] = None
-    prefix: Optional[str] = None
-    host: Optional[str] = None
-    port: Optional[str] = None
-    addressing_style: S3AddressingStyle = S3AddressingStyle.path
-    is_secure: bool = False
-    is_verify_tls: bool = False
-    segment_size: int = MULTIPART_CHUNK_SIZE
-    encrypted: bool = False
-    proxy_info: Optional[ProxyInfo] = None
-    connect_timeout: Optional[str] = None
-    read_timeout: Optional[str] = None
-    aws_session_token: Optional[str] = None
 
 
 class S3Transfer(BaseTransfer[Config]):

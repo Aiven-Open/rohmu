@@ -7,34 +7,19 @@ See LICENSE for details
 """
 from __future__ import annotations
 
-from ..common.models import StorageModel
-from ..common.statsd import StatsClient, StatsdConfig
-from ..errors import FileNotFoundFromStorageError, InvalidByteRangeError, StorageError
-from ..notifier.interface import Notifier
-from ..notifier.null import NullNotifier
-from ..typing import AnyPath, Metadata
 from contextlib import suppress
 from dataclasses import dataclass, field
 from io import BytesIO
-from typing import (
-    Any,
-    BinaryIO,
-    Callable,
-    Collection,
-    Generic,
-    Iterator,
-    NamedTuple,
-    Optional,
-    Protocol,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-)
+from rohmu.common.statsd import StatsClient, StatsdConfig
+from rohmu.errors import FileNotFoundFromStorageError, InvalidByteRangeError, StorageError
+from rohmu.notifier.interface import Notifier
+from rohmu.notifier.null import NullNotifier
+from rohmu.object_storage.config import StorageModelT
+from rohmu.typing import AnyPath, Metadata
+from typing import Any, BinaryIO, Callable, Collection, Generic, Iterator, NamedTuple, Optional, Protocol, Tuple, Type, Union
 
 import logging
 import os
-import platform
 
 KEY_TYPE_OBJECT = "object"
 KEY_TYPE_PREFIX = "prefix"
@@ -50,17 +35,6 @@ ProgressProportionCallbackType = Optional[Callable[[int, int], None]]
 
 # Argument is the additional number of bytes transferred
 IncrementalProgressCallbackType = Optional[Callable[[int], None]]
-
-
-class Config(StorageModel):
-    prefix: str
-    notifier: Optional[Notifier] = None
-
-    class Config:
-        arbitrary_types_allowed = True
-
-
-StorageModelT = TypeVar("StorageModelT", bound=StorageModel)
 
 
 @dataclass(frozen=True, unsafe_hash=True)
@@ -368,18 +342,3 @@ class TransferWithConcurrentUploadSupport(Protocol):
 
     def abort_concurrent_upload(self, upload: ConcurrentUpload) -> None:
         """Aborts the concurrent upload."""
-
-
-def get_total_memory() -> Optional[int]:
-    """return total system memory in mebibytes (or None if parsing meminfo fails)"""
-    if platform.system() != "Linux":
-        return None
-
-    with open("/proc/meminfo", "r") as in_file:
-        for line in in_file:
-            info = line.split()
-            if info[0] == "MemTotal:" and info[-1] == "kB":
-                memory_mb = int(int(info[1]) / 1024)
-                return memory_mb
-
-    return None

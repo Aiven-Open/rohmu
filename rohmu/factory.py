@@ -3,7 +3,7 @@
 from .common.models import StorageModel
 from .errors import InvalidConfigurationError
 from .notifier.interface import Notifier
-from .object_storage.base import BaseTransfer
+from rohmu.object_storage.base import BaseTransfer
 from typing import Any, cast, Dict, Type
 
 STORAGE_TYPE = "storage_type"
@@ -14,27 +14,27 @@ Config = Dict[str, Any]
 def get_class_for_transfer(obj_store: Config) -> Type[BaseTransfer[StorageModel]]:
     storage_type = obj_store[STORAGE_TYPE]
     if storage_type == "azure":
-        from .object_storage.azure import AzureTransfer
+        from rohmu.object_storage.azure import AzureTransfer
 
         return cast(Type[BaseTransfer[StorageModel]], AzureTransfer)
     elif storage_type == "google":
-        from .object_storage.google import GoogleTransfer
+        from rohmu.object_storage.google import GoogleTransfer
 
         return cast(Type[BaseTransfer[StorageModel]], GoogleTransfer)
     elif storage_type == "sftp":
-        from .object_storage.sftp import SFTPTransfer
+        from rohmu.object_storage.sftp import SFTPTransfer
 
         return cast(Type[BaseTransfer[StorageModel]], SFTPTransfer)
     elif storage_type == "local":
-        from .object_storage.local import LocalTransfer
+        from rohmu.object_storage.local import LocalTransfer
 
         return cast(Type[BaseTransfer[StorageModel]], LocalTransfer)
     elif storage_type == "s3":
-        from .object_storage.s3 import S3Transfer
+        from rohmu.object_storage.s3 import S3Transfer
 
         return cast(Type[BaseTransfer[StorageModel]], S3Transfer)
     elif storage_type == "swift":
-        from .object_storage.swift import SwiftTransfer
+        from rohmu.object_storage.swift import SwiftTransfer
 
         return cast(Type[BaseTransfer[StorageModel]], SwiftTransfer)
 

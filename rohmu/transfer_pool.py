@@ -9,8 +9,9 @@ from __future__ import annotations
 
 from .errors import InvalidTransferError
 from .factory import get_transfer as rohmu_get_transfer
-from .object_storage.base import BaseTransfer, StorageModel
 from contextlib import contextmanager
+from rohmu.common.models import StorageModel
+from rohmu.object_storage.base import BaseTransfer
 from typing import Any, Callable, Generator, Optional
 
 import heapq

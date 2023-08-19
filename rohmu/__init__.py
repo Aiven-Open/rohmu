@@ -19,4 +19,4 @@ from .factory import (
     STORAGE_TYPE,
 )
 from .notifier.interface import Notifier
-from .object_storage.base import BaseTransfer
+from rohmu.object_storage.base import BaseTransfer

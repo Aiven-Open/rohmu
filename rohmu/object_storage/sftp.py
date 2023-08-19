@@ -6,12 +6,11 @@ Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
 
-from ..common.models import StorageModel
-from ..common.statsd import StatsdConfig
-from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError
-from ..notifier.interface import Notifier
-from ..typing import Metadata
-from .base import (
+from io import BytesIO
+from rohmu.common.statsd import StatsdConfig
+from rohmu.errors import FileNotFoundFromStorageError, InvalidConfigurationError
+from rohmu.notifier.interface import Notifier
+from rohmu.object_storage.base import (
     BaseTransfer,
     IncrementalProgressCallbackType,
     IterKeyItem,
@@ -19,7 +18,8 @@ from .base import (
     KEY_TYPE_PREFIX,
     ProgressProportionCallbackType,
 )
-from io import BytesIO
+from rohmu.object_storage.config import SFTPObjectStorageConfig as Config
+from rohmu.typing import Metadata
 from stat import S_ISDIR
 from typing import Any, BinaryIO, cast, Iterator, Optional, Tuple
 
@@ -29,15 +29,6 @@ import logging
 import os
 import paramiko
 import warnings
-
-
-class Config(StorageModel):
-    server: str
-    port: int
-    username: str
-    password: Optional[str] = None
-    private_key: Optional[str] = None
-    prefix: Optional[str] = None
 
 
 class SFTPTransfer(BaseTransfer[Config]):
