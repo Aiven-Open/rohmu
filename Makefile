@@ -42,3 +42,11 @@ fmt:
 coverage:
 	$(PYTHON) -m pytest $(PYTEST_ARG) --cov-report term-missing --cov-report xml:coverage.xml \
 		--cov rohmu test/
+
+.PHONY: venv
+venv:
+	$(PYTHON) -m venv venv && \
+	source venv/bin/activate && \
+	pip install -U pip && \
+	pip install -r requirements.txt && \
+	pip install -r requirements.dev.txt

@@ -98,24 +98,22 @@ def test_list(transfer_type: str, request: Any) -> None:
 
 
 def test_hidden_local_files(local_transfer: LocalTransfer) -> None:
-    """
-    Local storage specific test.
-    """
+    """Local storage specific test."""
     storage_dir = Path(local_transfer.prefix)
     # Since we've never used the local storage, need to create the directory
     storage_dir.mkdir()
     # When creating the file manually, we need to create some metadata too.
-    with open(Path(local_transfer.prefix) / ".null", "w"):
+    with (Path(local_transfer.prefix) / ".null").open("w", encoding="utf-8"):
         pass
-    with open(Path(local_transfer.prefix) / ".null.metadata", "w") as f:
+    with (Path(local_transfer.prefix) / ".null.metadata").open("w", encoding="utf-8") as f:
         f.write('{"k": "v", "_hash": ""}')
     assert local_transfer.list_path("") == []
 
     # Make sure the previous test actually worked, by manually creating a file
     # that must appear.
-    with open(Path(local_transfer.prefix) / "somefile", "w"):
+    with (Path(local_transfer.prefix) / "somefile").open("w", encoding="utf-8"):
         pass
-    with open(Path(local_transfer.prefix) / "somefile.metadata", "w") as f:
+    with (Path(local_transfer.prefix) / "somefile.metadata").open("w", encoding="utf-8") as f:
         f.write('{"k": "v", "_hash": ""}')
 
     files = local_transfer.list_path("")

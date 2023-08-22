@@ -96,7 +96,7 @@ class DeltaModel(BaseModel):
 
 class SizeLimitedFile:
     def __init__(self, *, path: AnyPath, file_size: int) -> None:
-        self._f = open(path, "rb")
+        self._f = open(path, "rb")  # pylint: disable=consider-using-with
         self._file_size = file_size
         self.tell = self._f.tell
 

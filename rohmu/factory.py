@@ -38,7 +38,7 @@ def get_class_for_transfer(obj_store: Config) -> Type[BaseTransfer[StorageModel]
 
         return cast(Type[BaseTransfer[StorageModel]], SwiftTransfer)
 
-    raise InvalidConfigurationError("unsupported storage type {0!r}".format(storage_type))
+    raise InvalidConfigurationError(f"unsupported storage type {repr(storage_type)}")
 
 
 def get_class_for_notifier(notifier_config: Config) -> Type[Notifier]:
@@ -47,7 +47,7 @@ def get_class_for_notifier(notifier_config: Config) -> Type[Notifier]:
         from .notifier.http import BackgroundHTTPNotifier
 
         return BackgroundHTTPNotifier
-    raise InvalidConfigurationError("unsupported storage type {0!r}".format(notifier_type))
+    raise InvalidConfigurationError(f"unsupported storage type {repr(notifier_type)}")
 
 
 def get_notifier(notifier_config: Config) -> Notifier:

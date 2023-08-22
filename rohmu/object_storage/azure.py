@@ -68,7 +68,7 @@ class AzureTransfer(BaseTransfer[Config]):
         notifier: Optional[Notifier] = None,
         statsd_info: Optional[StatsdConfig] = None,
     ) -> None:
-        prefix = "{}".format(prefix.lstrip("/") if prefix else "")
+        prefix = prefix.lstrip("/") if prefix else ""
         super().__init__(prefix=prefix, notifier=notifier, statsd_info=statsd_info)
         if not account_key and not sas_token:
             raise InvalidConfigurationError("One of account_key or sas_token must be specified to authenticate")
@@ -80,7 +80,7 @@ class AzureTransfer(BaseTransfer[Config]):
         try:
             endpoint_suffix = ENDPOINT_SUFFIXES[azure_cloud]
         except KeyError:
-            raise InvalidConfigurationError("Unknown azure cloud {!r}".format(azure_cloud))
+            raise InvalidConfigurationError(f"Unknown azure cloud {repr(azure_cloud)}")
 
         conn_str = (
             "DefaultEndpointsProtocol=https;"
@@ -136,17 +136,15 @@ class AzureTransfer(BaseTransfer[Config]):
                 else:
                     destination_client.abort_copy(copy_props.id, timeout=timeout)
                     raise StorageError(
-                        "Copying {!r} to {!r} did not complete in {} seconds".format(source_key, destination_key, timeout)
+                        f"Copying {repr(source_key)} to {repr(destination_key)} did not complete in {timeout} seconds"
                     )
             elif copy_props.status == "failed":
                 raise StorageError(
-                    "Copying {!r} to {!r} failed: {!r}".format(source_key, destination_key, copy_props.status_description)
+                    f"Copying {repr(source_key)} to {repr(destination_key)} failed: {copy_props.status_description}"
                 )
             else:
                 raise StorageError(
-                    "Copying {!r} to {!r} failed, unexpected status: {!r}".format(
-                        source_key, destination_key, copy_props.status
-                    )
+                    f"Copying {repr(source_key)} to {repr(destination_key)} failed, unexpected status: {copy_props.status}"
                 )
 
     def get_metadata_for_key(self, key: str) -> Metadata:
@@ -273,7 +271,7 @@ class AzureTransfer(BaseTransfer[Config]):
                 if start_range >= file_size:
                     break
                 if download_stream.size == 0:
-                    raise StorageError("Empty response received for {}, range {}-{}".format(key, start_range, end_range))
+                    raise StorageError(f"Empty response received for {key}, range {start_range}-{end_range}")
                 end_range += download_stream.size
                 if end_range >= file_size:
                     end_range = file_size - 1

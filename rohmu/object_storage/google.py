@@ -585,7 +585,7 @@ class GoogleTransfer(BaseTransfer[Config]):
             if ex.resp["status"] == "404":
                 pass  # we need to create it
             elif ex.resp["status"] == "403":
-                raise InvalidConfigurationError("Bucket {0!r} exists but isn't accessible".format(bucket_name))
+                raise InvalidConfigurationError(f"Bucket {repr(bucket_name)} exists but isn't accessible")
             else:
                 raise
         else:
@@ -602,9 +602,9 @@ class GoogleTransfer(BaseTransfer[Config]):
             if error["message"].startswith("You already own this bucket"):
                 self.log.debug("Bucket: %r already exists, took: %.3fs", bucket_name, time.time() - start_time)
             elif error["message"] == "Invalid argument.":
-                raise InvalidConfigurationError("Invalid project id {0!r}".format(self.project_id))
+                raise InvalidConfigurationError(f"Invalid project id {repr(self.project_id)}")
             elif error["message"].startswith("Invalid bucket name"):
-                raise InvalidConfigurationError("Invalid bucket name {0!r}".format(bucket_name))
+                raise InvalidConfigurationError(f"Invalid bucket name {repr(bucket_name)}")
             else:
                 raise
 
@@ -651,15 +651,15 @@ class MediaStreamUpload(MediaUpload):
             self._next_chunk = self._read_bytes(self.peeksize - len(self._next_chunk), initial_data=self._next_chunk)
 
     # second parameter is length but baseclass incorrectly names it end
-    def getbytes(self, begin: int, length: int) -> bytes:  # type: ignore [override] # pylint: disable=arguments-differ
+    def getbytes(self, begin: int, length: int) -> bytes:  # type: ignore [override] # pylint: disable=arguments-renamed
         if begin < (self._position or 0):
-            msg = "Requested position {} for {!r} precedes already fulfilled position {}".format(
-                begin, self._name, self._position
-            )
+            msg = f"Requested position {begin} for {repr(self._name)} precedes already fulfilled position {self._position}"
             raise IndexError(msg)
         elif begin > (self._position or 0) + len(self._data):
-            msg = "Requested position {} for {!r} has gap from previous position {} and {} byte chunk".format(
-                begin, self._name, self._position, len(self._data)
+            num_bytes = len(self._data)
+            msg = (
+                f"Requested position {begin} for {repr(self._name)} has gap from previous position {self._position} "
+                f"and {num_bytes} byte chunk"
             )
             raise IndexError(msg)
 

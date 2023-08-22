@@ -11,7 +11,7 @@ from os import makedirs  # pylint: disable=unused-import
 import warnings
 
 warnings.warn(
-    "pghoard.rohmu.compat is deprecated, you should import " "from the standard library directly instead",
+    "pghoard.rohmu.compat is deprecated, you should import from the standard library directly instead",
     DeprecationWarning,
     stacklevel=2,
 )
