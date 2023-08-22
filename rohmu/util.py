@@ -18,7 +18,7 @@ import os
 import platform
 import types
 
-LOG = logging.getLogger("rohmu.util")
+LOG = logging.getLogger(__name__)
 
 
 def increase_pipe_capacity(*pipes: Union[int, HasFileno]) -> None:
