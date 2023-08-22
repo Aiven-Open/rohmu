@@ -178,7 +178,6 @@ class Stream:
                 bytes_available += len(dst_data)
             if not src_data:
                 self._eof = True
-
         if size < 0 or bytes_available < size:
             data = b"".join(chunks)
             self._remainder = b""

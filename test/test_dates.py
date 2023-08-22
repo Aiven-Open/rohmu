@@ -4,11 +4,13 @@ rohmu test case
 Copyright (c) 2017 Ohmu Ltd
 See LICENSE for details
 """
+from dateutil.parser import UnknownTimezoneWarning  # type: ignore[attr-defined]
 from rohmu.dates import parse_timestamp
 
 import datetime
 import dateutil.tz
 import re
+import warnings
 
 
 def test_parse_timestamp() -> None:
@@ -24,6 +26,8 @@ def test_parse_timestamp() -> None:
     assert local_naive == local_aware.replace(tzinfo=None)
 
     str_unknown_aware = "2017-02-02 12:00:00 XYZ"
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UnknownTimezoneWarning)
     unknown_aware_utc = parse_timestamp(str_unknown_aware)
     assert unknown_aware_utc.tzinfo == datetime.timezone.utc
     assert unknown_aware_utc.isoformat() == "2017-02-02T12:00:00+00:00"

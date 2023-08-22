@@ -13,7 +13,8 @@ Requires:       python3-cryptography >= 1.6
 Requires:       python3-dateutil
 Requires:       python3-pydantic
 Requires:       python3-requests
-Requires:       python3-snappy
+# Requires:       python3-snappy
+# TODO: Create python3-cramjam
 Requires:       python3-zstandard
 BuildRequires:  python3-devel
 BuildRequires:  python3-flake8

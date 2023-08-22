@@ -12,7 +12,7 @@ from .compressor import CompressionFile, DecompressionFile, DecompressSink
 from .encryptor import DecryptorFile, DecryptSink, EncryptorFile
 from .errors import InvalidConfigurationError
 from .filewrap import ThrottleSink
-from .typing import FileLike, HasWrite, Metadata
+from .typing import CompressionAlgorithm, FileLike, HasWrite, Metadata
 from contextlib import suppress
 from inspect import signature
 from rohmu.object_storage.base import IncrementalProgressCallbackType
@@ -143,7 +143,7 @@ def read_file(
 def file_writer(
     *,
     fileobj: FileLike,
-    compression_algorithm: Optional[str] = None,
+    compression_algorithm: Optional[CompressionAlgorithm] = None,
     compression_level: int = 0,
     compression_threads: int = 0,
     rsa_public_key: Union[None, str, bytes] = None,
@@ -162,7 +162,7 @@ def write_file(
     input_obj: FileLike,
     output_obj: FileLike,
     progress_callback: IncrementalProgressCallbackType = None,
-    compression_algorithm: Optional[str] = None,
+    compression_algorithm: Optional[CompressionAlgorithm] = None,
     compression_level: int = 0,
     compression_threads: int = 0,
     rsa_public_key: Union[None, str, bytes] = None,

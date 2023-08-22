@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import TracebackType
-from typing import Any, Dict, Optional, Protocol, Type, TYPE_CHECKING, Union
+from typing import Any, Dict, Literal, Optional, Protocol, Type, TYPE_CHECKING, Union
 
 try:
     # Remove when dropping support for Python 3.7
@@ -31,6 +31,8 @@ BinaryData = Union[
 ]
 
 StrOrPathLike = Union[str, "PathLike[str]"]
+
+CompressionAlgorithm = Literal["lzma", "snappy", "zstd"]
 
 
 class HasFileno(Protocol):

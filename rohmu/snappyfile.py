@@ -12,22 +12,22 @@ from typing import Optional
 import io
 
 try:
-    import snappy
+    import cramjam
 except ImportError:
-    snappy = None  # type: ignore
+    cramjam = None  # type: ignore
 
 
 class SnappyFile(FileWrap):
     def __init__(self, next_fp: FileLike, mode: str) -> None:
-        if snappy is None:
+        if cramjam is None:
             raise io.UnsupportedOperation("Snappy is not available")
 
         if mode == "rb":
-            self.decr = snappy.StreamDecompressor()
+            self.decr = cramjam.snappy.Decompressor()
             self.encr = None
         elif mode == "wb":
             self.decr = None
-            self.encr = snappy.StreamCompressor()
+            self.encr = cramjam.snappy.Compressor()
         else:
             raise io.UnsupportedOperation("unsupported mode for SnappyFile")
 
@@ -49,10 +49,11 @@ class SnappyFile(FileWrap):
         if self.encr is None:
             raise io.UnsupportedOperation("file not open for writing")
         data_as_bytes = bytes(data)
-        compressed_data = self.encr.compress(data_as_bytes)
-        self.next_fp.write(compressed_data)
-        self.offset += len(data_as_bytes)
-        return len(data_as_bytes)
+        block_size = self.encr.compress(data_as_bytes)
+        compressed_buffer = self.encr.flush()
+        self.next_fp.write(compressed_buffer)
+        self.offset += block_size
+        return block_size
 
     def writable(self) -> bool:
         return self.encr is not None
@@ -62,19 +63,13 @@ class SnappyFile(FileWrap):
         self._check_not_closed()
         if self.decr is None:
             raise io.UnsupportedOperation("file not open for reading")
-        while not self.decr_done:
-            compressed = self.next_fp.read(IO_BLOCK_SIZE)
-            if not compressed:
-                self.decr_done = True
-                output = self.decr.flush()
-            else:
-                output = self.decr.decompress(compressed)
-
-            if output:
-                self.offset += len(output)
-                return output
-
-        return b""
+        num_decompressed_bytes = 0
+        while compressed := self.next_fp.read(IO_BLOCK_SIZE):
+            chunk_size = self.decr.decompress(compressed)
+            num_decompressed_bytes += chunk_size
+        self.offset += num_decompressed_bytes
+        output = self.decr.flush().read()
+        return output
 
     def readable(self) -> bool:
         return self.decr is not None

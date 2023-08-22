@@ -1,5 +1,5 @@
 [MAIN]
-extension-pkg-allow-list=pydantic
+extension-pkg-allow-list=cramjam,pydantic
 
 [MESSAGES CONTROL]
 disable=
