@@ -41,7 +41,6 @@ def test_get_transfer_s3(
     mock_notifier: Mock,
     config: Config,
 ) -> None:
-
     expected_config_arg = dict(config)
     expected_config_arg.pop("storage_type")
     expected_config_arg.pop("notifier")
