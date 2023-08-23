@@ -9,7 +9,7 @@ See LICENSE for details
 from __future__ import annotations
 
 from enum import Enum, unique
-from pydantic import Field
+from pydantic import DirectoryPath, Field, FilePath
 from rohmu.common.models import ProxyInfo, StorageDriver, StorageModel
 from typing import Any, Dict, Final, Literal, Optional, TypeVar
 
@@ -90,7 +90,7 @@ class AzureObjectStorageConfig(StorageModel):
 class GoogleObjectStorageConfig(StorageModel):
     project_id: str
     bucket_name: str
-    credential_file: Optional[str] = None
+    credential_file: Optional[FilePath] = None
     credentials: Optional[Dict[str, Any]] = Field(None, repr=False)
     proxy_info: Optional[ProxyInfo] = None
     prefix: Optional[str] = None
@@ -98,7 +98,7 @@ class GoogleObjectStorageConfig(StorageModel):
 
 
 class LocalObjectStorageConfig(StorageModel):
-    directory: str
+    directory: DirectoryPath
     prefix: Optional[str] = None
     storage_type: Literal[StorageDriver.local] = StorageDriver.local
 
