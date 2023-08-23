@@ -113,7 +113,7 @@ class BaseTransfer(Generic[StorageModelT]):
 
     @classmethod
     def from_model(cls, model: StorageModelT) -> BaseTransfer[StorageModelT]:
-        return cls(**model.dict(by_alias=True))
+        return cls(**model.dict(by_alias=True, exclude={"storage_type"}))
 
     def copy_file(
         self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **_kwargs: Any

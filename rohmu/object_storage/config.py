@@ -9,8 +9,8 @@ See LICENSE for details
 from __future__ import annotations
 
 from enum import Enum, unique
-from rohmu.common.models import ProxyInfo, StorageModel
-from typing import Any, Dict, Final, Optional, TypeVar
+from rohmu.common.models import ProxyInfo, StorageDriver, StorageModel
+from typing import Any, Dict, Final, Literal, Optional, TypeVar
 
 import platform
 
@@ -83,6 +83,7 @@ class AzureObjectStorageConfig(StorageModel):
     prefix: Optional[str] = None
     azure_cloud: Optional[str] = None
     proxy_info: Optional[ProxyInfo] = None
+    storage_type: Literal[StorageDriver.azure] = StorageDriver.azure
 
 
 class GoogleObjectStorageConfig(StorageModel):
@@ -92,11 +93,13 @@ class GoogleObjectStorageConfig(StorageModel):
     credentials: Optional[Dict[str, Any]] = None
     proxy_info: Optional[ProxyInfo] = None
     prefix: Optional[str] = None
+    storage_type: Literal[StorageDriver.google] = StorageDriver.google
 
 
 class LocalObjectStorageConfig(StorageModel):
     directory: str
     prefix: Optional[str] = None
+    storage_type: Literal[StorageDriver.local] = StorageDriver.local
 
 
 @unique
@@ -123,6 +126,7 @@ class S3ObjectStorageConfig(StorageModel):
     connect_timeout: Optional[str] = None
     read_timeout: Optional[str] = None
     aws_session_token: Optional[str] = None
+    storage_type: Literal[StorageDriver.s3] = StorageDriver.s3
 
 
 class SFTPObjectStorageConfig(StorageModel):
@@ -132,6 +136,7 @@ class SFTPObjectStorageConfig(StorageModel):
     password: Optional[str] = None
     private_key: Optional[str] = None
     prefix: Optional[str] = None
+    storage_type: Literal[StorageDriver.sftp] = StorageDriver.sftp
 
 
 class SwiftObjectStorageConfig(StorageModel):
@@ -153,3 +158,4 @@ class SwiftObjectStorageConfig(StorageModel):
     project_domain_name: Optional[str] = None
     service_type: Optional[str] = None
     endpoint_type: Optional[str] = None
+    storage_type: Literal[StorageDriver.swift] = StorageDriver.swift
