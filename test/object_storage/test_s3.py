@@ -31,7 +31,7 @@ def fixture_infra(mocker: Any) -> Iterator[S3Infra]:
     s3_client = MagicMock()
     create_client = MagicMock(return_value=s3_client)
     get_session.return_value = MagicMock(create_client=create_client)
-    operation = mocker.patch("rohmu.object_storage.base.StatsClient.operation")
+    operation = mocker.patch("rohmu.common.statsd.StatsClient.operation")
     transfer = S3Transfer(
         region="test-region",
         bucket_name="test-bucket",

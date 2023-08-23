@@ -8,15 +8,26 @@ See LICENSE for details
 
 from __future__ import annotations
 
-from ..common.models import ProxyInfo, StorageModel
-from ..common.statsd import StatsdConfig
-from ..notifier.interface import Notifier
-from ..typing import Metadata
-from .base import IncrementalProgressCallbackType, ProgressProportionCallbackType
-
 # pylint: disable=import-error, no-name-in-module
 from azure.core.exceptions import HttpResponseError, ResourceExistsError
 from azure.storage.blob import BlobServiceClient, ContentSettings
+from rohmu.common.statsd import StatsdConfig
+from rohmu.errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
+from rohmu.notifier.interface import Notifier
+from rohmu.object_storage.base import (
+    BaseTransfer,
+    IncrementalProgressCallbackType,
+    IterKeyItem,
+    KEY_TYPE_OBJECT,
+    KEY_TYPE_PREFIX,
+    ProgressProportionCallbackType,
+)
+from rohmu.object_storage.config import (  # pylint: disable=unused-import
+    AZURE_MAX_BLOCK_SIZE as MAX_BLOCK_SIZE,
+    AzureObjectStorageConfig as Config,
+    calculate_azure_max_block_size as calculate_max_block_size,
+)
+from rohmu.typing import Metadata
 from typing import Any, BinaryIO, Iterator, Optional, Tuple, Union
 
 import azure.common
@@ -29,8 +40,6 @@ except ImportError:
     # old versions of the azure blob storage library do not expose the classes publicly
     from azure.storage.blob._models import BlobPrefix, BlobType  # type: ignore
 
-from ..errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
-from .base import BaseTransfer, get_total_memory, IterKeyItem, KEY_TYPE_OBJECT, KEY_TYPE_PREFIX
 
 ENDPOINT_SUFFIXES = {
     None: "core.windows.net",
@@ -40,30 +49,8 @@ ENDPOINT_SUFFIXES = {
 }
 
 
-def calculate_max_block_size() -> int:
-    total_mem_mib = get_total_memory() or 0
-    # At least 4 MiB, at most 100 MiB. Max block size used for hosts with ~100+ GB of memory
-    return max(min(int(total_mem_mib / 1000), 100), 4) * 1024 * 1024
-
-
-# Increase block size based on host memory. Azure supports up to 50k blocks and up to 5 TiB individual
-# files. Default block size is set to 4 MiB so only ~200 GB files can be uploaded. In order to get close
-# to that 5 TiB increase the block size based on host memory; we don't want to use the max 100 for all
-# hosts because the uploader will allocate (with default settings) 3 x block size of memory.
-MAX_BLOCK_SIZE = calculate_max_block_size()
-
 # Reduce Azure logging verbocity of http requests and responses
 logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
-
-
-class Config(StorageModel):
-    bucket_name: str
-    account_name: str
-    account_key: Optional[str] = None
-    sas_token: Optional[str] = None
-    prefix: Optional[str] = None
-    azure_cloud: Optional[str] = None
-    proxy_info: Optional[ProxyInfo] = None
 
 
 class AzureTransfer(BaseTransfer[Config]):

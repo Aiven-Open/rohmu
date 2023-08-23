@@ -8,13 +8,12 @@ See LICENSE for details
 
 from __future__ import annotations
 
-from ..common.models import StorageModel
-from ..common.statsd import StatsdConfig
-from ..dates import parse_timestamp
-from ..errors import FileNotFoundFromStorageError
-from ..notifier.interface import Notifier
-from ..typing import Metadata
-from .base import (
+from contextlib import suppress
+from rohmu.common.statsd import StatsdConfig
+from rohmu.dates import parse_timestamp
+from rohmu.errors import FileNotFoundFromStorageError
+from rohmu.notifier.interface import Notifier
+from rohmu.object_storage.base import (
     BaseTransfer,
     IncrementalProgressCallbackType,
     IterKeyItem,
@@ -22,16 +21,18 @@ from .base import (
     KEY_TYPE_PREFIX,
     ProgressProportionCallbackType,
 )
-from contextlib import suppress
+from rohmu.object_storage.config import (
+    SWIFT_CHUNK_SIZE as CHUNK_SIZE,
+    SWIFT_SEGMENT_SIZE as SEGMENT_SIZE,
+    SwiftObjectStorageConfig as Config,
+)
+from rohmu.typing import Metadata
 from swiftclient import client, exceptions  # pylint: disable=import-error
 from typing import Any, BinaryIO, Iterator, Optional, Tuple
 
 import logging
 import os
 import time
-
-CHUNK_SIZE = 1024 * 1024 * 5  # 5 Mi
-SEGMENT_SIZE = 1024 * 1024 * 1024 * 3  # 3 Gi
 
 
 # Swift client logs excessively at INFO level, outputting things like a curl
@@ -53,27 +54,6 @@ def swift_exception_logger(err: BaseException) -> Any:
 orig_swift_exception_logger = client.logger.exception
 client.logger.exception = swift_exception_logger
 logging.getLogger("swiftclient").setLevel(logging.WARNING)
-
-
-class Config(StorageModel):
-    user: str
-    key: str
-    container_name: str
-    auth_url: str
-    auth_version: str = "2.0"
-    tenant_name: Optional[str] = None
-    segment_size: int = SEGMENT_SIZE
-    region_name: Optional[str] = None
-    user_id: Optional[str] = None
-    user_domain_id: Optional[str] = None
-    user_domain_name: Optional[str] = None
-    tenant_id: Optional[str] = None
-    project_id: Optional[str] = None
-    project_name: Optional[str] = None
-    project_domain_id: Optional[str] = None
-    project_domain_name: Optional[str] = None
-    service_type: Optional[str] = None
-    endpoint_type: Optional[str] = None
 
 
 class SwiftTransfer(BaseTransfer[Config]):

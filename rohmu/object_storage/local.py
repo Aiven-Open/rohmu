@@ -5,15 +5,15 @@ Copyright (c) 2016 Ohmu Ltd
 Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
+
 from __future__ import annotations
 
-from ..common.models import StorageModel, StorageOperation
-from ..common.statsd import StatsdConfig
-from ..errors import ConcurrentUploadError, FileNotFoundFromStorageError
-from ..notifier.interface import Notifier
-from ..typing import Metadata
-from ..util import BinaryStreamsConcatenation, ProgressStream
-from .base import (
+from pathlib import Path
+from rohmu.common.models import StorageOperation
+from rohmu.common.statsd import StatsdConfig
+from rohmu.errors import ConcurrentUploadError, FileNotFoundFromStorageError
+from rohmu.notifier.interface import Notifier
+from rohmu.object_storage.base import (
     BaseTransfer,
     ConcurrentUpload,
     IncrementalProgressCallbackType,
@@ -22,7 +22,9 @@ from .base import (
     KEY_TYPE_PREFIX,
     ProgressProportionCallbackType,
 )
-from pathlib import Path
+from rohmu.object_storage.config import LOCAL_CHUNK_SIZE as CHUNK_SIZE, LocalObjectStorageConfig as Config
+from rohmu.typing import Metadata
+from rohmu.util import BinaryStreamsConcatenation, ProgressStream
 from typing import Any, BinaryIO, Iterator, Optional, TextIO, Tuple, Union
 
 import contextlib
@@ -34,14 +36,8 @@ import shutil
 import tempfile
 import uuid
 
-CHUNK_SIZE = 1024 * 1024
 INTERNAL_METADATA_KEY_HASH = "_hash"
 INTERNAL_METADATA_KEYS = {INTERNAL_METADATA_KEY_HASH}
-
-
-class Config(StorageModel):
-    directory: str
-    prefix: Optional[str] = None
 
 
 class LocalTransfer(BaseTransfer[Config]):

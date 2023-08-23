@@ -12,10 +12,10 @@ from .compressor import CompressionFile, DecompressionFile, DecompressSink
 from .encryptor import DecryptorFile, DecryptSink, EncryptorFile
 from .errors import InvalidConfigurationError
 from .filewrap import ThrottleSink
-from .object_storage.base import IncrementalProgressCallbackType
 from .typing import FileLike, HasWrite, Metadata
 from contextlib import suppress
 from inspect import signature
+from rohmu.object_storage.base import IncrementalProgressCallbackType
 from typing import Callable, Optional, Union
 
 import time

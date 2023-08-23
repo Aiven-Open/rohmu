@@ -1,5 +1,6 @@
 from rohmu.factory import Config, get_class_for_transfer, get_transfer
-from rohmu.object_storage.s3 import Config as S3Config, S3Transfer
+from rohmu.object_storage.config import S3ObjectStorageConfig
+from rohmu.object_storage.s3 import S3Transfer
 from typing import cast
 from unittest.mock import ANY, MagicMock, Mock, patch
 
@@ -45,7 +46,7 @@ def test_get_transfer_s3(
     expected_config_arg.pop("storage_type")
     expected_config_arg.pop("notifier")
     expected_botocore_config = {"proxies": {"https": "socks5://bob:secret@proxy.test:16666"}}
-    mock_config_model.return_value = S3Config(**expected_config_arg, notifier=None)
+    mock_config_model.return_value = S3ObjectStorageConfig(**expected_config_arg, notifier=None)
 
     transfer_object = get_transfer(config)
 

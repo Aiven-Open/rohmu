@@ -8,22 +8,6 @@ See LICENSE for details
 
 from __future__ import annotations
 
-from ..common.models import ProxyInfo, StorageModel, StorageOperation
-from ..common.statsd import StatsClient, StatsdConfig
-from ..dates import parse_timestamp
-from ..errors import FileNotFoundFromStorageError, InvalidByteRangeError, InvalidConfigurationError
-from ..notifier.interface import Notifier
-from ..typing import AnyPath, Metadata
-from ..util import get_total_size_from_content_range
-from .base import (
-    BaseTransfer,
-    get_total_memory,
-    IncrementalProgressCallbackType,
-    IterKeyItem,
-    KEY_TYPE_OBJECT,
-    KEY_TYPE_PREFIX,
-    ProgressProportionCallbackType,
-)
 from contextlib import contextmanager
 from googleapiclient.discovery import build, Resource
 from googleapiclient.errors import HttpError
@@ -38,7 +22,27 @@ from googleapiclient.http import (
 from http.client import IncompleteRead
 from oauth2client import GOOGLE_TOKEN_URI
 from oauth2client.client import GoogleCredentials
-from typing import Any, BinaryIO, Callable, Dict, Iterable, Iterator, Optional, TextIO, Tuple, TypeVar, Union
+from rohmu.common.models import StorageOperation
+from rohmu.common.statsd import StatsClient, StatsdConfig
+from rohmu.dates import parse_timestamp
+from rohmu.errors import FileNotFoundFromStorageError, InvalidByteRangeError, InvalidConfigurationError
+from rohmu.notifier.interface import Notifier
+from rohmu.object_storage.base import (
+    BaseTransfer,
+    IncrementalProgressCallbackType,
+    IterKeyItem,
+    KEY_TYPE_OBJECT,
+    KEY_TYPE_PREFIX,
+    ProgressProportionCallbackType,
+)
+from rohmu.object_storage.config import (
+    GOOGLE_DOWNLOAD_CHUNK_SIZE as DOWNLOAD_CHUNK_SIZE,
+    GOOGLE_UPLOAD_CHUNK_SIZE as UPLOAD_CHUNK_SIZE,
+    GoogleObjectStorageConfig as Config,
+)
+from rohmu.typing import AnyPath, Metadata
+from rohmu.util import get_total_size_from_content_range
+from typing import Any, BinaryIO, Callable, Iterable, Iterator, Optional, TextIO, Tuple, TypeVar, Union
 from typing_extensions import Protocol
 
 import codecs
@@ -82,12 +86,6 @@ except ImportError:
 logging.getLogger("googleapiclient.discovery_cache").setLevel(logging.ERROR)
 logging.getLogger("googleapiclient").setLevel(logging.WARNING)
 logging.getLogger("oauth2client").setLevel(logging.WARNING)
-
-# googleapiclient download performs some 3-4 times better with 50 MB chunk size than 5 MB chunk size;
-# but decrypting/decompressing big chunks needs a lot of memory so use smaller chunks on systems with less
-# than 2 GB RAM
-DOWNLOAD_CHUNK_SIZE = 1024 * 1024 * 5 if (get_total_memory() or 0) < 2048 else 1024 * 1024 * 50
-UPLOAD_CHUNK_SIZE = 1024 * 1024 * 5
 
 
 def get_credentials(
@@ -166,15 +164,6 @@ class Reporter:
     def report_status(self, stats: StatsClient, status: Union[MediaUploadProgress, MediaDownloadProgress]) -> None:
         stats.operation(operation=self.operation, size=status.resumable_progress - self.progress_prev)
         self.progress_prev = status.resumable_progress
-
-
-class Config(StorageModel):
-    project_id: str
-    bucket_name: str
-    credential_file: Optional[str] = None
-    credentials: Optional[Dict[str, Any]] = None
-    proxy_info: Optional[ProxyInfo] = None
-    prefix: Optional[str] = None
 
 
 ResType = TypeVar("ResType")
