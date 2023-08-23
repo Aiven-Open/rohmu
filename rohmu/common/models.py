@@ -2,14 +2,14 @@
 
 
 from rohmu.common.statsd import StatsdConfig
+from rohmu.common.strenum import StrEnum
 from rohmu.notifier.interface import Notifier
 from typing import Optional
 
-import enum
 import pydantic
 
 
-class StorageOperation(str, enum.Enum):
+class StorageOperation(StrEnum):
     iter_key = "iter_key"
     copy_file = "copy_file"
     delete_key = "delete_key"
@@ -28,11 +28,8 @@ class StorageOperation(str, enum.Enum):
     multipart_aborted = "multipart_aborted"
     multipart_complete = "multipart_complete"
 
-    def __str__(self) -> str:
-        return str(self.value)
 
-
-class ProxyType(str, enum.Enum):
+class ProxyType(StrEnum):
     socks5 = "socks5"
     http = "http"
 

@@ -18,7 +18,7 @@ This is combination of:
 from __future__ import annotations
 
 from contextlib import asynccontextmanager, contextmanager
-from enum import Enum
+from rohmu.common.strenum import StrEnum
 from typing import AsyncIterator, Dict, Iterator, Optional, Union
 
 import pydantic
@@ -26,12 +26,9 @@ import socket
 import time
 
 
-class MessageFormat(str, Enum):
+class MessageFormat(StrEnum):
     datadog = "datadog"
     telegraf = "telegraf"
-
-    def __str__(self) -> str:
-        return str(self.value)
 
 
 Tags = Dict[str, Union[int, str, None]]
