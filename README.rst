@@ -22,7 +22,7 @@ Features
 Requirements
 ============
 
-Rohmu requires Python >= 3.8. For Python library dependencies, have a
+Rohmu requires Python >= 3.10. For Python library dependencies, have a
 look at
 `requirements.txt <https://github.com/aiven/rohmu/blob/main/requirements.txt>`__.
 
