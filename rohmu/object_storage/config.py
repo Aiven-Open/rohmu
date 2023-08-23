@@ -9,6 +9,7 @@ See LICENSE for details
 from __future__ import annotations
 
 from enum import Enum, unique
+from pydantic import Field
 from rohmu.common.models import ProxyInfo, StorageDriver, StorageModel
 from typing import Any, Dict, Final, Literal, Optional, TypeVar
 
@@ -78,8 +79,8 @@ SWIFT_SEGMENT_SIZE: Final[int] = 1024 * 1024 * 1024 * 3  # 3 Gi
 class AzureObjectStorageConfig(StorageModel):
     bucket_name: str
     account_name: str
-    account_key: Optional[str] = None
-    sas_token: Optional[str] = None
+    account_key: Optional[str] = Field(None, repr=False)
+    sas_token: Optional[str] = Field(None, repr=False)
     prefix: Optional[str] = None
     azure_cloud: Optional[str] = None
     proxy_info: Optional[ProxyInfo] = None
@@ -90,7 +91,7 @@ class GoogleObjectStorageConfig(StorageModel):
     project_id: str
     bucket_name: str
     credential_file: Optional[str] = None
-    credentials: Optional[Dict[str, Any]] = None
+    credentials: Optional[Dict[str, Any]] = Field(None, repr=False)
     proxy_info: Optional[ProxyInfo] = None
     prefix: Optional[str] = None
     storage_type: Literal[StorageDriver.google] = StorageDriver.google
@@ -113,7 +114,7 @@ class S3ObjectStorageConfig(StorageModel):
     region: str
     bucket_name: str
     aws_access_key_id: Optional[str] = None
-    aws_secret_access_key: Optional[str] = None
+    aws_secret_access_key: Optional[str] = Field(None, repr=False)
     prefix: Optional[str] = None
     host: Optional[str] = None
     port: Optional[str] = None
@@ -125,7 +126,7 @@ class S3ObjectStorageConfig(StorageModel):
     proxy_info: Optional[ProxyInfo] = None
     connect_timeout: Optional[str] = None
     read_timeout: Optional[str] = None
-    aws_session_token: Optional[str] = None
+    aws_session_token: Optional[str] = Field(None, repr=False)
     storage_type: Literal[StorageDriver.s3] = StorageDriver.s3
 
 
@@ -133,15 +134,15 @@ class SFTPObjectStorageConfig(StorageModel):
     server: str
     port: int
     username: str
-    password: Optional[str] = None
-    private_key: Optional[str] = None
+    password: Optional[str] = Field(None, repr=False)
+    private_key: Optional[str] = Field(None, repr=False)
     prefix: Optional[str] = None
     storage_type: Literal[StorageDriver.sftp] = StorageDriver.sftp
 
 
 class SwiftObjectStorageConfig(StorageModel):
     user: str
-    key: str
+    key: str = Field(repr=False)
     container_name: str
     auth_url: str
     auth_version: str = "2.0"
