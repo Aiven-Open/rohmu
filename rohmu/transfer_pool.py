@@ -109,6 +109,7 @@ class _TransferCacheForThreadSafeTransfer(_TransferCache):
 _BASE_TRANSFER_INSTANCE_ATTRS = {"config_model", "log", "notifier", "prefix", "stats"}
 _BASE_TRANSFER_ATTRS = {attr for attr in vars(BaseTransfer) if not attr.startswith("__")} | _BASE_TRANSFER_INSTANCE_ATTRS
 
+
 # pylint: disable=abstract-method,super-init-not-called
 class SafeTransfer(BaseTransfer[StorageModel]):
     """Helper class that helps the users in finding bugs in their code handling transfers.

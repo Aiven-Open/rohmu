@@ -121,7 +121,7 @@ class SwiftTransfer(BaseTransfer[Config]):
 
     @staticmethod
     def _metadata_to_headers(metadata: Metadata) -> dict[str, str]:
-        return {"x-object-meta-{}".format(name): str(value) for name, value in metadata.items()}
+        return {f"x-object-meta-{name}": str(value) for name, value in metadata.items()}
 
     def get_metadata_for_key(self, key: str) -> Metadata:
         path = self.format_key_for_backend(key)
@@ -343,20 +343,22 @@ class SwiftTransfer(BaseTransfer[Config]):
         # upload segments of a file like `backup-bucket/site-name/basebackup/2016-03-22_0`
         # to as `backup-bucket/site-name/basebackup_segments/2016-03-22_0/{:08x}`
         segment_no = 0
-        segment_path = "{}_segments/{}/".format(os.path.dirname(path), os.path.basename(path))
-        segment_key_format = "{}{{:08x}}".format(segment_path).format
+        dirname = os.path.dirname(path)
+        basename = os.path.basename(path)
+        segment_path = f"{dirname}_segments/{basename}/"
         remaining = content_length
         while remaining > 0:
             this_segment_size = min(self.segment_size, remaining)
             remaining -= this_segment_size
             segment_no += 1
             self.log.debug("Uploading segment %r of %r to %r (%r bytes)", segment_no, fp, path, this_segment_size)
-            segment_key = segment_key_format(segment_no)  # pylint: disable=too-many-format-args
+            segment_key = f"{segment_path}{segment_no:08x}"
             self.conn.put_object(
                 self.container_name, segment_key, contents=fp, content_length=this_segment_size, content_type=mimetype
             )
             if upload_progress_fn:
                 upload_progress_fn(content_length - remaining)
         self.log.info("Uploaded %r segments of %r to %r", segment_no, path, segment_path)
-        headers["x-object-manifest"] = "{}/{}".format(self.container_name, segment_path.lstrip("/"))
+        segment_path_stripped = segment_path.lstrip("/")
+        headers["x-object-manifest"] = f"{self.container_name}/{segment_path_stripped}"
         self.conn.put_object(self.container_name, path, contents="", headers=headers, content_length=0)

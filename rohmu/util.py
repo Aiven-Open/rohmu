@@ -18,14 +18,14 @@ import os
 import platform
 import types
 
-LOG = logging.getLogger("rohmu.util")
+LOG = logging.getLogger(__name__)
 
 
 def increase_pipe_capacity(*pipes: Union[int, HasFileno]) -> None:
     if platform.system() != "Linux":
         return
     try:
-        with open("/proc/sys/fs/pipe-max-size", "r") as f:
+        with open("/proc/sys/fs/pipe-max-size", "r", encoding="utf-8") as f:
             pipe_max_size = int(f.read())
     except FileNotFoundError:
         return

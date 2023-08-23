@@ -28,7 +28,8 @@ def test_store_file_from_disk() -> None:
             tmpfile.flush()
             transfer.store_file_from_disk(key="test_key1", filepath=tmpfile.name)
 
-        assert open(os.path.join(destdir, "test_key1"), "rb").read() == test_data
+        with open(os.path.join(destdir, "test_key1"), "rb") as key1_file_handler:
+            assert key1_file_handler.read() == test_data
         notifier.object_created.assert_called_once_with(
             key="test_key1", size=len(test_data), metadata={"Content-Length": "9"}
         )
@@ -46,7 +47,8 @@ def test_store_file_object() -> None:
 
         transfer.store_file_object(key="test_key2", fd=file_object)
 
-        assert open(os.path.join(destdir, "test_key2"), "rb").read() == test_data
+        with open(os.path.join(destdir, "test_key2"), "rb") as key2_file_handler:
+            assert key2_file_handler.read() == test_data
         notifier.object_created.assert_called_once_with(key="test_key2", size=len(test_data), metadata={})
 
         data, _ = transfer.get_contents_to_string("test_key2")
@@ -92,7 +94,7 @@ def test_can_handle_metadata_without_md5() -> None:
         target_file = transfer.format_key_for_backend("test_key1")
         metadata_file = target_file + ".metadata"
         old_metadata = {"Content-Length": str(len(test_data))}
-        with open(metadata_file, "w") as metadata_fp:
+        with open(metadata_file, "w", encoding="utf-8") as metadata_fp:
             json.dump(old_metadata, metadata_fp)
 
         # we can read the metadata
@@ -131,8 +133,8 @@ def test_can_upload_files_concurrently() -> None:
         transfer.upload_concurrent_chunk(upload, 5, BytesIO(b"Wor"))
 
         # we don't see the temporary files created during upload
-        assert transfer.list_prefixes(key="/") == []
-        assert transfer.list_path(key="/", deep=True) == []
+        assert transfer.list_prefixes(key="/") == []  # pylint: disable=use-implicit-booleaness-not-comparison
+        assert transfer.list_path(key="/", deep=True) == []  # pylint: disable=use-implicit-booleaness-not-comparison
         assert os.path.exists(os.path.join(destdir, f".concurrent_upload_{upload.backend_id}"))
 
         transfer.complete_concurrent_upload(upload)

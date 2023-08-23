@@ -23,7 +23,7 @@ import time
 
 class _TestSession:
     def __init__(self, *args: Any, **kwargs: Any) -> None:  # pylint: disable=super-init-not-called,unused-argument
-        self.post_called: List[Tuple[Any, ...]] = list()
+        self.post_called: List[Tuple[Any, ...]] = []
 
     def post(self, *args: Any, **kwargs: Any) -> None:
         self.post_called.append((args, kwargs))
@@ -66,7 +66,7 @@ def _make_notifier(url: str) -> Iterator[BackgroundHTTPNotifier]:
 
 @contextmanager
 def _create_local_server() -> Iterator[Tuple[HTTPServer, List[Any]]]:
-    post_called: List[Any] = list()
+    post_called: List[Any] = []
 
     class _TestServerRequestHandler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:
@@ -79,7 +79,7 @@ def _create_local_server() -> Iterator[Tuple[HTTPServer, List[Any]]]:
     server = HTTPServer(("", 0), _TestServerRequestHandler)
 
     try:
-        yield (server, post_called)
+        yield server, post_called
     finally:
         server.server_close()
 
@@ -97,7 +97,7 @@ def _create_server_and_configured_notifier(
         url = f"http://{server.server_name}:{server.server_port}{path}"
 
         with _make_notifier(url=url) as notifier:
-            yield (notifier, server, post_called)
+            yield notifier, server, post_called
 
 
 def test_background_http_request() -> None:

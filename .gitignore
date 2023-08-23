@@ -1,6 +1,7 @@
 *.pyo
 *.log
 *~
+.DS_Store
 /.cache
 /.coverage
 /.project

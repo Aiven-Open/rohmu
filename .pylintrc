@@ -1,3 +1,6 @@
+[MAIN]
+extension-pkg-allow-list=pydantic
+
 [MESSAGES CONTROL]
 disable=
     bad-option-value,
@@ -33,6 +36,3 @@ max-module-lines=1100
 [REPORTS]
 output-format=text
 reports=no
-
-[TYPECHECK]
-extension-pkg-whitelist=pydantic
