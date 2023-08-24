@@ -159,4 +159,5 @@ class SwiftObjectStorageConfig(StorageModel):
     project_domain_name: Optional[str] = None
     service_type: Optional[str] = None
     endpoint_type: Optional[str] = None
+    prefix: Optional[str] = None
     storage_type: Literal[StorageDriver.swift] = StorageDriver.swift
