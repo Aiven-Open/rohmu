@@ -77,7 +77,7 @@ SWIFT_SEGMENT_SIZE: Final[int] = 1024 * 1024 * 1024 * 3  # 3 Gi
 
 
 class AzureObjectStorageConfig(StorageModel):
-    bucket_name: str
+    bucket_name: Optional[str]
     account_name: str
     account_key: Optional[str] = Field(None, repr=False)
     sas_token: Optional[str] = Field(None, repr=False)
@@ -89,7 +89,7 @@ class AzureObjectStorageConfig(StorageModel):
 
 class GoogleObjectStorageConfig(StorageModel):
     project_id: str
-    bucket_name: str
+    bucket_name: Optional[str]
     credential_file: Optional[FilePath] = None
     credentials: Optional[Dict[str, Any]] = Field(None, repr=False)
     proxy_info: Optional[ProxyInfo] = None
@@ -112,7 +112,7 @@ class S3AddressingStyle(Enum):
 
 class S3ObjectStorageConfig(StorageModel):
     region: str
-    bucket_name: str
+    bucket_name: Optional[str]
     aws_access_key_id: Optional[str] = None
     aws_secret_access_key: Optional[str] = Field(None, repr=False)
     prefix: Optional[str] = None
