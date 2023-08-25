@@ -7,8 +7,8 @@ from rohmu.delta.common import BackupPath, EMBEDDED_FILE_SIZE, Progress, SizeLim
 from rohmu.typing import AnyPath
 from test.conftest import SnapshotterWithDefaults
 from typing import Any, Callable, Union
+from unittest.mock import patch
 
-import mock
 import os
 import pytest
 
@@ -87,7 +87,7 @@ def test_snapshot_error_filenotfound(
 
     snapshotter = snapshotter_creator()
     obj = obj or snapshotter
-    with mock.patch.object(obj, fun, new=_not_really_found):
+    with patch.object(obj, fun, new=_not_really_found):
         (snapshotter.src / "foo").write_text("foobar")
         (snapshotter.src / "bar").write_text("foobar")
         with snapshotter.lock:
@@ -189,16 +189,16 @@ def test_snapshot_error_when_required_files_not_found(snapshotter_creator: Calla
         # Required file disappeared during hash calculation
         # should succeed if we re-use snapshot files from previous snapshot, as there will be no new snapshot files
         # created
-        with mock.patch.object(SnapshotFile, "open_for_reading", new=fake_open_for_reading):
+        with patch.object(SnapshotFile, "open_for_reading", new=fake_open_for_reading):
             snapshotter.snapshot(progress=Progress(), reuse_old_snapshotfiles=True)
         validate_snapshot()
 
         # Should fail when files are not re-used and required file is missing
-        with mock.patch.object(SnapshotFile, "open_for_reading", new=fake_open_for_reading):
+        with patch.object(SnapshotFile, "open_for_reading", new=fake_open_for_reading):
             with pytest.raises(FileNotFoundError):
                 snapshotter.snapshot(progress=Progress(), reuse_old_snapshotfiles=False)
 
         # Should fail when files disappeared before hash calculation
-        with mock.patch("rohmu.delta.snapshot.Path.stat", side_effect=FileNotFoundError):
+        with patch("rohmu.delta.snapshot.Path.stat", side_effect=FileNotFoundError):
             with pytest.raises(FileNotFoundError):
                 snapshotter.snapshot(progress=Progress(), reuse_old_snapshotfiles=True)
