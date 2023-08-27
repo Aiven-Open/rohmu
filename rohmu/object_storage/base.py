@@ -10,13 +10,28 @@ from __future__ import annotations
 from contextlib import suppress
 from dataclasses import dataclass, field
 from io import BytesIO
+from rohmu.common.models import StorageModel
 from rohmu.common.statsd import StatsClient, StatsdConfig
 from rohmu.errors import FileNotFoundFromStorageError, InvalidByteRangeError, StorageError
 from rohmu.notifier.interface import Notifier
 from rohmu.notifier.null import NullNotifier
 from rohmu.object_storage.config import StorageModelT
 from rohmu.typing import AnyPath, Metadata
-from typing import Any, BinaryIO, Callable, Collection, Generic, Iterator, NamedTuple, Optional, Protocol, Tuple, Type, Union
+from typing import (
+    Any,
+    BinaryIO,
+    Callable,
+    Collection,
+    Generic,
+    Iterator,
+    NamedTuple,
+    Optional,
+    Protocol,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import logging
 import os
@@ -44,6 +59,9 @@ class ConcurrentUpload:
     key: str
     metadata: Optional[Metadata]
     chunks_to_etags: dict[int, str] = field(default_factory=dict, hash=False, compare=False)
+
+
+SourceStorageModelT = TypeVar("SourceStorageModelT", bound=StorageModel)
 
 
 class BaseTransfer(Generic[StorageModelT]):
@@ -120,6 +138,9 @@ class BaseTransfer(Generic[StorageModelT]):
     ) -> None:
         """Performs remote copy from source key name to destination key name. Key must identify a file, trees
         cannot be copied with this method. If no metadata is given copies the existing metadata."""
+        raise NotImplementedError
+
+    def copy_files_from(self, *, source: BaseTransfer[SourceStorageModelT], keys: Collection[str]) -> None:
         raise NotImplementedError
 
     def format_key_for_backend(self, key: str, remove_slash_prefix: bool = False, trailing_slash: bool = False) -> str:

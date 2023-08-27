@@ -34,6 +34,7 @@ from rohmu.object_storage.base import (
     KEY_TYPE_OBJECT,
     KEY_TYPE_PREFIX,
     ProgressProportionCallbackType,
+    SourceStorageModelT,
 )
 from rohmu.object_storage.config import (
     GOOGLE_DOWNLOAD_CHUNK_SIZE as DOWNLOAD_CHUNK_SIZE,
@@ -42,7 +43,7 @@ from rohmu.object_storage.config import (
 )
 from rohmu.typing import AnyPath, Metadata
 from rohmu.util import get_total_size_from_content_range
-from typing import Any, BinaryIO, Callable, Iterable, Iterator, Optional, TextIO, Tuple, TypeVar, Union
+from typing import Any, BinaryIO, Callable, Collection, Iterable, Iterator, Optional, TextIO, Tuple, TypeVar, Union
 from typing_extensions import Protocol
 
 import codecs
@@ -286,7 +287,14 @@ class GoogleTransfer(BaseTransfer[Config]):
     def copy_file(
         self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **_kwargs: Any
     ) -> None:
-        source_object = self.format_key_for_backend(source_key)
+        self._copy_file_from_bucket(
+            source_bucket=self, source_key=source_key, destination_key=destination_key, metadata=metadata
+        )
+
+    def _copy_file_from_bucket(
+        self, *, source_bucket: "GoogleTransfer", source_key: str, destination_key: str, metadata: Optional[Metadata] = None
+    ) -> None:
+        source_object = source_bucket.format_key_for_backend(source_key)
         destination_object = self.format_key_for_backend(destination_key)
         body = {}
         if metadata is not None:
@@ -299,7 +307,7 @@ class GoogleTransfer(BaseTransfer[Config]):
                 body=body,
                 destinationBucket=self.bucket_name,
                 destinationObject=destination_object,
-                sourceBucket=self.bucket_name,
+                sourceBucket=source_bucket.bucket_name,
                 sourceObject=source_object,
             )
             result = self._retry_on_reset(request, request.execute, retry_reporter=reporter)
@@ -308,6 +316,13 @@ class GoogleTransfer(BaseTransfer[Config]):
                 reporter.size = size
                 self.notifier.object_copied(key=destination_key, size=size, metadata=metadata)
             reporter.report(self.stats)
+
+    def copy_files_from(self, *, source: BaseTransfer[SourceStorageModelT], keys: Collection[str]) -> None:
+        if isinstance(source, GoogleTransfer):
+            for key in keys:
+                self._copy_file_from_bucket(source_bucket=source, source_key=key, destination_key=key)
+        else:
+            raise NotImplementedError
 
     def get_metadata_for_key(self, key: str) -> Metadata:
         path = self.format_key_for_backend(key)
