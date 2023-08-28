@@ -1,9 +1,9 @@
-# same versions than pghoard this must reviewed and pinned
+# Kept in sync with the versions in CI
 black==23.7.0
-mock
 mypy==1.5.1
-# Same version from pghoard
 pylint==2.17.4
+isort==5.11.5
+# Unpinned dependencies, latest is fine
 botocore
 botocore-stubs
 mypy_boto3_s3
@@ -13,8 +13,6 @@ pytest-cov
 pytest-mock
 pytest-timeout
 pytest-asyncio
-# Same version from pghoard
-isort==5.10.1
 types-python-dateutil
 types-paramiko
 types-botocore
