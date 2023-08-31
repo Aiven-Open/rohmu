@@ -22,6 +22,7 @@ from rohmu.object_storage.base import (
     KEY_TYPE_OBJECT,
     KEY_TYPE_PREFIX,
     ProgressProportionCallbackType,
+    SourceStorageModelT,
 )
 from rohmu.object_storage.config import (  # pylint: disable=unused-import
     calculate_s3_chunk_size as calculate_chunk_size,
@@ -183,7 +184,16 @@ class S3Transfer(BaseTransfer[Config]):
     def copy_file(
         self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **_kwargs: Any
     ) -> None:
-        source_path = self.bucket_name + "/" + self.format_key_for_backend(source_key, remove_slash_prefix=True)
+        self._copy_file_from_bucket(
+            source_bucket=self, source_key=source_key, destination_key=destination_key, metadata=metadata
+        )
+
+    def _copy_file_from_bucket(
+        self, *, source_bucket: S3Transfer, source_key: str, destination_key: str, metadata: Optional[Metadata] = None
+    ) -> None:
+        source_path = (
+            source_bucket.bucket_name + "/" + source_bucket.format_key_for_backend(source_key, remove_slash_prefix=True)
+        )
         destination_path = self.format_key_for_backend(destination_key, remove_slash_prefix=True)
         self.stats.operation(StorageOperation.copy_file)
         try:
@@ -200,7 +210,14 @@ class S3Transfer(BaseTransfer[Config]):
             if status_code == 404:
                 raise FileNotFoundFromStorageError(source_key)
             else:
-                raise StorageError(f"Copying {repr(source_key)} to {repr(destination_key)} failed: {repr(ex)}") from ex
+                raise StorageError(f"Copying {source_key!r} to {destination_key!r} failed: {ex!r}") from ex
+
+    def copy_files_from(self, *, source: BaseTransfer[SourceStorageModelT], keys: Collection[str]) -> None:
+        if isinstance(source, S3Transfer):
+            for key in keys:
+                self._copy_file_from_bucket(source_bucket=source, source_key=key, destination_key=key)
+        else:
+            raise NotImplementedError
 
     def get_metadata_for_key(self, key: str) -> Metadata:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)

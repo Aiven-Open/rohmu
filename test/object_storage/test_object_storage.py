@@ -69,6 +69,20 @@ def test_copy(transfer_type: str, request: Any) -> None:
     assert transfer.get_contents_to_string("dummy_copy_metadata") == (DUMMY_CONTENT, {"new_k": "new_v"})
 
 
+def test_copy_local_files_from(tmp_path: Path) -> None:
+    source = LocalTransfer(tmp_path / "source", prefix="s-prefix")
+    destination = LocalTransfer(tmp_path / "destination", prefix="d-prefix")
+
+    source.store_file_from_memory("some/a/key.ext", b"content_a", metadata={"info": "aaa"})
+    source.store_file_from_memory("some/b/key.ext", b"content_b", metadata={"info": "bbb"})
+    destination.copy_files_from(
+        source=source,
+        keys=["some/a/key.ext", "some/b/key.ext"],
+    )
+    assert destination.get_contents_to_string("some/a/key.ext") == (b"content_a", {"info": "aaa", "Content-Length": "9"})
+    assert destination.get_contents_to_string("some/b/key.ext") == (b"content_b", {"info": "bbb", "Content-Length": "9"})
+
+
 @pytest.mark.parametrize("transfer_type", ["local_transfer"])
 def test_list(transfer_type: str, request: Any) -> None:
     transfer = request.getfixturevalue(transfer_type)
