@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from botocore.response import StreamingBody
 from functools import partial
+from http import HTTPStatus
 from rohmu.common.models import StorageOperation
 from rohmu.common.statsd import StatsdConfig
 from rohmu.errors import ConcurrentUploadError, FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
@@ -542,12 +543,13 @@ class S3Transfer(BaseTransfer[Config]):
         try:
             self.s3_client.head_bucket(Bucket=self.bucket_name)
         except botocore.exceptions.ClientError as ex:
+            # https://docs.aws.amazon.com/AmazonS3/latest/API/API_HeadBucket.html
             status_code = ex.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
-            if status_code == 301:
+            if status_code == HTTPStatus.MOVED_PERMANENTLY:
                 raise InvalidConfigurationError(f"Wrong region for bucket {self.bucket_name}, check configuration")
-            elif status_code == 403:
+            elif status_code == HTTPStatus.FORBIDDEN:
                 self.log.warning("Access denied on bucket check, assuming write permissions")
-            elif status_code == 404:
+            elif status_code in {HTTPStatus.BAD_REQUEST, HTTPStatus.NOT_FOUND}:
                 create_bucket = True
             else:
                 raise
