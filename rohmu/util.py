@@ -4,13 +4,18 @@ rohmu - common utility functions
 Copyright (c) 2022 Ohmu Ltd
 See LICENSE for details
 """
-from __future__ import annotations
-
+import sys
 from io import BytesIO, UnsupportedOperation
 from itertools import islice
 from rohmu.typing import HasFileno
 from typing import BinaryIO, Generator, Iterable, Optional, Tuple, TypeVar, Union
-from typing_extensions import Buffer
+
+if sys.version_info >= (3, 10):
+    # Python 3.10 and later
+    Buffer = bytes
+else:
+    # Python 3.8 and 3.9
+    from typing_extensions import Buffer
 
 import fcntl
 import logging
