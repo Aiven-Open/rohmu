@@ -10,7 +10,15 @@ from io import BytesIO, UnsupportedOperation
 from itertools import islice
 from rohmu.typing import HasFileno
 from typing import BinaryIO, Generator, Iterable, Optional, Tuple, TypeVar, Union
-from typing_extensions import Buffer
+
+import sys
+
+if sys.version_info < (3, 10):
+    from typing_extensions import Buffer
+else:
+    from typing import ByteString, MutableSequence
+
+    Buffer = Union[ByteString, MutableSequence[bytes]]
 
 import fcntl
 import logging
@@ -205,10 +213,10 @@ class ProgressStream(BinaryIO):
     def truncate(self, size: Optional[int] = None) -> int:
         raise UnsupportedOperation("truncate")
 
-    def write(self, s: Union[bytes, Buffer]) -> int:
+    def write(self, s: Union[bytes, Buffer]) -> int:  # type: ignore
         raise UnsupportedOperation("write")
 
-    def writelines(self, __lines: Union[Iterable[bytes], Iterable[Buffer]]) -> None:
+    def writelines(self, __lines: Union[Iterable[bytes], Iterable[Buffer]]) -> None:  # type: ignore
         raise UnsupportedOperation("writelines")
 
     def fileno(self) -> int:
