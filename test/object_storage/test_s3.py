@@ -5,15 +5,19 @@ from botocore.response import StreamingBody
 from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
+from pydantic import ValidationError
 from rohmu.common.models import StorageOperation
 from rohmu.errors import InvalidByteRangeError
 from rohmu.object_storage.base import TransferWithConcurrentUploadSupport
+from rohmu.object_storage.config import S3ObjectStorageConfig
 from rohmu.object_storage.s3 import S3Transfer
 from tempfile import NamedTemporaryFile
 from typing import Any, BinaryIO, Callable, Iterator, Optional
-from unittest.mock import ANY, call, MagicMock
+from unittest.mock import ANY, call, MagicMock, patch
 
 import pytest
+import rohmu.object_storage.s3
 
 
 @dataclass
@@ -216,3 +220,35 @@ def test_concurrent_upload_abort(infra: S3Infra) -> None:
 
     # no notification is sent
     notifier.object_created.assert_not_called()
+
+
+def test_validate_is_verify_tls_and_cert_path() -> None:
+    with pytest.raises(ValidationError) as e:
+        S3ObjectStorageConfig(
+            region="test-region",
+            bucket_name="test-bucket",
+            cert_path=Path("test_cert_path"),
+        )
+    assert "cert_path is set but is_verify_tls is False" in str(e.value)
+
+
+@pytest.mark.parametrize(
+    "is_verify_tls,cert_path,expected",
+    [
+        (True, Path("a_path"), "a_path"),
+        (True, None, True),
+        (False, None, False),
+    ],
+)
+def test_cert_path(is_verify_tls: bool, cert_path: Path | None, expected: str | bool) -> None:
+    with patch.object(rohmu.object_storage.s3, "create_s3_client") as mock:
+        S3Transfer(
+            region="test-region",
+            bucket_name="test-bucket",
+            cert_path=cert_path,
+            is_verify_tls=is_verify_tls,
+            host="host",
+            port=1000,
+        )
+        mock.assert_called_once()
+        assert mock.call_args[1]["verify"] == expected

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from enum import Enum, unique
 from pathlib import Path
-from pydantic import Field
+from pydantic import Field, root_validator
 from rohmu.common.models import ProxyInfo, StorageDriver, StorageModel
 from typing import Any, Dict, Final, Literal, Optional, TypeVar
 
@@ -124,6 +124,7 @@ class S3ObjectStorageConfig(StorageModel):
     addressing_style: S3AddressingStyle = S3AddressingStyle.path
     is_secure: bool = False
     is_verify_tls: bool = False
+    cert_path: Optional[Path] = None
     segment_size: int = S3_MULTIPART_CHUNK_SIZE
     encrypted: bool = False
     proxy_info: Optional[ProxyInfo] = None
@@ -131,6 +132,13 @@ class S3ObjectStorageConfig(StorageModel):
     read_timeout: Optional[str] = None
     aws_session_token: Optional[str] = Field(None, repr=False)
     storage_type: Literal[StorageDriver.s3] = StorageDriver.s3
+
+    @root_validator(skip_on_failure=True)
+    @classmethod
+    def validate_is_verify_tls_and_cert_path(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        if not values["is_verify_tls"] and values["cert_path"] is not None:
+            raise ValueError("cert_path is set but is_verify_tls is False")
+        return values
 
 
 class SFTPObjectStorageConfig(StorageModel):

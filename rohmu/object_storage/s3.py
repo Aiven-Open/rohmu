@@ -11,6 +11,7 @@ from __future__ import annotations
 from botocore.response import StreamingBody
 from functools import partial
 from http import HTTPStatus
+from pathlib import Path
 from rohmu.common.models import StorageOperation
 from rohmu.common.statsd import StatsdConfig
 from rohmu.errors import ConcurrentUploadError, FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
@@ -114,6 +115,7 @@ class S3Transfer(BaseTransfer[Config]):
         addressing_style: S3AddressingStyle = S3AddressingStyle.path,
         is_secure: bool = False,
         is_verify_tls: bool = False,
+        cert_path: Optional[Path] = None,
         segment_size: int = MULTIPART_CHUNK_SIZE,
         encrypted: bool = False,
         proxy_info: Optional[dict[str, Union[str, int]]] = None,
@@ -165,6 +167,8 @@ class S3Transfer(BaseTransfer[Config]):
                 proxies=proxies,
                 **timeouts,
             )
+            if not is_verify_tls and cert_path is not None:
+                raise ValueError("cert_path is set but is_verify_tls is False")
             self.s3_client = create_s3_client(
                 session=session,
                 aws_access_key_id=aws_access_key_id,
@@ -173,7 +177,7 @@ class S3Transfer(BaseTransfer[Config]):
                 config=boto_config,
                 endpoint_url=custom_url,
                 region_name=region,
-                verify=is_verify_tls,
+                verify=str(cert_path) if cert_path is not None and is_verify_tls else is_verify_tls,
             )
 
         self.check_or_create_bucket()
