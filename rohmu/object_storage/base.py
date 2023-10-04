@@ -32,6 +32,7 @@ from typing import (
     TypeVar,
     Union,
 )
+from typing_extensions import Self
 
 import logging
 import os
@@ -130,8 +131,8 @@ class BaseTransfer(Generic[StorageModelT]):
         return int(size) > chunk_size
 
     @classmethod
-    def from_model(cls, model: StorageModelT) -> BaseTransfer[StorageModelT]:
-        return cls(**model.dict(by_alias=True, exclude={"storage_type"}))
+    def from_model(cls, model: StorageModelT, notifier: Optional[Notifier] = None) -> Self:
+        return cls(**model.dict(by_alias=True, exclude={"storage_type"}), notifier=notifier)
 
     def copy_file(
         self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **_kwargs: Any

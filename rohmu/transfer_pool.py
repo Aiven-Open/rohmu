@@ -11,8 +11,10 @@ from .errors import InvalidTransferError
 from .factory import get_transfer as rohmu_get_transfer
 from contextlib import contextmanager
 from rohmu.common.models import StorageModel
+from rohmu.notifier.interface import Notifier
 from rohmu.object_storage.base import BaseTransfer
 from typing import Any, Callable, Generator, Optional
+from typing_extensions import Self
 
 import heapq
 import json
@@ -137,7 +139,7 @@ class SafeTransfer(BaseTransfer[StorageModel]):
         return super().__getattribute__(attr)
 
     @classmethod
-    def from_model(cls, model: StorageModel) -> BaseTransfer[StorageModel]:
+    def from_model(cls, model: StorageModel, notifier: Optional[Notifier] = None) -> Self:
         raise InvalidTransferError("You should not call class methods on SafeTransfer instances")
 
     def return_to_pool(self) -> None:

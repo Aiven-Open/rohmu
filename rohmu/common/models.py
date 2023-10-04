@@ -1,7 +1,6 @@
 # Copyright (c) 2023 Aiven, Helsinki, Finland. https://aiven.io/
 from rohmu.common.statsd import StatsdConfig
 from rohmu.common.strenum import StrEnum
-from rohmu.notifier.interface import Notifier
 from typing import Optional
 
 import enum
@@ -73,7 +72,6 @@ class ProxyInfo(RohmuModel):
 
 class StorageModel(pydantic.BaseModel):
     storage_type: StorageDriver
-    notifier: Optional[Notifier] = None
     statsd_info: Optional[StatsdConfig] = None
 
     class Config:

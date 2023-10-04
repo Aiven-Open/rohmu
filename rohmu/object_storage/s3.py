@@ -59,7 +59,7 @@ def create_s3_client(
     aws_secret_access_key: Optional[str],
     aws_session_token: Optional[str],
     region_name: str,
-    verify: Optional[bool | str] = None,
+    verify: Optional[Union[bool, str]] = None,
     endpoint_url: Optional[str] = None,
 ) -> S3Client:
     s3_client = session.create_client(
