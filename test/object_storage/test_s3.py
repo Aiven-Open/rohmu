@@ -13,7 +13,7 @@ from rohmu.object_storage.base import TransferWithConcurrentUploadSupport
 from rohmu.object_storage.config import S3ObjectStorageConfig
 from rohmu.object_storage.s3 import S3Transfer
 from tempfile import NamedTemporaryFile
-from typing import Any, BinaryIO, Callable, Iterator, Optional
+from typing import Any, BinaryIO, Callable, Iterator, Optional, Union
 from unittest.mock import ANY, call, MagicMock, patch
 
 import pytest
@@ -240,7 +240,7 @@ def test_validate_is_verify_tls_and_cert_path() -> None:
         (False, None, False),
     ],
 )
-def test_cert_path(is_verify_tls: bool, cert_path: Path | None, expected: str | bool) -> None:
+def test_cert_path(is_verify_tls: bool, cert_path: Optional[Path], expected: Union[str, bool]) -> None:
     with patch.object(rohmu.object_storage.s3, "create_s3_client") as mock:
         S3Transfer(
             region="test-region",
