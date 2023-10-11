@@ -94,3 +94,29 @@ def test_get_transfer_from_model(
         aws_session_token=None,
         region_name="dummy-region",
     )
+
+
+@patch("rohmu.object_storage.s3.create_s3_client")
+def test_get_transfer_serialized_model(
+    create_s3_client: Mock,
+) -> None:
+    config = S3ObjectStorageConfig(
+        region="dummy-region",
+        bucket_name="dummy-bucket",
+        proxy_info={
+            "host": "proxy.test",
+            "port": "16666",
+            "type": "socks5",
+            "user": "bob",
+            "pass": "secret",
+        },
+    )
+    get_transfer(config.dict())
+    create_s3_client.assert_called_once_with(
+        session=ANY,
+        config=ANY,
+        aws_access_key_id=None,
+        aws_secret_access_key=None,
+        aws_session_token=None,
+        region_name="dummy-region",
+    )
