@@ -68,10 +68,10 @@ def get_transfer_model(storage_config: Config) -> StorageModel:
 
 def get_transfer(storage_config: Config) -> BaseTransfer[Any]:
     storage_config = storage_config.copy()
-    noitifier_config = storage_config.pop("notifier", None)
+    notifier_config = storage_config.pop("notifier", None)
     notifier = None
-    if noitifier_config is not None:
-        notifier = get_notifier(noitifier_config)
+    if notifier_config is not None:
+        notifier = get_notifier(notifier_config)
     model = get_transfer_model(storage_config)
     return get_transfer_from_model(model, notifier)
 
