@@ -69,6 +69,10 @@ class ProxyInfo(RohmuModel):
     user: Optional[str]
     password: Optional[str] = pydantic.Field(None, alias="pass")
 
+    class Config(RohmuModel.Config):
+        # Allow ProxyInfo(**proxy_info.dict()) to work with the alias
+        allow_population_by_field_name = True
+
 
 class StorageModel(pydantic.BaseModel):
     storage_type: StorageDriver
