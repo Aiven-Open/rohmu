@@ -13,7 +13,7 @@ Config = Dict[str, Any]
 
 
 def get_class_for_transfer(obj_store: Config) -> Type[BaseTransfer[Any]]:
-    return get_class_for_storage_driver(StorageDriver(obj_store[STORAGE_TYPE]))
+    return get_class_for_storage_driver(_to_storage_driver(obj_store[STORAGE_TYPE]))
 
 
 def get_class_for_storage_driver(storage_driver: StorageDriver) -> Type[BaseTransfer[Any]]:
@@ -42,7 +42,7 @@ def get_class_for_storage_driver(storage_driver: StorageDriver) -> Type[BaseTran
 
         return SwiftTransfer
 
-    raise InvalidConfigurationError(f"unsupported storage type {storage_driver!r}")
+    raise InvalidConfigurationError(f"unsupported storage type {storage_driver.value!r}")
 
 
 def get_class_for_notifier(notifier_config: Config) -> Type[Notifier]:
@@ -51,7 +51,7 @@ def get_class_for_notifier(notifier_config: Config) -> Type[Notifier]:
         from .notifier.http import BackgroundHTTPNotifier
 
         return BackgroundHTTPNotifier
-    raise InvalidConfigurationError(f"unsupported storage type {repr(notifier_type)}")
+    raise InvalidConfigurationError(f"unsupported notifier type {notifier_type!r}")
 
 
 def get_notifier(notifier_config: Config) -> Notifier:
@@ -79,3 +79,10 @@ def get_transfer(storage_config: Config) -> BaseTransfer[Any]:
 def get_transfer_from_model(model: StorageModelT, notifier: Optional[Notifier] = None) -> BaseTransfer[StorageModelT]:
     storage_class = get_class_for_storage_driver(model.storage_type)
     return storage_class.from_model(model, notifier)
+
+
+def _to_storage_driver(storage_type: str) -> StorageDriver:
+    try:
+        return StorageDriver(storage_type)
+    except ValueError:
+        raise InvalidConfigurationError(f"unsupported storage type {storage_type!r}")
