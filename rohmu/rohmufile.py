@@ -12,16 +12,16 @@ from .compressor import CompressionFile, DecompressionFile, DecompressSink
 from .encryptor import DecryptorFile, DecryptSink, EncryptorFile
 from .errors import InvalidConfigurationError
 from .filewrap import ThrottleSink
-from .typing import FileLike, HasWrite, Metadata
+from .typing import FileLike, HasRead, HasWrite, Metadata
 from contextlib import suppress
 from inspect import signature
 from rohmu.object_storage.base import IncrementalProgressCallbackType
-from typing import Callable, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 import time
 
 
-def _fileobj_name(input_obj: FileLike) -> str:
+def _obj_name(input_obj: Any) -> str:
     if hasattr(input_obj, "name"):
         name = getattr(input_obj, "name")
         return f"open file {repr(name)}"
@@ -133,7 +133,7 @@ def read_file(
             action,
             original_size,
             result_size,
-            _fileobj_name(output_obj),
+            _obj_name(output_obj),
             time.monotonic() - start_time,
         )
 
@@ -159,7 +159,7 @@ def file_writer(
 
 def write_file(
     *,
-    input_obj: FileLike,
+    input_obj: HasRead,
     output_obj: FileLike,
     progress_callback: IncrementalProgressCallbackType = None,
     compression_algorithm: Optional[str] = None,
@@ -208,7 +208,7 @@ def write_file(
             log_func=log_func,
             original_size=original_size,
             result_size=result_size,
-            source_name=_fileobj_name(input_obj),
+            source_name=_obj_name(input_obj),
         )
 
     return original_size, result_size
