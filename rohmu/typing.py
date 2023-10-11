@@ -7,7 +7,7 @@ try:
     # Remove when dropping support for Python 3.7
     from pickle import PickleBuffer
 except ImportError:
-    PickleBuffer = bytes  # type: ignore [misc,assignment]
+    PickleBuffer = bytes  # type: ignore[misc,assignment]
 import mmap
 
 if TYPE_CHECKING:

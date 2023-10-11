@@ -94,7 +94,7 @@ def _callback_wrapper(progress_callback: IncrementalProgressCallbackType) -> Inc
         return None
     sig = signature(progress_callback)
     if len(sig.parameters) == 0:
-        return lambda f: progress_callback()  # type: ignore [misc,call-arg]
+        return lambda f: progress_callback()  # type: ignore[misc,call-arg]
     return progress_callback
 
 

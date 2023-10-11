@@ -200,9 +200,9 @@ class GoogleTransfer(BaseTransfer[Config]):
             http = build_http()
             if self.proxy_info:
                 if self.proxy_info.get("type") == "socks5":
-                    proxy_type = httplib2.socks.PROXY_TYPE_SOCKS5  # type: ignore [attr-defined]
+                    proxy_type = httplib2.socks.PROXY_TYPE_SOCKS5  # type: ignore[attr-defined]
                 else:
-                    proxy_type = httplib2.socks.PROXY_TYPE_HTTP  # type: ignore [attr-defined]
+                    proxy_type = httplib2.socks.PROXY_TYPE_HTTP  # type: ignore[attr-defined]
 
                 http.proxy_info = httplib2.ProxyInfo(
                     proxy_type,
@@ -235,7 +235,7 @@ class GoogleTransfer(BaseTransfer[Config]):
             if self.gs is None:
                 self.gs = self._init_google_client()
             # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.objects.html
-            self.gs_object_client = self.gs.objects()  # type: ignore [attr-defined] # pylint: disable=no-member
+            self.gs_object_client = self.gs.objects()  # type: ignore[attr-defined] # pylint: disable=no-member
         try:
             yield self.gs_object_client
         except HttpError as ex:
@@ -589,7 +589,7 @@ class GoogleTransfer(BaseTransfer[Config]):
         invalid bucket names ("Invalid bucket name") as well as for invalid
         project ("Invalid argument"), try to handle both gracefully."""
         start_time = time.time()
-        gs_buckets = self.gs.buckets()  # type: ignore [union-attr] # pylint: disable=no-member
+        gs_buckets = self.gs.buckets()  # type: ignore[union-attr] # pylint: disable=no-member
         try:
             request = gs_buckets.get(bucket=bucket_name)
             reporter = Reporter(StorageOperation.head_request)
@@ -638,13 +638,13 @@ class MediaStreamUpload(MediaUpload):
         self._name = name
         self._position: Optional[int] = None
 
-    def chunksize(self) -> int:  # type: ignore [override]
+    def chunksize(self) -> int:  # type: ignore[override]
         return self._chunk_size
 
     def mimetype(self) -> str:
         return self._mime_type
 
-    def size(self) -> Optional[int]:  # type: ignore [override]
+    def size(self) -> Optional[int]:  # type: ignore[override]
         self.peek()
         if len(self._next_chunk) < self.peeksize:
             # The total file size should be returned if we have hit the final chunk.
@@ -666,7 +666,7 @@ class MediaStreamUpload(MediaUpload):
             self._next_chunk = self._read_bytes(self.peeksize - len(self._next_chunk), initial_data=self._next_chunk)
 
     # second parameter is length but baseclass incorrectly names it end
-    def getbytes(self, begin: int, length: int) -> bytes:  # type: ignore [override] # pylint: disable=arguments-renamed
+    def getbytes(self, begin: int, length: int) -> bytes:  # type: ignore[override] # pylint: disable=arguments-renamed
         if begin < (self._position or 0):
             msg = f"Requested position {begin} for {repr(self._name)} precedes already fulfilled position {self._position}"
             raise IndexError(msg)
@@ -703,7 +703,7 @@ class MediaStreamUpload(MediaUpload):
     def has_stream(self) -> bool:
         return False
 
-    def stream(self) -> BinaryIO:  # type: ignore [override]
+    def stream(self) -> BinaryIO:  # type: ignore[override]
         raise NotImplementedError
 
     def _read_bytes(self, length: int, *, initial_data: Optional[bytes] = None) -> bytes:

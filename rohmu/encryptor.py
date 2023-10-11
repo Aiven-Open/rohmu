@@ -113,7 +113,7 @@ class EncryptorFile(FileWrap):
         self._check_not_closed()
         return True
 
-    def write(self, data: BinaryData) -> int:  # type: ignore [override]
+    def write(self, data: BinaryData) -> int:  # type: ignore[override]
         """Encrypt and write the given bytes"""
         self._check_not_closed()
         if not data:

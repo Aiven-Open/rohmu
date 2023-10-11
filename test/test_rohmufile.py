@@ -11,7 +11,7 @@ import pytest
 
 def test_fileobj_name(tmpdir: Any) -> None:
     with NamedTemporaryFile(dir=tmpdir, suffix="foo") as raw_output_obj:
-        result = rohmufile._fileobj_name(raw_output_obj)  # type: ignore # pylint: disable=protected-access
+        result = rohmufile._fileobj_name(raw_output_obj)  # type: ignore# pylint: disable=protected-access
         assert result.startswith("open file ")
         assert "foo" in result
 

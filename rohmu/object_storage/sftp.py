@@ -136,7 +136,7 @@ class SFTPTransfer(BaseTransfer[Config]):
                         metadata = None
 
                     last_modified = datetime.datetime.fromtimestamp(
-                        attr.st_mtime, tz=datetime.timezone.utc  # type: ignore [arg-type]
+                        attr.st_mtime, tz=datetime.timezone.utc  # type: ignore[arg-type]
                     )
                     yield IterKeyItem(
                         type=KEY_TYPE_OBJECT,
@@ -160,7 +160,7 @@ class SFTPTransfer(BaseTransfer[Config]):
                 continue
 
             file_key = os.path.join(key.strip("/"), attr.filename)
-            if S_ISDIR(attr.st_mode):  # type: ignore [arg-type]
+            if S_ISDIR(attr.st_mode):  # type: ignore[arg-type]
                 if deep:
                     yield from self.iter_key(file_key, with_metadata=with_metadata, deep=True)
                 else:
@@ -175,7 +175,7 @@ class SFTPTransfer(BaseTransfer[Config]):
                         metadata = None
 
                     last_modified = datetime.datetime.fromtimestamp(
-                        attr.st_mtime, tz=datetime.timezone.utc  # type: ignore [arg-type]
+                        attr.st_mtime, tz=datetime.timezone.utc  # type: ignore[arg-type]
                     )
                     yield IterKeyItem(
                         type=KEY_TYPE_OBJECT,
