@@ -271,7 +271,7 @@ class AzureTransfer(BaseTransfer[Config]):
         allows reading entire blob into memory at once or returning data from random offsets"""
         file_size = None
         start_range = byte_range[0] if byte_range else 0
-        chunk_size = self.conn._config.max_chunk_get_size  # type: ignore [attr-defined] # pylint: disable=protected-access
+        chunk_size = self.conn._config.max_chunk_get_size  # type: ignore[attr-defined] # pylint: disable=protected-access
         end_range = chunk_size - 1
         blob = self.conn.get_blob_client(self.container_name, key)
         while True:
@@ -362,13 +362,13 @@ class AzureTransfer(BaseTransfer[Config]):
         seekable = hasattr(fd, "seekable") and fd.seekable()
         if not seekable:
             original_tell = getattr(fd, "tell", None)
-            fd.tell = lambda: None  # type: ignore [assignment,method-assign,return-value]
+            fd.tell = lambda: None  # type: ignore[assignment,method-assign,return-value]
         sanitized_metadata = self.sanitize_metadata(metadata, replace_hyphen_with="_")
         try:
             blob_client = self.conn.get_blob_client(self.container_name, path)
             blob_client.upload_blob(
                 fd,
-                blob_type=BlobType.BlockBlob,  # type: ignore [arg-type]
+                blob_type=BlobType.BlockBlob,  # type: ignore[arg-type]
                 content_settings=content_settings,
                 metadata=sanitized_metadata,
                 raw_response_hook=progress_callback,
@@ -378,7 +378,7 @@ class AzureTransfer(BaseTransfer[Config]):
         finally:
             if not seekable:
                 if original_tell is not None:
-                    fd.tell = original_tell  # type: ignore [method-assign]
+                    fd.tell = original_tell  # type: ignore[method-assign]
                 else:
                     delattr(fd, "tell")
 

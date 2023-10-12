@@ -7,7 +7,7 @@ See LICENSE for details
 from .common.constants import IO_BLOCK_SIZE
 from .errors import UninitializedError
 from .filewrap import FileWrap, Sink, Stream
-from .typing import BinaryData, FileLike, HasRead, HasWrite
+from .typing import BinaryData, FileLike, HasRead, HasSeek, HasWrite
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -113,7 +113,7 @@ class EncryptorFile(FileWrap):
         self._check_not_closed()
         return True
 
-    def write(self, data: BinaryData) -> int:  # type: ignore [override]
+    def write(self, data: BinaryData) -> int:  # type: ignore[override]
         """Encrypt and write the given bytes"""
         self._check_not_closed()
         if not data:
@@ -258,7 +258,7 @@ class DecryptorFile(FileWrap):
         self.state = "OPEN"
 
     @classmethod
-    def _file_size(cls, file: FileLike) -> int:
+    def _file_size(cls, file: HasSeek) -> int:
         current_offset = file.seek(0, os.SEEK_SET)
         file_end_offset = file.seek(0, os.SEEK_END)
         file.seek(current_offset, os.SEEK_SET)

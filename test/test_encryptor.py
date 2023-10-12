@@ -4,7 +4,7 @@ See LICENSE for details
 """
 from __future__ import annotations
 
-from py.path import LocalPath  # type: ignore [import] # pylint: disable=import-error
+from py.path import LocalPath  # type: ignore[import] # pylint: disable=import-error
 from rohmu.common.constants import IO_BLOCK_SIZE
 from rohmu.encryptor import Decryptor, DecryptorFile, Encryptor, EncryptorFile, EncryptorStream
 from typing import cast, IO

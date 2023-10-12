@@ -44,7 +44,7 @@ class SnappyFile(FileWrap):
             self.next_fp.flush()
         super().close()
 
-    def write(self, data: BinaryData) -> int:  # type: ignore [override]
+    def write(self, data: BinaryData) -> int:  # type: ignore[override]
         self._check_not_closed()
         if self.encr is None:
             raise io.UnsupportedOperation("file not open for writing")

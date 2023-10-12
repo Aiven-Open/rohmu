@@ -22,3 +22,6 @@ types-mock
 types-requests
 # Extra stubs
 google-api-python-client-stubs
+# Used for their stubs
+zstandard==0.21.0
+python-snappy==0.6.1

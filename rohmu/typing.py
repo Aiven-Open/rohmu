@@ -7,7 +7,7 @@ try:
     # Remove when dropping support for Python 3.7
     from pickle import PickleBuffer
 except ImportError:
-    PickleBuffer = bytes  # type: ignore [misc,assignment]
+    PickleBuffer = bytes  # type: ignore[misc,assignment]
 import mmap
 
 if TYPE_CHECKING:
@@ -39,13 +39,22 @@ class HasFileno(Protocol):
 
 
 class HasRead(Protocol):
-    def read(self, n: Optional[int] = -1) -> bytes:
+    def read(self, n: int = -1, /) -> bytes:
         ...
 
 
 class HasWrite(Protocol):
     def write(self, data: BinaryData) -> int:
         ...
+
+
+class HasSeek(Protocol):
+    def seek(self, offset: int, whence: int = 0, /) -> int:
+        ...
+
+
+class HasName(Protocol):
+    name: str
 
 
 class FileLike(Protocol):
@@ -57,7 +66,7 @@ class FileLike(Protocol):
     ) -> None:
         ...
 
-    def read(self, n: Optional[int] = -1) -> bytes:
+    def read(self, n: int = -1, /) -> bytes:
         ...
 
     def flush(self) -> None:
@@ -75,7 +84,7 @@ class FileLike(Protocol):
     def tell(self) -> int:
         ...
 
-    def seek(self, offset: int, whence: int) -> int:
+    def seek(self, offset: int, whence: int = 0, /) -> int:
         ...
 
 

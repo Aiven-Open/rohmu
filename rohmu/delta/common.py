@@ -103,21 +103,23 @@ class SizeLimitedFile:
     def __enter__(self) -> SizeLimitedFile:
         return self
 
-    def __exit__(self, t: Optional[Type[BaseException]], v: Optional[BaseException], tb: Optional[TracebackType]) -> None:
+    def __exit__(
+        self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[TracebackType]
+    ) -> None:
         self._f.close()
 
-    def read(self, n: Optional[int] = None) -> bytes:
+    def read(self, n: int = -1, /) -> bytes:
         can_read = max(0, self._file_size - self._f.tell())
-        if n is None:
+        if n == -1:
             n = can_read
         n = min(can_read, n)
         return self._f.read(n)
 
-    def seek(self, ofs: int, whence: int = 0) -> int:
+    def seek(self, offset: int, whence: int = 0, /) -> int:
         if whence == os.SEEK_END:
-            ofs += self._file_size
+            offset += self._file_size
             whence = os.SEEK_SET
-        return self._f.seek(ofs, whence)
+        return self._f.seek(offset, whence)
 
 
 class SnapshotHash(DeltaModel):

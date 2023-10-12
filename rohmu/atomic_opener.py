@@ -6,7 +6,7 @@ from typing_extensions import TypeAlias
 try:
     from typing import Literal
 except ImportError:
-    from typing_extensions import Literal  # type: ignore [assignment]
+    from typing_extensions import Literal  # type: ignore[assignment]
 
 import errno
 import os

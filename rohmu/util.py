@@ -191,11 +191,10 @@ class ProgressStream(BinaryIO):
     def tell(self) -> int:
         return self.raw_stream.tell()
 
-    def seek(self, offset: int, whence: int = 0) -> int:
+    def seek(self, offset: int, whence: int = 0, /) -> int:
         """Seek the underlying file if this operation is supported.
 
         NOTE: Calling this method will reset the bytes_read field!
-
         """
         result = self.raw_stream.seek(offset, whence)
 

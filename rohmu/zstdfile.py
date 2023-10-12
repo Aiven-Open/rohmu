@@ -31,7 +31,7 @@ class _ZstdFileWriter(FileWrap):
         self.next_fp.flush()
         super().close()
 
-    def write(self, data: BinaryData) -> int:  # type: ignore [override]
+    def write(self, data: BinaryData) -> int:  # type: ignore[override]
         self._check_not_closed()
         data_as_bytes = bytes(data)
         compressed_data = self._zstd.compress(data_as_bytes)

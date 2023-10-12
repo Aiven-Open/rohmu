@@ -88,7 +88,7 @@ class FileWrap(io.BufferedIOBase):
         self._check_not_closed()
         return False
 
-    def write(self, data: BinaryData) -> int:  # type: ignore [override]
+    def write(self, data: BinaryData) -> int:  # type: ignore[override]
         """Encrypt and write the given bytes"""
         self._check_not_closed()
         raise io.UnsupportedOperation("Write not supported")

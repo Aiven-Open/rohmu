@@ -23,7 +23,7 @@ def test_error_thrown_if_final_path_parent_doesnt_exist(tmp_path: Path) -> None:
 
 def test_error_mode_doesnt_contain_write(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
-        with atomic_opener(tmp_path, mode="r"):  # type: ignore [call-overload]
+        with atomic_opener(tmp_path, mode="r"):  # type: ignore[call-overload]
             pass
 
 
@@ -138,7 +138,7 @@ def test_no_fd_leak_if_fdopen_fails_because_of_unknown_mode(tmp_path: Path) -> N
     try:
         with atomic_opener(
             final_path, mode="somethingrandomw", encoding="ascii", _fd_spy=opened_fd.append
-        ):  # type: ignore [call-overload]
+        ):  # type: ignore[call-overload]
             pass
         pytest.fail("should fail, mode is wrong")
     except ValueError:
