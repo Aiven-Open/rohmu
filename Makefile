@@ -37,6 +37,7 @@ mypy:
 fmt:
 	isort $(PYTHON_SOURCE_DIRS)
 	black $(PYTHON_SOURCE_DIRS)
+	$(PYTHON) -m rstfmt README.rst -w 100
 
 .PHONY: coverage
 coverage:
