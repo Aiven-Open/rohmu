@@ -2,6 +2,9 @@
    :alt: Rohmu logo
    :align: center
 
+|Build badge| |PyPI badge| |Python versions badge|
+
+
 Rohmu is a Python library for building backup tools for databases
 providing functionality for compression, encryption and transferring
 data between the database and an object storage. Rohmu supports main
@@ -83,3 +86,13 @@ Copyright
 =========
 
 Copyright (C) 2023 Aiven Ltd and contributors to the Rohmu project.
+
+.. |Build badge| image:: https://github.com/Aiven-Open/rohmu/actions/workflows/build.yml/badge.svg
+   :target: https://github.com/Aiven-Open/rohmu/actions
+   :alt: Build status
+
+.. |PyPI badge| image:: https://img.shields.io/pypi/v/rohmu.svg
+   :target: https://pypi.org/project/rohmu/
+   :alt: PyPI version
+
+.. |Python versions badge| image:: https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11-blue
