@@ -2,89 +2,39 @@
  Python API Documentation
 ##########################
 
-*************
- Main Module
-*************
+********
+ Common
+********
 
-.. automodule:: rohmu
-   :members:
+.. autoclass:: rohmu.BaseTransfer
 
-*************
- Sub-modules
-*************
+.. autofunction:: rohmu.get_class_for_notifier
 
-.. automodule:: rohmu.atomic_opener
-   :members:
+.. autofunction:: rohmu.get_class_for_storage_driver
 
-.. automodule:: rohmu.compat
-   :members:
+.. autofunction:: rohmu.get_class_for_transfer
 
-.. automodule:: rohmu.compressor
-   :members:
+.. autofunction:: rohmu.get_notifier
 
-.. automodule:: rohmu.dates
-   :members:
+.. autofunction:: rohmu.get_transfer_from_model
 
-.. automodule:: rohmu.encryptor
-   :members:
+.. autofunction:: rohmu.get_transfer_model
 
-.. automodule:: rohmu.errors
-   :members:
+.. autofunction:: rohmu.get_transfer
 
-.. automodule:: rohmu.factory
-   :members:
+.. autoclass:: rohmu.Notifier
 
-.. automodule:: rohmu.filewrap
-   :members:
+.. autoclass:: rohmu.ProxyInfo
 
-.. automodule:: rohmu.inotify
-   :members:
+.. autodata:: rohmu.S3AddressingStyle
 
-.. automodule:: rohmu.rohmufile
-   :members:
+.. autoclass:: rohmu.StorageDriver
 
-.. automodule:: rohmu.snappyfile
-   :members:
+.. autoclass:: rohmu.StorageModel
 
-.. automodule:: rohmu.transfer_pool
-   :members:
-
-.. automodule:: rohmu.typing
-   :members:
-
-.. automodule:: rohmu.util
-   :members:
-
-.. automodule:: rohmu.version
-   :members:
-
-.. automodule:: rohmu.zstdfile
-   :members:
-
-**************
- Sub-packages
-**************
-
-Common Package
-==============
-
-.. automodule:: rohmu.common
-   :members:
-
-.. automodule:: rohmu.common.constants
-   :members:
-
-.. automodule:: rohmu.common.models
-   :members:
-
-.. automodule:: rohmu.common.statsd
-   :members:
-
-.. automodule:: rohmu.common.strenum
-   :members:
-
-Delta Package
-=============
+***************
+ Delta Backups
+***************
 
 .. automodule:: rohmu.delta
    :members:
@@ -95,50 +45,43 @@ Delta Package
 .. automodule:: rohmu.delta.snapshot
    :members:
 
-Notifier Package
-================
+***********
+ Notifiers
+***********
 
 .. automodule:: rohmu.notifier
-   :members:
-
-.. automodule:: rohmu.notifier.http
    :members:
 
 .. automodule:: rohmu.notifier.interface
    :members:
 
+HTTP Notifier
+=============
+
+.. automodule:: rohmu.notifier.http
+   :members:
+
+Logger Notifier
+===============
+
 .. automodule:: rohmu.notifier.logger
    :members:
+
+Null Notifier
+=============
 
 .. automodule:: rohmu.notifier.null
    :members:
 
-Object Storage Package
-======================
+*****************
+ Object Storages
+*****************
 
-.. automodule:: rohmu.object_storage
-   :members:
+.. include:: api__object_storage.rst
 
-.. automodule:: rohmu.object_storage.azure
-   :members:
+************
+ Exceptions
+************
 
-.. automodule:: rohmu.object_storage.base
-   :members:
-
-.. automodule:: rohmu.object_storage.config
-   :members:
-
-.. automodule:: rohmu.object_storage.google
-   :members:
-
-.. automodule:: rohmu.object_storage.local
-   :members:
-
-.. automodule:: rohmu.object_storage.s3
-   :members:
-
-.. automodule:: rohmu.object_storage.sftp
-   :members:
-
-.. automodule:: rohmu.object_storage.swift
+.. automodule:: rohmu.errors
    :members:

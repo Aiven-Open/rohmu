@@ -107,7 +107,7 @@ jobs:
         uses: actions/setup-python@v4
 
       - id: prepare-sphinx
-        run: pip install sphinx==4.5.0 sphinx-rtd-theme==1.0.0
+        run: pip install -r pr/requirements.docs.txt
 
       - id: run-sphinx
         run: sphinx-build -b html pr/docs gh-pages -E -d $GITHUB_WORKSPACE/.doctree
