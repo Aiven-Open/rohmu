@@ -1,9 +1,6 @@
-"""
-rohmu - rohmu data transformation interface
-
-Copyright (c) 2016 Ohmu Ltd
-See LICENSE for details
-"""
+# Copyright (c) 2016 Ohmu Ltd
+# See LICENSE for details
+"""Rohmu - rohmu data transformation interface"""
 
 from __future__ import annotations
 

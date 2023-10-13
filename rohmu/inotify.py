@@ -1,9 +1,6 @@
-"""
-rohmu - inotify wrapper
-
-Copyright (c) 2016 Ohmu Ltd
-See LICENSE for details
-"""
+# Copyright (c) 2016 Ohmu Ltd
+# See LICENSE for details
+"""Rohmu - inotify wrapper"""
 
 from __future__ import annotations
 

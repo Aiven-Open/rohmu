@@ -1,9 +1,6 @@
-"""
-rohmu - content encryption
-
-Copyright (c) 2016 Ohmu Ltd
-See LICENSE for details
-"""
+# Copyright (c) 2016 Ohmu Ltd
+# See LICENSE for details
+"""Rohmu - content encryption"""
 from .common.constants import IO_BLOCK_SIZE
 from .errors import UninitializedError
 from .filewrap import FileWrap, Sink, Stream

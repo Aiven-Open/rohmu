@@ -1,10 +1,7 @@
-"""
-rohmu - object_storage.base
-
-Copyright (c) 2016 Ohmu Ltd
-Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
-See LICENSE for details
-"""
+# Copyright (c) 2016 Ohmu Ltd
+# Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
+# See LICENSE for details
+"""Rohmu - object_storage.base"""
 from __future__ import annotations
 
 from contextlib import suppress

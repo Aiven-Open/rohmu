@@ -1,9 +1,6 @@
-"""
-rohmu - exception classes
-
-Copyright (c) 2016 Ohmu Ltd
-See LICENSE for details
-"""
+# Copyright (c) 2016 Ohmu Ltd
+# See LICENSE for details
+"""Rohmu - exception classes"""
 
 
 class Error(Exception):

@@ -1,8 +1,6 @@
-"""
-Copyright (c) 2020 Aiven Ltd
-See LICENSE for details
-
-StatsD client
+# Copyright (c) 2020 Aiven Ltd
+# See LICENSE for details
+"""StatsD client
 
 Supports telegraf's statsd protocol extension for 'key=value' tags:
 
@@ -12,7 +10,6 @@ This is combination of:
 - pghoard base (pghoard.metrics.statsd)
 - myhoard timing_manager method
 - pydantic configuration + explicit typing
-
 """
 
 from __future__ import annotations
