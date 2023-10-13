@@ -1,5 +1,10 @@
-Usage example
-=============
+#######
+ Usage
+#######
 
-For real-world usage you can have a look at `how Rohmu is used in
-PGHoard <https://github.com/aiven/pghoard/blob/main/pghoard/basebackup.py>`__.
+.. include:: ../README.rst
+   :start-after: start-include-usage
+   :end-before: end-include-usage
+
+.. include:: ../README.rst
+   :start-after: start-include-links

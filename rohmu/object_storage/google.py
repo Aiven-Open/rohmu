@@ -125,15 +125,16 @@ def base64_to_hex(b64val: Union[str, bytes]) -> str:
 
 @dataclasses.dataclass
 class Reporter:
-    """Used for storing default and also reporting them accordingly
+    """Used for storing default and also reporting them accordingly.
 
-    the whole point of this class is to handle different cases
-    - when file size is too small, reporting *_CHUNK_SIZE is wrong as 1000's of
-      small files over a long period (may be a month) is a lot of error
-    - Same is the case of _retry_on_reset
-    - This error extrapolates when replication is being used
+    The whole point of this class is to handle different cases:
 
-    size should ideally be min(real_size, *_CHUNK_SIZE). real_size is avaiable
+    - When file size is too small, reporting ``*_CHUNK_SIZE`` is wrong as 1000's of
+      small files over a long period (may be a month) is a lot of error;
+    - Same is the case of _retry_on_reset;
+    - This error extrapolates when replication is being used.
+
+    Size should ideally be min(real_size, ``*_CHUNK_SIZE``). real_size is avaiable
     when download or upload (from string or file), but when using FD, size is
     not known so assuming something too big for small files is almost wrong and
     in case it is bigger than CHUNKED then status reporting (from the
