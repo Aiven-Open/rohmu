@@ -1,7 +1,7 @@
 Name:           python3-rohmu
 Version:        %{major_version}
 Release:        %{minor_version}%{?dist}
-Url:            https://github.com/aiven/rohmu
+Url:            https://github.com/Aiven-Open/rohmu
 Summary:        Object storage encryption and compression library
 License:        ASL 2.0
 Source0:        rohmu-rpm-src.tar
