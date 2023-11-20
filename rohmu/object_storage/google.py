@@ -380,16 +380,18 @@ class GoogleTransfer(BaseTransfer[Config]):
                             self.log.warning("list_iter: directory entry %r", item)
                             continue  # skip directory level objects
 
-                        yield IterKeyItem(
-                            type=KEY_TYPE_OBJECT,
-                            value={
-                                "name": self.format_key_from_backend(item["name"]),
-                                "size": int(item["size"]),
-                                "last_modified": parse_timestamp(item["updated"]),
-                                "metadata": item.get("metadata", {}),
-                                "md5": base64_to_hex(item["md5Hash"]),
-                            },
-                        )
+                        value = {
+                            "name": self.format_key_from_backend(item["name"]),
+                            "metadata": item.get("metadata", {}),
+                        }
+                        # in very rare circumstances size, updated and md5Hash can be missing. Omit the keys if that happens
+                        if (size := item.get("size")) is not None:
+                            value["size"] = int(size)
+                        if (updated := item.get("updated")) is not None:
+                            value["last_modified"] = parse_timestamp(updated)
+                        if (md5 := item.get("md5Hash")) is not None:
+                            value["md5"] = base64_to_hex(md5)
+                        yield IterKeyItem(type=KEY_TYPE_OBJECT, value=value)
                 elif property_name == "prefixes":
                     for prefix in items:
                         yield IterKeyItem(type=KEY_TYPE_PREFIX, value=self.format_key_from_backend(prefix).rstrip("/"))
