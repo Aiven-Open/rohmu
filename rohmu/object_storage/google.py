@@ -46,6 +46,7 @@ from rohmu.util import get_total_size_from_content_range
 from typing import Any, BinaryIO, Callable, Collection, Iterable, Iterator, Optional, TextIO, Tuple, TypeVar, Union
 from typing_extensions import Protocol
 
+import base64
 import codecs
 import dataclasses
 import errno
@@ -168,6 +169,9 @@ class Reporter:
 
 
 ResType = TypeVar("ResType")
+
+# Seems like there are a few edge cases where MD5 field is missing when listing objects. Provide a fake value for those.
+_MISSING_MD5_B64_ENCODED = base64.encodebytes(b"Missing md5Hash!")
 
 
 class GoogleTransfer(BaseTransfer[Config]):
@@ -384,10 +388,10 @@ class GoogleTransfer(BaseTransfer[Config]):
                             type=KEY_TYPE_OBJECT,
                             value={
                                 "name": self.format_key_from_backend(item["name"]),
-                                "size": int(item["size"]),
-                                "last_modified": parse_timestamp(item["updated"]),
+                                "size": int(item.get("size", 0)),
+                                "last_modified": parse_timestamp(item.get("updated", "1970-01-01T00:00:00+00:00")),
                                 "metadata": item.get("metadata", {}),
-                                "md5": base64_to_hex(item["md5Hash"]),
+                                "md5": base64_to_hex(item.get("md5Hash", _MISSING_MD5_B64_ENCODED)),
                             },
                         )
                 elif property_name == "prefixes":

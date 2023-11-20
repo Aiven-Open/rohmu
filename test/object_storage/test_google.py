@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 from contextlib import ExitStack
-from datetime import datetime
+from datetime import datetime, UTC
 from googleapiclient.http import MediaUploadProgress
 from io import BytesIO
 from rohmu.common.models import StorageOperation
 from rohmu.errors import InvalidByteRangeError
+from rohmu.object_storage.base import IterKeyItem
 from rohmu.object_storage.google import GoogleTransfer, MediaIoBaseDownloadWithByteRange, Reporter
 from tempfile import NamedTemporaryFile
 from unittest.mock import ANY, call, MagicMock, Mock, patch
@@ -211,3 +212,68 @@ def test_media_io_download_with_byte_range_and_very_small_object() -> None:
     assert status.progress() == 1.0
     assert result.getvalue() == b"lo, World!"
     mock_request.http.request.assert_called_once_with(ANY, ANY, headers={"range": "bytes=3-100"})
+
+
+def test_object_listed_when_missing_md5hash_size_and_updated() -> None:
+    notifier = MagicMock()
+    with ExitStack() as stack:
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer.get_or_create_bucket"))
+        mock_operation = stack.enter_context(patch("rohmu.common.statsd.StatsClient.operation"))
+        transfer = GoogleTransfer(
+            project_id="test-project-id",
+            bucket_name="test-bucket",
+            notifier=notifier,
+        )
+
+        # mock instance because there is decorator and context managers in the way
+        mock_client = stack.enter_context(patch.object(transfer, "_object_client"))
+        mock_client.return_value.__enter__.return_value.list_next.return_value = None
+        object_name = ("aiventest/111aa1aa-1aaa-1111-11a1-11111aaaaa11/a1111111-aaa1-1aaa-aa1a-1a11aaaa11a1"
+                       "/tiered_storage/ccs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        escaped_name = object_name.replace("/", "%2F")
+        mock_client.return_value.__enter__.return_value.list.return_value.execute.return_value = {
+            "items": [
+                {
+                    "bucket": "test-bucket",
+                    "contentType": "binary/octet-stream",
+                    "generation": "1111111111111111",
+                    "id": f"test-bucket/{object_name}/1111111111111111",
+                    "kind": "storage#object",
+                    "mediaLink": f"https://storage.googleapis.com/download/storage/v1/b/test-bucket/o/"
+                                 f"{escaped_name}?generation=1111111111111111&alt=media",
+                    "metageneration": "1",
+                    "name": object_name,
+                    "selfLink": f"https://www.googleapis.com/storage/v1/b/"
+                                f"p812de5da-0bab-4990-90e8-57303eebfd30-99012089cf1d961516b8b3ff6/o/"
+                                f"{escaped_name}?generation=1111111111111111",
+                    "storageClass": "REGIONAL",
+                }
+            ]
+        }
+
+        got = list(
+            transfer.iter_key(
+                key="testkey",
+                with_metadata=False,
+                deep=True,
+                include_key=False,
+            )
+        )
+        assert mock_operation.call_count == 1
+        mock_operation.assert_has_calls(
+            [
+                call(operation=StorageOperation.iter_key),
+            ]
+        )
+        assert len(got) == 1
+        assert got[0] == IterKeyItem(
+            type="object",
+            value={
+                "name": object_name,
+                "size": 0,
+                "last_modified": datetime(1970, 1, 1, 0, tzinfo=UTC),
+                "md5": "4d697373696e67206d64354861736821",
+                "metadata": {},
+            },
+        )
