@@ -493,7 +493,8 @@ class S3Transfer(BaseTransfer[Config]):
         progress_fn: ProgressProportionCallbackType = None,  # pylint: disable=unused-argument
     ) -> None:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
-        data = bytes(memstring)  # make sure Body is of type bytes as memoryview's not allowed, only bytes/bytearrays
+        # make sure Body is of type bytes as memoryview's not allowed, only bytes/bytearrays
+        data = bytes(memstring) if len(memstring) else b""
         args: dict[str, Any] = {
             "Bucket": self.bucket_name,
             "Body": data,
@@ -524,7 +525,7 @@ class S3Transfer(BaseTransfer[Config]):
         upload_progress_fn: IncrementalProgressCallbackType = None,
     ) -> None:  # pylint: disable=unused-argument
         if not self._should_multipart(
-            chunk_size=self.multipart_chunk_size, default=True, metadata=metadata, multipart=multipart
+            fd=fd, chunk_size=self.multipart_chunk_size, default=True, metadata=metadata, multipart=multipart
         ):
             data = fd.read()
             self.store_file_from_memory(key, data, metadata, cache_control=cache_control, mimetype=mimetype)
