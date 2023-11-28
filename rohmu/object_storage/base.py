@@ -17,6 +17,7 @@ from rohmu.notifier.interface import Notifier
 from rohmu.notifier.null import NullNotifier
 from rohmu.object_storage.config import StorageModelT
 from rohmu.typing import AnyPath, Metadata
+from rohmu.util import file_object_is_empty
 from typing import (
     Any,
     BinaryIO,
@@ -117,15 +118,19 @@ class BaseTransfer(Generic[StorageModelT]):
 
     @staticmethod
     def _should_multipart(
-        *, metadata: Optional[Metadata], chunk_size: int, multipart: Union[bool, None] = None, default: bool
+        *, fd: BinaryIO, metadata: Optional[Metadata], chunk_size: int, multipart: Union[bool, None] = None, default: bool
     ) -> bool:
+        size = (metadata or {}).get("Content-Length")
+        # uploading empty/very small files in multiple parts must not be done
+        # this might raise issues depending on the storage
+        if (size is not None and int(size) == 0) or (size is None and file_object_is_empty(fd)):
+            return False
+
+        # multipart = None; up to us
         if multipart is not None:
             return multipart
 
-        # multipart = None; up to us
-        size = (metadata or {}).get("Content-Length")
         if size is None:
-            # We could actually sniff from fd if it is seekable; left TODO for now.
             return default
 
         return int(size) > chunk_size

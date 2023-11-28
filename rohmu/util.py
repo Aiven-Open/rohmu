@@ -56,6 +56,19 @@ def set_stream_nonblocking(stream: HasFileno) -> None:
     fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
 
 
+def file_object_is_empty(fd: BinaryIO) -> bool:
+    # not seekable, so we cannot verify it has no contents
+    if not fd.seekable():
+        return False
+
+    fd.seek(0)
+    is_empty = len(fd.read(1)) == 0
+
+    # rewind file
+    fd.seek(0)
+    return is_empty
+
+
 T = TypeVar("T")
 
 
