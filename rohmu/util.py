@@ -58,7 +58,7 @@ def set_stream_nonblocking(stream: HasFileno) -> None:
 
 def file_object_is_empty(fd: BinaryIO) -> bool:
     # not seekable, so we cannot verify it has no contents
-    if not fd.seekable():
+    if not hasattr(fd, "seekable") or not fd.seekable():
         return False
 
     fd.seek(0)
