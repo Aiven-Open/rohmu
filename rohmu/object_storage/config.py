@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from enum import Enum, unique
 from pathlib import Path
-from pydantic import Field, root_validator
+from pydantic import Field, root_validator, validator
 from rohmu.common.models import ProxyInfo, StorageDriver, StorageModel
 from typing import Any, Dict, Final, Literal, Optional, TypeVar
 
@@ -42,6 +42,12 @@ def calculate_azure_max_block_size() -> int:
     return max(min(int(total_mem_mib / 1000), 100), 4) * 1024 * 1024
 
 
+AZURE_ENDPOINT_SUFFIXES = {
+    None: "core.windows.net",
+    "germany": "core.cloudapi.de",  # Azure Germany is a completely separate cloud from the regular Azure Public cloud
+    "china": "core.chinacloudapi.cn",
+    "public": "core.windows.net",
+}
 # Increase block size based on host memory. Azure supports up to 50k blocks and up to 5 TiB individual
 # files. Default block size is set to 4 MiB so only ~200 GB files can be uploaded. In order to get close
 # to that 5 TiB increase the block size based on host memory; we don't want to use the max 100 for all
@@ -83,9 +89,26 @@ class AzureObjectStorageConfig(StorageModel):
     account_key: Optional[str] = Field(None, repr=False)
     sas_token: Optional[str] = Field(None, repr=False)
     prefix: Optional[str] = None
+    is_secure: bool = True
+    host: Optional[str] = None
+    port: Optional[int] = None
     azure_cloud: Optional[str] = None
     proxy_info: Optional[ProxyInfo] = None
     storage_type: Literal[StorageDriver.azure] = StorageDriver.azure
+
+    @root_validator
+    @classmethod
+    def host_and_port_must_be_set_together(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        if (values["host"] is None) != (values["port"] is None):
+            raise ValueError("host and port must be set together")
+        return values
+
+    @validator("azure_cloud")
+    @classmethod
+    def valid_azure_cloud_endpoint(cls, v: str) -> str:
+        if v not in AZURE_ENDPOINT_SUFFIXES:
+            raise ValueError(f"azure_cloud must be one of {AZURE_ENDPOINT_SUFFIXES.keys()}")
+        return v
 
 
 class GoogleObjectStorageConfig(StorageModel):
