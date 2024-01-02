@@ -6,35 +6,49 @@ from __future__ import annotations
 
 from py.path import LocalPath  # type: ignore[import] # pylint: disable=import-error
 from rohmu.common.constants import IO_BLOCK_SIZE
-from rohmu.encryptor import Decryptor, DecryptorFile, Encryptor, EncryptorFile, EncryptorStream
-from typing import cast, IO
+from rohmu.encryptor import (
+    BaseDecryptor,
+    BaseDecryptorFile,
+    BaseEncryptor,
+    BaseEncryptorFile,
+    BaseEncryptorStream,
+    Decryptor,
+    DecryptorFile,
+    Encryptor,
+    EncryptorFile,
+    EncryptorStream,
+    SymmetricDecryptor,
+    SymmetricDecryptorFile,
+    SymmetricEncryptor,
+    SymmetricEncryptorFile,
+    SymmetricEncryptorStream,
+)
+from rohmu.typing import HasRead, HasWrite
+from typing import Callable, cast, IO
 
 import io
-import json
 import os
 import pytest
 import random
+import secrets
 import tarfile
 import textwrap
 
+SYMMETRIC_KEY = secrets.token_bytes(32)
 
-@pytest.fixture(name="rsa_public_key")
-def fixture_rsa_public_key() -> str:
-    return textwrap.dedent(
-        """\
+RSA_PUBLIC_KEY = textwrap.dedent(
+    """\
         -----BEGIN PUBLIC KEY-----
         MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDQ9yu7rNmu0GFMYeQq9Jo2B3d9
         hv5t4a+54TbbxpJlks8T27ipgsaIjqiQP7+uXNfU6UCzGFEHs9R5OELtO3Hq0Dn+
         JGdxJlJ1prxVkvjCICCpiOkhc2ytmn3PWRuVf2VyeAddslEWHuXhZPptvIr593kF
         lWN+9KPe+5bXS8of+wIDAQAB
         -----END PUBLIC KEY-----"""
-    )
+)
 
 
-@pytest.fixture(name="rsa_private_key")
-def fixture_rsa_private_key() -> str:
-    return textwrap.dedent(
-        """\
+RSA_PRIVATE_KEY = textwrap.dedent(
+    """\
         -----BEGIN PRIVATE KEY-----
         MIICdwIBADANBgkqhkiG9w0BAQEFAASCAmEwggJdAgEAAoGBAND3K7us2a7QYUxh
         5Cr0mjYHd32G/m3hr7nhNtvGkmWSzxPbuKmCxoiOqJA/v65c19TpQLMYUQez1Hk4
@@ -51,7 +65,7 @@ def fixture_rsa_private_key() -> str:
         UPZXbydO8vZgPuo001KoEd9N3inq/yNcsHoF/h23Sdt/rcdfLMpCWuIYs/JAqE5K
         nkMAHqg9PS372Cs=
         -----END PRIVATE KEY-----"""
-    )
+)
 
 
 @pytest.mark.parametrize(
@@ -61,34 +75,59 @@ def fixture_rsa_private_key() -> str:
         (b""),
     ),
 )
-def test_encryptor_decryptor(plaintext: bytes, rsa_private_key: str, rsa_public_key: str) -> None:
-    for op in (None, "json"):
-        if op == "json":
-            public_key = json.loads(json.dumps(rsa_public_key))
-            private_key = json.loads(json.dumps(rsa_private_key))
-        else:
-            public_key = rsa_public_key
-            private_key = rsa_private_key
+@pytest.mark.parametrize(
+    ("encryptor_factory,decryptor_factory"),
+    (
+        (
+            lambda: Encryptor(RSA_PUBLIC_KEY),
+            lambda: Decryptor(RSA_PRIVATE_KEY),
+        ),
+        (
+            lambda: SymmetricEncryptor(SYMMETRIC_KEY),
+            lambda: SymmetricDecryptor(SYMMETRIC_KEY),
+        ),
+    ),
+)
+def test_encryptor_decryptor(
+    plaintext: bytes,
+    encryptor_factory: Callable[[], BaseEncryptor],
+    decryptor_factory: Callable[[], BaseDecryptor],
+) -> None:
+    encryptor = encryptor_factory()
+    decryptor = decryptor_factory()
+    encrypted = encryptor.update(plaintext) + encryptor.finalize()
+    if len(plaintext) > 0:
+        assert plaintext not in encrypted
+    offset = 0
+    while decryptor.expected_header_bytes() > 0:
+        chunk = encrypted[offset : offset + decryptor.expected_header_bytes()]
+        decryptor.process_header(chunk)
+        offset += len(chunk)
+    decrypted_size = len(encrypted) - decryptor.header_size() - decryptor.footer_size()
+    decrypted = decryptor.process_data(encrypted[decryptor.header_size() : decryptor.header_size() + decrypted_size])
+    decrypted += decryptor.finalize(encrypted[-decryptor.footer_size() :])
+    assert plaintext == decrypted
 
-        encryptor = Encryptor(public_key)
-        decryptor = Decryptor(private_key)
-        encrypted = encryptor.update(plaintext) + encryptor.finalize()
-        if len(plaintext) > 0:
-            assert plaintext not in encrypted
-        offset = 0
-        while decryptor.expected_header_bytes() > 0:
-            chunk = encrypted[offset : offset + decryptor.expected_header_bytes()]
-            decryptor.process_header(chunk)
-            offset += len(chunk)
-        decrypted_size = len(encrypted) - decryptor.header_size() - decryptor.footer_size()
-        decrypted = decryptor.process_data(encrypted[decryptor.header_size() : decryptor.header_size() + decrypted_size])
-        decrypted += decryptor.finalize(encrypted[-decryptor.footer_size() :])
-        assert plaintext == decrypted
 
-
-def test_encryptor_stream(rsa_private_key: str, rsa_public_key: str) -> None:
+@pytest.mark.parametrize(
+    ("encryptor_stream_factory,decryptor_file_factory"),
+    (
+        (
+            lambda x: EncryptorStream(x, RSA_PUBLIC_KEY),
+            lambda x: DecryptorFile(x, RSA_PRIVATE_KEY),
+        ),
+        (
+            lambda x: SymmetricEncryptorStream(x, SYMMETRIC_KEY),
+            lambda x: SymmetricDecryptorFile(x, SYMMETRIC_KEY),
+        ),
+    ),
+)
+def test_encryptor_stream(
+    encryptor_stream_factory: Callable[[HasRead], BaseEncryptorStream],
+    decryptor_file_factory: Callable[[HasWrite], BaseDecryptorFile],
+) -> None:
     plaintext = os.urandom(2 * 1024 * 1024)
-    encrypted_stream = EncryptorStream(io.BytesIO(plaintext), rsa_public_key)
+    encrypted_stream = encryptor_stream_factory(io.BytesIO(plaintext))
     result_data = io.BytesIO()
     while True:
         bytes_requested = random.randrange(1, 12345)
@@ -104,28 +143,45 @@ def test_encryptor_stream(rsa_private_key: str, rsa_public_key: str) -> None:
         assert encrypted_stream.tell() == result_data.tell()
     assert result_data.tell() > 0
     result_data.seek(0)
-    decrypted = DecryptorFile(result_data, rsa_private_key).read()
+    decrypted = decryptor_file_factory(result_data).read()
     assert plaintext == decrypted
 
-    encrypted_stream = EncryptorStream(io.BytesIO(plaintext), rsa_public_key)
+    encrypted_stream = encryptor_stream_factory(io.BytesIO(plaintext))
     result_data = io.BytesIO()
     result_data.write(encrypted_stream.read())
     result_data.seek(0)
-    decrypted = DecryptorFile(result_data, rsa_private_key).read()
+    decrypted = decryptor_file_factory(result_data).read()
     assert plaintext == decrypted
 
 
-def test_decryptorfile(tmpdir: LocalPath, rsa_public_key: str, rsa_private_key: str) -> None:
+@pytest.mark.parametrize(
+    ("encryptor_factory,decryptor_file_factory"),
+    (
+        (
+            lambda: Encryptor(RSA_PUBLIC_KEY),
+            lambda x: DecryptorFile(x, RSA_PRIVATE_KEY),
+        ),
+        (
+            lambda: SymmetricEncryptor(SYMMETRIC_KEY),
+            lambda x: SymmetricDecryptorFile(x, SYMMETRIC_KEY),
+        ),
+    ),
+)
+def test_decryptorfile(
+    tmpdir: LocalPath,
+    encryptor_factory: Callable[[], BaseEncryptor],
+    decryptor_file_factory: Callable[[HasWrite], BaseDecryptorFile],
+) -> None:
     # create a plaintext blob bigger than IO_BLOCK_SIZE
     plaintext1 = b"rvdmfki6iudmx8bb25tx1sozex3f4u0nm7uba4eibscgda0ckledcydz089qw1p1wer"
     repeat = int(1.5 * IO_BLOCK_SIZE / len(plaintext1))
     plaintext = repeat * plaintext1
-    encryptor = Encryptor(rsa_public_key)
+    encryptor = encryptor_factory()
     ciphertext = encryptor.update(plaintext) + encryptor.finalize()
     plain_fp = open(tmpdir.join("plain").strpath, mode="w+b")  # pylint: disable=consider-using-with
     plain_fp.write(ciphertext)
     plain_fp.seek(0)
-    fp = DecryptorFile(plain_fp, rsa_private_key)  # pylint: disable=redefined-variable-type
+    fp = decryptor_file_factory(plain_fp)  # pylint: disable=redefined-variable-type
     assert fp.fileno() == plain_fp.fileno()
     assert fp.readable() is True
     assert fp.writable() is False
@@ -189,7 +245,24 @@ def test_decryptorfile(tmpdir: LocalPath, rsa_public_key: str, rsa_private_key: 
         fp.truncate()
 
 
-def test_decryptorfile_for_tarfile(tmpdir: LocalPath, rsa_public_key: str, rsa_private_key: str) -> None:
+@pytest.mark.parametrize(
+    ("encryptor_factory,decryptor_file_factory"),
+    (
+        (
+            lambda: Encryptor(RSA_PUBLIC_KEY),
+            lambda x: DecryptorFile(x, RSA_PRIVATE_KEY),
+        ),
+        (
+            lambda: SymmetricEncryptor(SYMMETRIC_KEY),
+            lambda x: SymmetricDecryptorFile(x, SYMMETRIC_KEY),
+        ),
+    ),
+)
+def test_decryptorfile_for_tarfile(
+    tmpdir: LocalPath,
+    encryptor_factory: Callable[[], BaseEncryptor],
+    decryptor_file_factory: Callable[[HasWrite], BaseDecryptorFile],
+) -> None:
     testdata = b"file contents"
     data_tmp_name = tmpdir.join("plain.data").strpath
     with open(data_tmp_name, mode="wb") as data_tmp:
@@ -200,14 +273,14 @@ def test_decryptorfile_for_tarfile(tmpdir: LocalPath, rsa_public_key: str, rsa_p
         tar.add(data_tmp_name, arcname="archived_content")
     plaintext = tar_data.getvalue()
 
-    encryptor = Encryptor(rsa_public_key)
+    encryptor = encryptor_factory()
     ciphertext = encryptor.update(plaintext) + encryptor.finalize()
     enc_tar_name = tmpdir.join("enc.tar.data").strpath
     with open(enc_tar_name, "w+b") as enc_tar:
         enc_tar.write(ciphertext)
         enc_tar.seek(0)
 
-        dfile = DecryptorFile(enc_tar, rsa_private_key)
+        dfile = decryptor_file_factory(enc_tar)
         with tarfile.open(fileobj=cast(IO[bytes], dfile), mode="r") as tar:
             info = tar.getmember("archived_content")
             assert info.isfile() is True
@@ -226,7 +299,24 @@ def test_decryptorfile_for_tarfile(tmpdir: LocalPath, rsa_public_key: str, rsa_p
                 assert testdata == ext_fp.read()
 
 
-def test_encryptorfile(tmpdir: LocalPath, rsa_public_key: str, rsa_private_key: str) -> None:
+@pytest.mark.parametrize(
+    ("encryptor_file_factory,decryptor_file_factory"),
+    (
+        (
+            lambda x: EncryptorFile(x, RSA_PUBLIC_KEY),
+            lambda x: DecryptorFile(x, RSA_PRIVATE_KEY),
+        ),
+        (
+            lambda x: SymmetricEncryptorFile(x, SYMMETRIC_KEY),
+            lambda x: SymmetricDecryptorFile(x, SYMMETRIC_KEY),
+        ),
+    ),
+)
+def test_encryptorfile(
+    tmpdir: LocalPath,
+    encryptor_file_factory: Callable[[HasWrite], BaseEncryptorFile],
+    decryptor_file_factory: Callable[[HasWrite], BaseDecryptorFile],
+) -> None:
     # create a plaintext blob bigger than IO_BLOCK_SIZE
     plaintext1 = b"rvdmfki6iudmx8bb25tx1sozex3f4u0nm7uba4eibscgda0ckledcydz089qw1p1"
     repeat = int(1.5 * IO_BLOCK_SIZE / len(plaintext1))
@@ -234,7 +324,7 @@ def test_encryptorfile(tmpdir: LocalPath, rsa_public_key: str, rsa_private_key: 
 
     fn = tmpdir.join("data").strpath
     with open(fn, "w+b") as plain_fp:
-        enc_fp = EncryptorFile(plain_fp, rsa_public_key)
+        enc_fp = encryptor_file_factory(plain_fp)
         assert enc_fp.fileno() == plain_fp.fileno()
         assert enc_fp.readable() is False
         with pytest.raises(io.UnsupportedOperation):
@@ -253,7 +343,7 @@ def test_encryptorfile(tmpdir: LocalPath, rsa_public_key: str, rsa_private_key: 
 
         plain_fp.seek(0)
 
-        dec_fp = DecryptorFile(plain_fp, rsa_private_key)
+        dec_fp = decryptor_file_factory(plain_fp)
         assert dec_fp.fileno() == plain_fp.fileno()
         assert dec_fp.readable() is True
         assert dec_fp.seekable() is True
@@ -266,7 +356,24 @@ def test_encryptorfile(tmpdir: LocalPath, rsa_public_key: str, rsa_private_key: 
         assert plaintext == result
 
 
-def test_encryptorfile_for_tarfile(tmpdir: LocalPath, rsa_public_key: str, rsa_private_key: str) -> None:
+@pytest.mark.parametrize(
+    ("encryptor_file_factory,decryptor_file_factory"),
+    (
+        (
+            lambda x: EncryptorFile(x, RSA_PUBLIC_KEY),
+            lambda x: DecryptorFile(x, RSA_PRIVATE_KEY),
+        ),
+        (
+            lambda x: SymmetricEncryptorFile(x, SYMMETRIC_KEY),
+            lambda x: SymmetricDecryptorFile(x, SYMMETRIC_KEY),
+        ),
+    ),
+)
+def test_encryptorfile_for_tarfile(
+    tmpdir: LocalPath,
+    encryptor_file_factory: Callable[[HasWrite], BaseEncryptorFile],
+    decryptor_file_factory: Callable[[HasWrite], BaseDecryptorFile],
+) -> None:
     testdata = b"file contents"
     data_tmp_name = tmpdir.join("plain.data").strpath
     with open(data_tmp_name, mode="wb") as data_tmp:
@@ -274,14 +381,14 @@ def test_encryptorfile_for_tarfile(tmpdir: LocalPath, rsa_public_key: str, rsa_p
 
     enc_tar_name = tmpdir.join("enc.tar.data").strpath
     with open(enc_tar_name, "w+b") as plain_fp:
-        enc_fp = EncryptorFile(plain_fp, rsa_public_key)
+        enc_fp = encryptor_file_factory(plain_fp)
         with tarfile.open(name="foo", fileobj=cast(IO[bytes], enc_fp), mode="w") as tar:
             tar.add(data_tmp_name, arcname="archived_content")
         enc_fp.close()
 
         plain_fp.seek(0)
 
-        dfile = DecryptorFile(plain_fp, rsa_private_key)
+        dfile = decryptor_file_factory(plain_fp)
         with tarfile.open(fileobj=cast(IO[bytes], dfile), mode="r") as tar:
             info = tar.getmember("archived_content")
             assert info.isfile() is True
@@ -293,13 +400,29 @@ def test_encryptorfile_for_tarfile(tmpdir: LocalPath, rsa_public_key: str, rsa_p
             assert testdata == content
 
 
-def test_empty_file(rsa_public_key: str, rsa_private_key: str) -> None:
+@pytest.mark.parametrize(
+    ("encryptor_file_factory,decryptor_file_factory"),
+    (
+        (
+            lambda x: EncryptorFile(x, RSA_PUBLIC_KEY),
+            lambda x: DecryptorFile(x, RSA_PRIVATE_KEY),
+        ),
+        (
+            lambda x: SymmetricEncryptorFile(x, SYMMETRIC_KEY),
+            lambda x: SymmetricDecryptorFile(x, SYMMETRIC_KEY),
+        ),
+    ),
+)
+def test_empty_file(
+    encryptor_file_factory: Callable[[HasWrite], BaseEncryptorFile],
+    decryptor_file_factory: Callable[[HasWrite], BaseDecryptorFile],
+) -> None:
     bio = io.BytesIO()
-    ef = EncryptorFile(bio, rsa_public_key)
+    ef = encryptor_file_factory(bio)
     ef.write(b"")
     ef.close()
     assert bio.tell() == 0
 
-    df = DecryptorFile(bio, rsa_private_key)
+    df = decryptor_file_factory(bio)
     data = df.read()
     assert data == b""
