@@ -24,7 +24,7 @@ from rohmu.object_storage.base import (
     SourceStorageModelT,
 )
 from rohmu.object_storage.config import (  # pylint: disable=unused-import
-    AZURE_ENDPOINT_SUFFIXES,
+    AZURE_ENDPOINT_SUFFIXES as ENDPOINT_SUFFIXES,
     AZURE_MAX_BLOCK_SIZE as MAX_BLOCK_SIZE,
     AzureObjectStorageConfig as Config,
     calculate_azure_max_block_size as calculate_max_block_size,
@@ -122,7 +122,7 @@ class AzureTransfer(BaseTransfer[Config]):
             f"AccountKey={account_key}",
         ]
         if not host and not port:
-            endpoint_suffix = AZURE_ENDPOINT_SUFFIXES[azure_cloud]
+            endpoint_suffix = ENDPOINT_SUFFIXES[azure_cloud]
             conn.append(f"EndpointSuffix={endpoint_suffix}")
         else:
             conn.append(f"BlobEndpoint={protocol}://{host}:{port}/{account_name}")
