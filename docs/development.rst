@@ -1,23 +1,14 @@
-Development
-============
+#############
+ Development
+#############
 
-Requirements
-------------
+.. include:: ../README.rst
+   :start-after: start-include-requirements
+   :end-before: end-include-requirements
 
-Rohmu requires Python >= 3.8. For Python library dependencies, have a
-look at
-`requirements.txt <https://github.com/aiven/rohmu/blob/main/requirements.txt>`__.
+.. include:: ../README.rst
+   :start-after: start-include-building-the-package
+   :end-before: end-include-building-the-package
 
-
-Building the package
---------------------
-
-To build an installation package for your distribution, go to the root
-directory of a Rohmu Git checkout and run:
-
-Fedora::
-
-  sudo make fedora-dev-setup
-  make rpm
-
-This will produce a ``.rpm`` package usually into ``rpm/RPMS/noarch/``.
+.. include:: ../README.rst
+   :start-after: start-include-links

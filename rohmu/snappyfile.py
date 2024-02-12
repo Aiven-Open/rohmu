@@ -1,9 +1,6 @@
-"""
-rohmu - file-like interface for snappy
-
-Copyright (c) 2016 Ohmu Ltd
-See LICENSE for details
-"""
+# Copyright (c) 2016 Ohmu Ltd
+# See LICENSE for details
+"""Rohmu - file-like interface for snappy"""
 from .common.constants import IO_BLOCK_SIZE
 from .filewrap import FileWrap
 from .typing import BinaryData, FileLike

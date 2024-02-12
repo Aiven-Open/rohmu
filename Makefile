@@ -6,6 +6,7 @@ long_ver = $(shell git describe --long 2>/dev/null | cut -f2 -d/ || echo $(short
 PYTHON ?= python3
 PYTHON_SOURCE_DIRS = rohmu/ test/
 PYTEST_ARG ?= -v
+RST_FILES = README.rst docs/about.rst docs/autodoc.rst docs/development.rst docs/index.rst docs/toc.rst docs/usage.rst
 
 .PHONY: fedora-dev-setup
 fedora-dev-setup:
@@ -37,7 +38,7 @@ mypy:
 fmt:
 	isort $(PYTHON_SOURCE_DIRS)
 	black $(PYTHON_SOURCE_DIRS)
-	$(PYTHON) -m rstfmt README.rst -w 100
+	$(PYTHON) -m rstfmt $(RST_FILES) -w 100
 
 .PHONY: coverage
 coverage:

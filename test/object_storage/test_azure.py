@@ -1,4 +1,4 @@
-"""Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
+# Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 from datetime import datetime
 from io import BytesIO
 from rohmu.errors import InvalidByteRangeError

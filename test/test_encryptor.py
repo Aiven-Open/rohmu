@@ -1,7 +1,6 @@
-"""
-Copyright (c) 2015 Ohmu Ltd
-See LICENSE for details
-"""
+# Copyright (c) 2015 Ohmu Ltd
+# See LICENSE for details
+
 from __future__ import annotations
 
 from py.path import LocalPath  # type: ignore[import] # pylint: disable=import-error

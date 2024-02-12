@@ -1,9 +1,6 @@
-"""
-rohmu - common utility functions
-
-Copyright (c) 2022 Ohmu Ltd
-See LICENSE for details
-"""
+# Copyright (c) 2022 Ohmu Ltd
+# See LICENSE for details
+"""Rohmu - common utility functions"""
 from __future__ import annotations
 
 from io import BytesIO, UnsupportedOperation

@@ -1,10 +1,8 @@
-"""
-rohmu
+# Copyright (c) 2016 Ohmu Ltd
+# Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
+# See LICENSE for details
+"""Rohmu"""
 
-Copyright (c) 2016 Ohmu Ltd
-Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
-See LICENSE for details
-"""
 from .common.constants import IO_BLOCK_SIZE
 from .common.models import StorageModel
 from .errors import InvalidConfigurationError

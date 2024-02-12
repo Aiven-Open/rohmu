@@ -1,4 +1,4 @@
-"""Copyright (c) 2023 Aiven, Helsinki, Finland. https://aiven.io/"""
+# Copyright (c) 2023 Aiven, Helsinki, Finland. https://aiven.io/
 from dataclasses import dataclass
 from rohmu import transfer_pool
 from rohmu.errors import InvalidTransferError

@@ -1,9 +1,6 @@
-"""
-rohmu - transfer_pool
-
-Copyright (c) 2023 Aiven, Helsinki, Finland. https://aiven.io/
-See LICENSE for details
-"""
+# Copyright (c) 2023 Aiven, Helsinki, Finland. https://aiven.io/
+# See LICENSE for details
+"""Rohmu - transfer_pool"""
 
 from __future__ import annotations
 

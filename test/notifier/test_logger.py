@@ -1,4 +1,4 @@
-"""Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
+# Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 from pytest import LogCaptureFixture
 from rohmu.notifier.logger import LoggerNotifier
 

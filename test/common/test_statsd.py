@@ -1,11 +1,8 @@
-"""
-Copyright (c) 2020 Aiven Ltd
-See LICENSE for details
-
-Test that StatsClient works as advertised.
+# Copyright (c) 2020 Aiven Ltd
+# See LICENSE for details
+"""Test that StatsClient works as advertised.
 
 This could be broader, but at least minimal functionality is tested here.
-
 """
 from __future__ import annotations
 

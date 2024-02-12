@@ -1,4 +1,4 @@
-"""Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
+# Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 from rohmu.notifier.null import NullNotifier
 
 

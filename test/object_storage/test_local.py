@@ -1,4 +1,4 @@
-"""Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
+# Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from io import BytesIO

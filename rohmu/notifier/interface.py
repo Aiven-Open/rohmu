@@ -1,4 +1,5 @@
-"""Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/"""
+# Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

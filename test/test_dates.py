@@ -1,9 +1,6 @@
-"""
-rohmu test case
-
-Copyright (c) 2017 Ohmu Ltd
-See LICENSE for details
-"""
+# Copyright (c) 2017 Ohmu Ltd
+# See LICENSE for details
+"""Rohmu test case"""
 from rohmu.dates import parse_timestamp
 
 import datetime
