@@ -102,6 +102,30 @@ def test_store_file_object(infra: S3Infra, multipart: Optional[bool]) -> None:
         )
 
 
+@pytest.mark.parametrize("has_content_length", [False, True])
+def test_store_empty_file_object(infra: S3Infra, has_content_length: bool) -> None:
+    metadata = {"Content-Length": "0"} if has_content_length else {}
+
+    infra.transfer.store_file_object(
+        key="test_key2",
+        fd=BytesIO(b""),
+        metadata=metadata,
+        multipart=True,
+    )
+    # never try multipart upload for empty files even if its enforced
+
+    infra.s3_client.create_multipart_upload.assert_not_called()
+
+    called_with: dict[str, str | bytes | dict[str, str]] = {  # help: mypy
+        "Bucket": "test-bucket",
+        "Body": b"",
+        "Key": "test-prefix/test_key2",
+    }
+    if metadata:
+        called_with["Metadata"] = {"Content-Length": "0"}
+    infra.s3_client.put_object.assert_called_once_with(**called_with)
+
+
 def test_operations_reporting(infra: S3Infra) -> None:
     infra.operation.assert_called_once_with(StorageOperation.head_request)  # pylint: disable=no-member
 

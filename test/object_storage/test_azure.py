@@ -2,9 +2,10 @@
 from datetime import datetime
 from io import BytesIO
 from rohmu.errors import InvalidByteRangeError
+from rohmu.object_storage.config import AzureObjectStorageConfig
 from tempfile import NamedTemporaryFile
 from types import ModuleType
-from typing import Any, Tuple
+from typing import Any, Optional, Tuple
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -103,3 +104,100 @@ def test_get_contents_to_fileobj_raises_error_on_invalid_byte_range(azure_module
             fileobj_to_store_to=BytesIO(),
             byte_range=(100, 10),
         )
+
+
+def test_minimal_config() -> None:
+    config = AzureObjectStorageConfig(account_name="test")
+    assert config.account_name == "test"
+
+
+def test_azure_config_host_port_set_together() -> None:
+    with pytest.raises(ValueError):
+        AzureObjectStorageConfig(account_name="test", host="localhost")
+    with pytest.raises(ValueError):
+        AzureObjectStorageConfig(account_name="test", port=10000)
+    config = AzureObjectStorageConfig(account_name="test", host="localhost", port=10000)
+    assert config.host == "localhost"
+    assert config.port == 10000
+
+
+def test_valid_azure_cloud_endpoint() -> None:
+    with pytest.raises(ValueError):
+        AzureObjectStorageConfig(account_name="test", azure_cloud="invalid")
+    config = AzureObjectStorageConfig(account_name="test", azure_cloud="public")
+    assert config.azure_cloud == "public"
+
+
+@pytest.mark.parametrize(
+    "host,port,is_secured,expected",
+    [
+        (
+            None,
+            None,
+            True,
+            ";".join(
+                [
+                    "DefaultEndpointsProtocol=https",
+                    "AccountName=test_name",
+                    "AccountKey=test_key",
+                    "EndpointSuffix=core.windows.net",
+                ]
+            ),
+        ),
+        (
+            None,
+            None,
+            False,
+            ";".join(
+                [
+                    "DefaultEndpointsProtocol=http",
+                    "AccountName=test_name",
+                    "AccountKey=test_key",
+                    "EndpointSuffix=core.windows.net",
+                ]
+            ),
+        ),
+        (
+            "localhost",
+            10000,
+            True,
+            ";".join(
+                [
+                    "DefaultEndpointsProtocol=https",
+                    "AccountName=test_name",
+                    "AccountKey=test_key",
+                    "BlobEndpoint=https://localhost:10000/test_name",
+                ]
+            ),
+        ),
+        (
+            "localhost",
+            10000,
+            False,
+            ";".join(
+                [
+                    "DefaultEndpointsProtocol=http",
+                    "AccountName=test_name",
+                    "AccountKey=test_key",
+                    "BlobEndpoint=http://localhost:10000/test_name",
+                ]
+            ),
+        ),
+    ],
+)
+def test_conn_string(host: Optional[str], port: Optional[int], is_secured: bool, expected: str) -> None:
+    get_blob_client_mock = MagicMock()
+    blob_client = MagicMock(get_blob_client=get_blob_client_mock)
+    service_client = MagicMock(from_connection_string=MagicMock(return_value=blob_client))
+    module_patches = {
+        "azure.common": MagicMock(),
+        "azure.core.exceptions": MagicMock(),
+        "azure.storage.blob": MagicMock(BlobServiceClient=service_client),
+    }
+    with patch.dict(sys.modules, module_patches):
+        from rohmu.object_storage.azure import AzureTransfer
+
+    conn_string = AzureTransfer.conn_string(
+        account_name="test_name", account_key="test_key", azure_cloud=None, host=host, port=port, is_secure=is_secured
+    )
+    assert expected == conn_string

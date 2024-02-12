@@ -21,6 +21,7 @@ from rohmu.object_storage.base import (
     SourceStorageModelT,
 )
 from rohmu.object_storage.config import (  # pylint: disable=unused-import
+    AZURE_ENDPOINT_SUFFIXES as ENDPOINT_SUFFIXES,
     AZURE_MAX_BLOCK_SIZE as MAX_BLOCK_SIZE,
     AzureObjectStorageConfig as Config,
     calculate_azure_max_block_size as calculate_max_block_size,
@@ -39,14 +40,6 @@ except ImportError:
     from azure.storage.blob._models import BlobPrefix, BlobType  # type: ignore
 
 
-ENDPOINT_SUFFIXES = {
-    None: "core.windows.net",
-    "germany": "core.cloudapi.de",  # Azure Germany is a completely separate cloud from the regular Azure Public cloud
-    "china": "core.chinacloudapi.cn",
-    "public": "core.windows.net",
-}
-
-
 # Reduce Azure logging verbocity of http requests and responses
 logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
 
@@ -61,6 +54,9 @@ class AzureTransfer(BaseTransfer[Config]):
         account_key: Optional[str] = None,
         sas_token: Optional[str] = None,
         prefix: Optional[str] = None,
+        is_secure: bool = True,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
         azure_cloud: Optional[str] = None,
         proxy_info: Optional[dict[str, Union[str, int]]] = None,
         notifier: Optional[Notifier] = None,
@@ -75,16 +71,13 @@ class AzureTransfer(BaseTransfer[Config]):
         self.account_key = account_key
         self.container_name = bucket_name
         self.sas_token = sas_token
-        try:
-            endpoint_suffix = ENDPOINT_SUFFIXES[azure_cloud]
-        except KeyError:
-            raise InvalidConfigurationError(f"Unknown azure cloud {repr(azure_cloud)}")
-
-        conn_str = (
-            "DefaultEndpointsProtocol=https;"
-            f"AccountName={self.account_name};"
-            f"AccountKey={self.account_key};"
-            f"EndpointSuffix={endpoint_suffix}"
+        conn_str = self.conn_string(
+            account_name=account_name,
+            account_key=account_key,
+            azure_cloud=azure_cloud,
+            host=host,
+            port=port,
+            is_secure=is_secure,
         )
         config: dict[str, Any] = {"max_block_size": MAX_BLOCK_SIZE}
         if proxy_info:
@@ -94,13 +87,13 @@ class AzureTransfer(BaseTransfer[Config]):
                 auth = f"{username}:{password}@"
             else:
                 auth = ""
-            host = proxy_info["host"]
-            port = proxy_info["port"]
+            proxy_host = proxy_info["host"]
+            proxy_port = proxy_info["port"]
             if proxy_info.get("type") == "socks5":
                 schema = "socks5"
             else:
                 schema = "http"
-            config["proxies"] = {"https": f"{schema}://{auth}{host}:{port}"}
+            config["proxies"] = {"https": f"{schema}://{auth}{proxy_host}:{proxy_port}"}
 
         self.conn: BlobServiceClient = BlobServiceClient.from_connection_string(
             conn_str=conn_str,
@@ -109,6 +102,28 @@ class AzureTransfer(BaseTransfer[Config]):
         )
         self.container = self.get_or_create_container(self.container_name)
         self.log.debug("AzureTransfer initialized, %r", self.container_name)
+
+    @staticmethod
+    def conn_string(
+        account_name: str,
+        account_key: Optional[str],
+        azure_cloud: Optional[str],
+        host: Optional[str],
+        port: Optional[int],
+        is_secure: bool,
+    ) -> str:
+        protocol = "https" if is_secure else "http"
+        conn = [
+            f"DefaultEndpointsProtocol={protocol}",
+            f"AccountName={account_name}",
+            f"AccountKey={account_key}",
+        ]
+        if not host and not port:
+            endpoint_suffix = ENDPOINT_SUFFIXES[azure_cloud]
+            conn.append(f"EndpointSuffix={endpoint_suffix}")
+        else:
+            conn.append(f"BlobEndpoint={protocol}://{host}:{port}/{account_name}")
+        return ";".join(conn)
 
     def copy_file(
         self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **kwargs: Any

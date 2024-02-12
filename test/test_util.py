@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO, UnsupportedOperation
-from rohmu.util import BinaryStreamsConcatenation, get_total_size_from_content_range, ProgressStream
+from rohmu.util import BinaryStreamsConcatenation, file_object_is_empty, get_total_size_from_content_range, ProgressStream
 from typing import Optional
 
 import pytest
@@ -77,3 +77,8 @@ def test_progress_stream() -> None:
         # check that __exit__ closes the file
         pass
     assert progress_stream.closed
+
+
+def test_file_object_is_empty() -> None:
+    assert not file_object_is_empty(BytesIO(b"Hello, World!\nSecond line\nThis is a longer third line\n"))
+    assert file_object_is_empty(BytesIO(b""))

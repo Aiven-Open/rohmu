@@ -292,7 +292,7 @@ class SwiftTransfer(BaseTransfer[Config]):
         metadata = metadata or {}
         content_length = metadata.get("Content-Length")
         multipart = self._should_multipart(
-            chunk_size=self.segment_size, default=True, metadata=metadata, multipart=multipart
+            fd=fd, chunk_size=self.segment_size, default=True, metadata=metadata, multipart=multipart
         )
         self._store_file_contents(
             key,

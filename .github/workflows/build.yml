@@ -43,6 +43,9 @@ jobs:
       - id: pylint
         run: make lint
 
+      - id: pip-freeze
+        run: pip freeze
+
       - id: mypy
         run: make mypy
 
