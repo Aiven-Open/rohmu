@@ -136,9 +136,7 @@ def test_no_fd_leak_if_fdopen_fails_because_of_unknown_mode(tmp_path: Path) -> N
     final_path = tmp_path / "file"
     opened_fd: list[int] = []
     try:
-        with atomic_opener(
-            final_path, mode="somethingrandomw", encoding="ascii", _fd_spy=opened_fd.append
-        ):  # type: ignore[call-overload]
+        with atomic_opener(final_path, mode="somethingrandomw", encoding="ascii", _fd_spy=opened_fd.append):  # type: ignore[call-overload]
             pass
         pytest.fail("should fail, mode is wrong")
     except ValueError:

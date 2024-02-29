@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-import argparse
 from pathlib import Path
+
+import argparse
 import re
 import subprocess
 
@@ -14,7 +15,8 @@ def make_release(version: str) -> None:
     subprocess.run(["git", "-C", str(project_directory), "add", str(version_filename)], check=True)
     subprocess.run(["git", "-C", str(project_directory), "commit", "-m", f"Bump to version {version}"], check=True)
     subprocess.run(
-        ["git", "-C", str(project_directory), "tag", "-s", "-a", f"releases/{version}", "-m", f"Version {version}"], check=True
+        ["git", "-C", str(project_directory), "tag", "-s", "-a", f"releases/{version}", "-m", f"Version {version}"],
+        check=True,
     )
     subprocess.run(["git", "-C", str(project_directory), "log", "-n", "1", "-p"], check=True)
     print("Run 'git push --follow-tags' to confirm the release")

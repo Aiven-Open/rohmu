@@ -133,7 +133,8 @@ class SFTPTransfer(BaseTransfer[Config]):
                         metadata = None
 
                     last_modified = datetime.datetime.fromtimestamp(
-                        attr.st_mtime, tz=datetime.timezone.utc  # type: ignore[arg-type]
+                        attr.st_mtime,  # type: ignore[arg-type]
+                        tz=datetime.timezone.utc,
                     )
                     yield IterKeyItem(
                         type=KEY_TYPE_OBJECT,
@@ -172,7 +173,8 @@ class SFTPTransfer(BaseTransfer[Config]):
                         metadata = None
 
                     last_modified = datetime.datetime.fromtimestamp(
-                        attr.st_mtime, tz=datetime.timezone.utc  # type: ignore[arg-type]
+                        attr.st_mtime,  # type: ignore[arg-type]
+                        tz=datetime.timezone.utc,
                     )
                     yield IterKeyItem(
                         type=KEY_TYPE_OBJECT,

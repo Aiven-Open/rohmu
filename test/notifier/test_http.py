@@ -31,7 +31,12 @@ class _TestSession:
     def __enter__(self) -> None:
         pass
 
-    def __exit__(self, type: Type[BaseException], value: BaseException, traceback: TracebackType) -> None:
+    def __exit__(
+        self,
+        type: Type[BaseException],
+        value: BaseException,
+        traceback: TracebackType,
+    ) -> None:
         pass
 
 
