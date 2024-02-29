@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
+from cryptography.hazmat.primitives.serialization import load_pem_private_key, load_pem_public_key
 from pathlib import Path
 from rohmu.common.constants import IO_BLOCK_SIZE
 from rohmu.encryptor import (
@@ -66,6 +69,12 @@ RSA_PRIVATE_KEY = textwrap.dedent(
         -----END PRIVATE KEY-----"""
 )
 
+LOADED_RSA_PUBLIC_KEY = load_pem_public_key(RSA_PUBLIC_KEY.encode(), backend=default_backend())
+assert isinstance(LOADED_RSA_PUBLIC_KEY, RSAPublicKey)
+
+LOADED_RSA_PRIVATE_KEY = load_pem_private_key(RSA_PRIVATE_KEY.encode(), password=None, backend=default_backend())
+assert isinstance(LOADED_RSA_PRIVATE_KEY, RSAPrivateKey)
+
 
 @pytest.mark.parametrize(
     ("plaintext"),
@@ -80,6 +89,14 @@ RSA_PRIVATE_KEY = textwrap.dedent(
         (
             lambda: Encryptor(RSA_PUBLIC_KEY),
             lambda: Decryptor(RSA_PRIVATE_KEY),
+        ),
+        (
+            lambda: Encryptor(RSA_PUBLIC_KEY.encode()),
+            lambda: Decryptor(RSA_PRIVATE_KEY.encode()),
+        ),
+        (
+            lambda: Encryptor(LOADED_RSA_PUBLIC_KEY),
+            lambda: Decryptor(LOADED_RSA_PRIVATE_KEY),
         ),
         (
             lambda: SymmetricEncryptor(SYMMETRIC_KEY),
@@ -113,6 +130,14 @@ def test_encryptor_decryptor(
     (
         (
             lambda x: EncryptorStream(x, RSA_PUBLIC_KEY),
+            lambda x: DecryptorFile(x, RSA_PRIVATE_KEY),
+        ),
+        (
+            lambda x: EncryptorStream(x, RSA_PUBLIC_KEY.encode()),
+            lambda x: DecryptorFile(x, RSA_PRIVATE_KEY),
+        ),
+        (
+            lambda x: EncryptorStream(x, LOADED_RSA_PUBLIC_KEY),
             lambda x: DecryptorFile(x, RSA_PRIVATE_KEY),
         ),
         (
@@ -159,6 +184,14 @@ def test_encryptor_stream(
         (
             lambda: Encryptor(RSA_PUBLIC_KEY),
             lambda x: DecryptorFile(x, RSA_PRIVATE_KEY),
+        ),
+        (
+            lambda: Encryptor(RSA_PUBLIC_KEY),
+            lambda x: DecryptorFile(x, RSA_PRIVATE_KEY.encode()),
+        ),
+        (
+            lambda: Encryptor(RSA_PUBLIC_KEY),
+            lambda x: DecryptorFile(x, LOADED_RSA_PRIVATE_KEY),
         ),
         (
             lambda: SymmetricEncryptor(SYMMETRIC_KEY),
@@ -303,6 +336,14 @@ def test_decryptorfile_for_tarfile(
     (
         (
             lambda x: EncryptorFile(x, RSA_PUBLIC_KEY),
+            lambda x: DecryptorFile(x, RSA_PRIVATE_KEY),
+        ),
+        (
+            lambda x: EncryptorFile(x, RSA_PUBLIC_KEY.encode()),
+            lambda x: DecryptorFile(x, RSA_PRIVATE_KEY),
+        ),
+        (
+            lambda x: EncryptorFile(x, LOADED_RSA_PUBLIC_KEY),
             lambda x: DecryptorFile(x, RSA_PRIVATE_KEY),
         ),
         (
