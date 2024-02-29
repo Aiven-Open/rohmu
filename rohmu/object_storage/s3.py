@@ -162,6 +162,10 @@ class S3Transfer(BaseTransfer[Config]):
                 s3={"addressing_style": S3AddressingStyle(addressing_style).value},
                 signature_version=signature_version,
                 proxies=proxies,
+                retries={
+                    "max_attempts": 10,
+                    "mode": "standard",
+                },
                 **timeouts,
             )
             if not is_verify_tls and cert_path is not None:
