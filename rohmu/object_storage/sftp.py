@@ -151,7 +151,7 @@ class SFTPTransfer(BaseTransfer[Config]):
             else:
                 return
 
-        files = set(attr.filename for attr in attrs)
+        files = {attr.filename for attr in attrs}
 
         for attr in attrs:
             if self._skip_file_name(attr.filename):

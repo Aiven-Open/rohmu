@@ -13,6 +13,7 @@ extend-select = [
   "I",
   "UP",
   "BLE",
+  "C4",
   "Q",
   "TID",
   "PL",
