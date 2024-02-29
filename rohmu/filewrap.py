@@ -10,8 +10,6 @@ import time
 
 
 class FileWrap(io.BufferedIOBase):
-    # pylint: disable=unused-argument
-
     def __init__(self, next_fp: FileLike) -> None:
         super().__init__()
         self._next_fp: Optional[FileLike] = next_fp

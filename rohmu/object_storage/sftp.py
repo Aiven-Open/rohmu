@@ -162,7 +162,7 @@ class SFTPTransfer(BaseTransfer[Config]):
                     yield from self.iter_key(file_key, with_metadata=with_metadata, deep=True)
                 else:
                     yield IterKeyItem(type=KEY_TYPE_PREFIX, value=file_key)
-            else:
+            else:  # noqa: PLR5501
                 # Don't return files if metadata file is not present; files are written in two phases and
                 # should be considered available only after also metadata has been written
                 if attr.filename + ".metadata" in files:
@@ -207,9 +207,9 @@ class SFTPTransfer(BaseTransfer[Config]):
         fd: BinaryIO,
         metadata: Optional[Metadata] = None,
         *,
-        cache_control: Optional[str] = None,  # pylint: disable=unused-argument
-        mimetype: Optional[str] = None,  # pylint: disable=unused-argument
-        multipart: Optional[bool] = None,  # pylint: disable=unused-argument
+        cache_control: Optional[str] = None,
+        mimetype: Optional[str] = None,
+        multipart: Optional[bool] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
     ) -> None:
         bytes_written = self._put_object(

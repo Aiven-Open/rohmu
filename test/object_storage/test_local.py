@@ -133,8 +133,8 @@ def test_can_upload_files_concurrently() -> None:
         transfer.upload_concurrent_chunk(upload, 5, BytesIO(b"Wor"))
 
         # we don't see the temporary files created during upload
-        assert transfer.list_prefixes(key="/") == []  # pylint: disable=use-implicit-booleaness-not-comparison
-        assert transfer.list_path(key="/", deep=True) == []  # pylint: disable=use-implicit-booleaness-not-comparison
+        assert transfer.list_prefixes(key="/") == []
+        assert transfer.list_path(key="/", deep=True) == []
         assert os.path.exists(os.path.join(destdir, f".concurrent_upload_{upload.backend_id}"))
 
         transfer.complete_concurrent_upload(upload)

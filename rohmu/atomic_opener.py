@@ -81,7 +81,7 @@ def _atomic_opener(
     _fd_spy(fd)
     try:
         file_obj = os.fdopen(fd, mode=mode, encoding=encoding)
-    except Exception:  # pylint: disable=broad-except
+    except Exception:
         # when passing wrong mode, os.fdopen won't close input fd. When passing wrong encoding, it will.
         _fd_close_quietly(fd)
         raise

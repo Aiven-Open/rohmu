@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-# pylint: disable=import-error, no-name-in-module
 from azure.core.exceptions import HttpResponseError, ResourceExistsError
 from azure.storage.blob import BlobServiceClient, ContentSettings
 from rohmu.common.statsd import StatsdConfig
@@ -20,7 +19,7 @@ from rohmu.object_storage.base import (
     ProgressProportionCallbackType,
     SourceStorageModelT,
 )
-from rohmu.object_storage.config import (  # pylint: disable=unused-import
+from rohmu.object_storage.config import (  # noqa: F401
     AZURE_ENDPOINT_SUFFIXES as ENDPOINT_SUFFIXES,
     AZURE_MAX_BLOCK_SIZE as MAX_BLOCK_SIZE,
     AzureObjectStorageConfig as Config,
@@ -256,7 +255,7 @@ class AzureTransfer(BaseTransfer[Config]):
         try:
             blob_client = self.conn.get_blob_client(container=self.container_name, blob=path)
             result = blob_client.delete_blob()
-        except azure.core.exceptions.ResourceNotFoundError as ex:  # pylint: disable=no-member
+        except azure.core.exceptions.ResourceNotFoundError as ex:
             raise FileNotFoundFromStorageError(path) from ex
 
         self.notifier.object_deleted(key)
@@ -283,12 +282,11 @@ class AzureTransfer(BaseTransfer[Config]):
         allows reading entire blob into memory at once or returning data from random offsets"""
         file_size = None
         start_range = byte_range[0] if byte_range else 0
-        chunk_size = self.conn._config.max_chunk_get_size  # type: ignore[attr-defined] # pylint: disable=protected-access
+        chunk_size = self.conn._config.max_chunk_get_size  # type: ignore[attr-defined]
         end_range = chunk_size - 1
         blob = self.conn.get_blob_client(self.container_name, key)
         while True:
             try:
-                # pylint: disable=protected-access
                 if byte_range:
                     length = min(byte_range[1] - start_range + 1, chunk_size)
                 else:
@@ -309,7 +307,7 @@ class AzureTransfer(BaseTransfer[Config]):
                     end_range = file_size - 1
                 if progress_callback:
                     progress_callback(start_range, file_size)
-            except azure.core.exceptions.ResourceNotFoundError as ex:  # pylint: disable=no-member
+            except azure.core.exceptions.ResourceNotFoundError as ex:
                 if ex.status_code == 416:  # Empty file
                     return
                 raise FileNotFoundFromStorageError(key) from ex
@@ -328,7 +326,7 @@ class AzureTransfer(BaseTransfer[Config]):
         self.log.debug("Starting to fetch the contents of: %r", path)
         try:
             self._stream_blob(path, fileobj_to_store_to, byte_range, progress_callback)
-        except azure.core.exceptions.ResourceNotFoundError as ex:  # pylint: disable=no-member
+        except azure.core.exceptions.ResourceNotFoundError as ex:
             raise FileNotFoundFromStorageError(path) from ex
 
         if progress_callback:
@@ -340,7 +338,7 @@ class AzureTransfer(BaseTransfer[Config]):
         try:
             blob_client = self.conn.get_blob_client(self.container_name, path)
             return blob_client.get_blob_properties().size
-        except azure.core.exceptions.ResourceNotFoundError as ex:  # pylint: disable=no-member
+        except azure.core.exceptions.ResourceNotFoundError as ex:
             raise FileNotFoundFromStorageError(path) from ex
 
     def store_file_object(
@@ -351,7 +349,7 @@ class AzureTransfer(BaseTransfer[Config]):
         *,
         cache_control: Optional[str] = None,
         mimetype: Optional[str] = None,
-        multipart: Optional[bool] = None,  # pylint: disable=unused-argument
+        multipart: Optional[bool] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
     ) -> None:
         if cache_control is not None:

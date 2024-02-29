@@ -74,7 +74,7 @@ def test_store_file_object(azure_module: ModuleType, get_blob_client: MagicMock)
     metadata = {"Content-Length": len(test_data), "some-date": datetime(2022, 11, 15, 18, 30, 58, 486644)}
     file_object = BytesIO(test_data)
 
-    def upload_side_effect(*args: Any, **kwargs: Any) -> None:  # pylint: disable=unused-argument
+    def upload_side_effect(*args: Any, **kwargs: Any) -> None:
         if kwargs.get("raw_response_hook"):
             kwargs["raw_response_hook"](MagicMock(context={"upload_stream_current": len(test_data)}))
 

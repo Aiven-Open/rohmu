@@ -127,7 +127,7 @@ def test_store_empty_file_object(infra: S3Infra, has_content_length: bool) -> No
 
 
 def test_operations_reporting(infra: S3Infra) -> None:
-    infra.operation.assert_called_once_with(StorageOperation.head_request)  # pylint: disable=no-member
+    infra.operation.assert_called_once_with(StorageOperation.head_request)
 
 
 def test_deletion(infra: S3Infra) -> None:

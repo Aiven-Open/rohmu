@@ -28,7 +28,7 @@ unittest:
 
 .PHONY: lint
 lint:
-	$(PYTHON) -m pylint --rcfile .pylintrc $(PYTHON_SOURCE_DIRS)
+	ruff check $(PYTHON_SOURCE_DIRS)
 
 .PHONY: mypy
 mypy:
@@ -36,8 +36,8 @@ mypy:
 
 .PHONY: fmt
 fmt:
-	isort $(PYTHON_SOURCE_DIRS)
-	black $(PYTHON_SOURCE_DIRS)
+	ruff check --select I --fix $(PYTHON_SOURCE_DIRS)
+	ruff format $(PYTHON_SOURCE_DIRS)
 	$(PYTHON) -m rstfmt $(RST_FILES) -w 100
 
 .PHONY: coverage

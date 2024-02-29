@@ -24,7 +24,7 @@ from rohmu.object_storage.config import (
     SwiftObjectStorageConfig as Config,
 )
 from rohmu.typing import Metadata
-from swiftclient import client, exceptions  # pylint: disable=import-error
+from swiftclient import client, exceptions
 from typing import Any, BinaryIO, Iterator, Optional, Tuple
 
 import logging
@@ -99,7 +99,7 @@ class SwiftTransfer(BaseTransfer[Config]):
                 "service_type": service_type,
                 "endpoint_type": endpoint_type,
             }
-        else:
+        else:  # noqa: PLR5501
             if region_name is not None:
                 os_options = {"region_name": region_name}
             else:
@@ -167,7 +167,7 @@ class SwiftTransfer(BaseTransfer[Config]):
 
                 # Response format is documented at:
                 #
-                #   https://docs.openstack.org/api-ref/object-store/?expanded=list-endpoints-detail,show-container-details-and-list-objects-detail # pylint: disable=line-too-long
+                #   https://docs.openstack.org/api-ref/object-store/?expanded=list-endpoints-detail,show-container-details-and-list-objects-detail # noqa: E501
                 yield IterKeyItem(
                     type=KEY_TYPE_OBJECT,
                     value={
@@ -288,7 +288,7 @@ class SwiftTransfer(BaseTransfer[Config]):
         mimetype: Optional[str] = None,
         multipart: Optional[bool] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
-    ) -> None:  # pylint: disable=unused-argument
+    ) -> None:
         metadata = metadata or {}
         content_length = metadata.get("Content-Length")
         multipart = self._should_multipart(

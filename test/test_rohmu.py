@@ -112,7 +112,7 @@ def test_rohmu_with_local_storage(compress_algorithm: str, file_size: int, tmp_p
         assert EMPTY_FILE_SHA1 == hasher.hexdigest()
 
 
-def _key_lookup(key_id: str) -> str:  # pylint: disable=unused-argument
+def _key_lookup(key_id: str) -> str:
     return CONSTANT_TEST_RSA_PRIVATE_KEY
 
 

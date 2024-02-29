@@ -1,13 +1,10 @@
 # Kept in sync with the versions in CI
-black==23.7.0
+ruff==0.2.2
 mypy==1.5.1
-pylint==2.17.4
-isort==5.11.5
 # Unpinned dependencies, latest is fine
 botocore
 botocore-stubs
 mypy_boto3_s3
-pylint-quotes
 pytest
 pytest-cov
 pytest-mock

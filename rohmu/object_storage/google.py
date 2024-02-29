@@ -50,7 +50,7 @@ import errno
 
 # NOTE: this import is not needed per-se, but it's imported here first to point the
 # user to the most important possible missing dependency
-import googleapiclient  # noqa pylint: disable=unused-import
+import googleapiclient  # noqa: F401
 import httplib2
 import json
 import logging
@@ -234,7 +234,7 @@ class GoogleTransfer(BaseTransfer[Config]):
             if self.gs is None:
                 self.gs = self._init_google_client()
             # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.objects.html
-            self.gs_object_client = self.gs.objects()  # type: ignore[attr-defined] # pylint: disable=no-member
+            self.gs_object_client = self.gs.objects()  # type: ignore[attr-defined]
         try:
             yield self.gs_object_client
         except HttpError as ex:
@@ -262,7 +262,7 @@ class GoogleTransfer(BaseTransfer[Config]):
                 elif isinstance(ex, HttpError):
                     # https://cloud.google.com/storage/docs/json_api/v1/status-codes
                     # https://cloud.google.com/storage/docs/exponential-backoff
-                    if ex.resp["status"] not in ("429", "500", "502", "503", "504"):  # pylint: disable=no-member
+                    if ex.resp["status"] not in ("429", "500", "502", "503", "504"):
                         raise
                     retry_wait = min(10.0, max(1.0, retry_wait * 2) + random.random())
                 # httplib2 commonly fails with Bad File Descriptor and Connection Reset
@@ -356,9 +356,9 @@ class GoogleTransfer(BaseTransfer[Config]):
         self,
         key: str,
         *,
-        with_metadata: bool = True,  # pylint: disable=unused-argument
+        with_metadata: bool = True,
         deep: bool = False,
-        include_key: bool = False,  # pylint: disable=unused-argument, unused-variable
+        include_key: bool = False,
     ) -> Iterator[IterKeyItem]:
         path = self.format_key_for_backend(key, trailing_slash=not include_key)
         self.log.debug("Listing path %r", path)
@@ -520,7 +520,6 @@ class GoogleTransfer(BaseTransfer[Config]):
                     reporter.report(self.stats)
         return response
 
-    # pylint: disable=arguments-differ
     def store_file_from_disk(
         self,
         key: str,
@@ -531,8 +530,8 @@ class GoogleTransfer(BaseTransfer[Config]):
         mimetype: Optional[str] = None,
         multipart: Optional[bool] = None,
         progress_fn: ProgressProportionCallbackType = None,
-        extra_props: Optional[dict[str, Any]] = None,  # pylint: disable=arguments-differ
-    ) -> None:  # pylint: disable=unused-argument
+        extra_props: Optional[dict[str, Any]] = None,
+    ) -> None:
         # TODO: extra_props seems to be used only to set cacheControl in pghoard tests.
         #
         # When that is gone (.. long enough ..), we could get rid of
@@ -561,9 +560,9 @@ class GoogleTransfer(BaseTransfer[Config]):
         *,
         cache_control: Optional[str] = None,
         mimetype: Optional[str] = None,
-        multipart: Optional[bool] = None,  # pylint: disable=unused-argument
+        multipart: Optional[bool] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
-        extra_props: Optional[dict[str, Any]] = None,  # pylint: disable=arguments-differ
+        extra_props: Optional[dict[str, Any]] = None,
     ) -> None:
         mimetype = mimetype or "application/octet-stream"
         sanitized_metadata = self.sanitize_metadata(metadata)
@@ -591,7 +590,7 @@ class GoogleTransfer(BaseTransfer[Config]):
         invalid bucket names ("Invalid bucket name") as well as for invalid
         project ("Invalid argument"), try to handle both gracefully."""
         start_time = time.time()
-        gs_buckets = self.gs.buckets()  # type: ignore[union-attr] # pylint: disable=no-member
+        gs_buckets = self.gs.buckets()  # type: ignore[union-attr]
         try:
             request = gs_buckets.get(bucket=bucket_name)
             reporter = Reporter(StorageOperation.head_request)
@@ -668,7 +667,7 @@ class MediaStreamUpload(MediaUpload):
             self._next_chunk = self._read_bytes(self.peeksize - len(self._next_chunk), initial_data=self._next_chunk)
 
     # second parameter is length but baseclass incorrectly names it end
-    def getbytes(self, begin: int, length: int) -> bytes:  # type: ignore[override] # pylint: disable=arguments-renamed
+    def getbytes(self, begin: int, length: int) -> bytes:  # type: ignore[override]
         if begin < (self._position or 0):
             msg = f"Requested position {begin} for {repr(self._name)} precedes already fulfilled position {self._position}"
             raise IndexError(msg)

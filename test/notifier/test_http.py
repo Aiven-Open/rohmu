@@ -22,7 +22,7 @@ import time
 
 
 class _TestSession:
-    def __init__(self, *args: Any, **kwargs: Any) -> None:  # pylint: disable=super-init-not-called,unused-argument
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.post_called: List[Tuple[Any, ...]] = []
 
     def post(self, *args: Any, **kwargs: Any) -> None:
@@ -31,9 +31,7 @@ class _TestSession:
     def __enter__(self) -> None:
         pass
 
-    def __exit__(
-        self, type: Type[BaseException], value: BaseException, traceback: TracebackType  # pylint: disable=redefined-builtin
-    ) -> None:
+    def __exit__(self, type: Type[BaseException], value: BaseException, traceback: TracebackType) -> None:
         pass
 
 
@@ -47,8 +45,6 @@ def _join_queue_with_timeout(queue: Queue[HTTPNotifyJob], *, timeout: float, ite
 
 @contextmanager
 def _make_notifier(url: str) -> Iterator[BackgroundHTTPNotifier]:
-    # pylint: disable=protected-access
-
     session = requests.Session()
     notifier = BackgroundHTTPNotifier(
         url=url,
@@ -150,8 +146,6 @@ def test_initialize_background_thread() -> None:
 
 
 def test_BackgroundHTTPNotifier_target_url_not_available() -> None:
-    # pylint: disable=protected-access
-
     hopefully_unused_port = 7543
     key = "test_BackgroundHTTPNotifier_target_url_not_available"
     size = 1
