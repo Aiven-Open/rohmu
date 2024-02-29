@@ -402,54 +402,48 @@ class S3Transfer(BaseTransfer[Config]):
             if not data:
                 break
 
-            attempts = 10
             start_of_part_upload = time.monotonic()
-            while True:
-                attempts -= 1
-                self.stats.operation(StorageOperation.store_file, size=len(data))
+            self.stats.operation(StorageOperation.store_file, size=len(data))
+            try:
+                cup_response = self.s3_client.upload_part(
+                    Body=data,
+                    Bucket=self.bucket_name,
+                    Key=path,
+                    PartNumber=part_number,
+                    UploadId=mp_id,
+                )
+            except botocore.exceptions.ClientError as ex:
+                self.log.exception("Uploading part %d for %s failed", part_number, path)
+                self.stats.operation(StorageOperation.multipart_aborted)
                 try:
-                    cup_response = self.s3_client.upload_part(
-                        Body=data,
+                    self.s3_client.abort_multipart_upload(
                         Bucket=self.bucket_name,
                         Key=path,
-                        PartNumber=part_number,
                         UploadId=mp_id,
                     )
-                except botocore.exceptions.ClientError as ex:
-                    self.log.exception("Uploading part %d for %s failed, attempts left: %d", part_number, path, attempts)
-                    if attempts <= 0:
-                        self.stats.operation(StorageOperation.multipart_aborted)
-                        try:
-                            self.s3_client.abort_multipart_upload(
-                                Bucket=self.bucket_name,
-                                Key=path,
-                                UploadId=mp_id,
-                            )
-                        finally:
-                            err = f"Multipart upload of {path} failed: {ex.__class__.__name__}: {ex}"
-                            raise StorageError(err) from ex
-                    else:
-                        time.sleep(1.0)
-                else:
-                    self.log.info(
-                        "Uploaded part %s of %s, size %s in %.2fs",
-                        part_number,
-                        chunks,
-                        len(data),
-                        time.monotonic() - start_of_part_upload,
-                    )
-                    parts.append(
-                        {
-                            "ETag": cup_response["ETag"],
-                            "PartNumber": part_number,
-                        }
-                    )
-                    part_number += 1
-                    bytes_sent += len(data)
-                    if progress_fn:
-                        # TODO: change this to incremental progress. Size parameter is currently unused.
-                        progress_fn(bytes_sent, size)  # type: ignore[arg-type]
-                    break
+                finally:
+                    err = f"Multipart upload of {path} failed: {ex.__class__.__name__}: {ex}"
+                    raise StorageError(err) from ex
+            else:
+                self.log.info(
+                    "Uploaded part %s of %s, size %s in %.2fs",
+                    part_number,
+                    chunks,
+                    len(data),
+                    time.monotonic() - start_of_part_upload,
+                )
+                parts.append(
+                    {
+                        "ETag": cup_response["ETag"],
+                        "PartNumber": part_number,
+                    }
+                )
+                part_number += 1
+                bytes_sent += len(data)
+                if progress_fn:
+                    # TODO: change this to incremental progress. Size parameter is currently unused.
+                    progress_fn(bytes_sent, size)  # type: ignore[arg-type]
+                break
 
         self.stats.operation(StorageOperation.multipart_complete)
         try:
