@@ -11,6 +11,7 @@ from .errors import InvalidConfigurationError
 from .filewrap import ThrottleSink
 from .typing import FileLike, HasRead, HasWrite, Metadata
 from contextlib import suppress
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
 from inspect import signature
 from rohmu.object_storage.base import IncrementalProgressCallbackType
 from typing import Any, Callable, Optional, Union
@@ -27,8 +28,8 @@ def _obj_name(input_obj: Any) -> str:
 
 
 def _get_encryption_key_data(
-    metadata: Optional[Metadata], key_lookup: Optional[Callable[[str], Optional[str]]]
-) -> Optional[str]:
+    metadata: Optional[Metadata], key_lookup: Optional[Callable[[str], Optional[str | bytes | RSAPrivateKey]]]
+) -> Optional[str | bytes | RSAPrivateKey]:
     if not metadata or not metadata.get("encryption-key-id"):
         return None
 
@@ -47,7 +48,7 @@ def file_reader(
     *,
     fileobj: FileLike,
     metadata: Optional[Metadata] = None,
-    key_lookup: Optional[Callable[[str], Optional[str]]] = None,
+    key_lookup: Optional[Callable[[str], Optional[str | bytes | RSAPrivateKey]]] = None,
 ) -> FileLike:
     if not metadata:
         return fileobj
@@ -68,7 +69,7 @@ def create_sink_pipeline(
     output: HasWrite,
     file_size: int = 0,
     metadata: Optional[Metadata] = None,
-    key_lookup: Optional[Callable[[str], Optional[str]]] = None,
+    key_lookup: Optional[Callable[[str], Optional[str | bytes | RSAPrivateKey]]] = None,
     throttle_time: float = 0.001,
 ) -> HasWrite:
     if throttle_time:
@@ -143,7 +144,7 @@ def file_writer(
     compression_algorithm: Optional[str] = None,
     compression_level: int = 0,
     compression_threads: int = 0,
-    rsa_public_key: Union[None, str, bytes] = None,
+    rsa_public_key: Union[None, str, bytes, RSAPublicKey] = None,
 ) -> FileLike:
     if rsa_public_key:
         fileobj = EncryptorFile(fileobj, rsa_public_key)
@@ -162,7 +163,7 @@ def write_file(
     compression_algorithm: Optional[str] = None,
     compression_level: int = 0,
     compression_threads: int = 0,
-    rsa_public_key: Union[None, str, bytes] = None,
+    rsa_public_key: Union[None, str, bytes, RSAPublicKey] = None,
     log_func: Optional[Callable[..., None]] = None,
     header_func: Optional[Callable[[bytes], None]] = None,
     data_callback: Optional[Callable[[bytes], None]] = None,

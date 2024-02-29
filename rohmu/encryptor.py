@@ -428,15 +428,19 @@ class BaseDecryptSink(Sink):
 
 
 class Encryptor(BaseEncryptor):
-    def __init__(self, public_key_pem: Union[str, bytes]):
-        if not isinstance(public_key_pem, bytes):
-            public_key_pem = public_key_pem.encode("ascii")
-        public_key = serialization.load_pem_public_key(public_key_pem, backend=default_backend())
-        if not isinstance(public_key, RSAPublicKey):
-            raise ValueError("Key must be RSA")
+    def __init__(self, public_key_pem: Union[str, bytes, RSAPublicKey]):
+        if isinstance(public_key_pem, RSAPublicKey):
+            rsa_public_key = public_key_pem
+        else:
+            if not isinstance(public_key_pem, bytes):
+                public_key_pem = public_key_pem.encode("ascii")
+            public_key = serialization.load_pem_public_key(public_key_pem, backend=default_backend())
+            if not isinstance(public_key, RSAPublicKey):
+                raise ValueError("Key must be RSA")
+            rsa_public_key = public_key
 
         super().__init__()
-        self.rsa_public_key = public_key
+        self.rsa_public_key = rsa_public_key
 
     def init_cipher(self) -> bytes:
         cipher_key = os.urandom(16)
@@ -450,27 +454,31 @@ class Encryptor(BaseEncryptor):
 
 
 class EncryptorFile(BaseEncryptorFile):
-    def __init__(self, next_fp: FileLike, public_key_pem: Union[str, bytes]) -> None:
+    def __init__(self, next_fp: FileLike, public_key_pem: Union[str, bytes, RSAPublicKey]) -> None:
         super().__init__(next_fp, Encryptor(public_key_pem))
 
 
 class EncryptorStream(BaseEncryptorStream):
     """Non-seekable stream of data that adds encryption on top of given source stream"""
 
-    def __init__(self, src_fp: HasRead, public_key_pem: Union[str, bytes]) -> None:
+    def __init__(self, src_fp: HasRead, public_key_pem: Union[str, bytes, RSAPublicKey]) -> None:
         super().__init__(src_fp, Encryptor(public_key_pem))
 
 
 class Decryptor(BaseDecryptor):
-    def __init__(self, private_key_pem: Union[str, bytes]) -> None:
-        if not isinstance(private_key_pem, bytes):
-            private_key_pem = private_key_pem.encode("ascii")
-        private_key = serialization.load_pem_private_key(data=private_key_pem, password=None, backend=default_backend())
-        if not isinstance(private_key, RSAPrivateKey):
-            raise ValueError("Key must be RSA")
+    def __init__(self, private_key_pem: Union[str, bytes, RSAPrivateKey]) -> None:
+        if isinstance(private_key_pem, RSAPrivateKey):
+            rsa_private_key = private_key_pem
+        else:
+            if not isinstance(private_key_pem, bytes):
+                private_key_pem = private_key_pem.encode("ascii")
+            private_key = serialization.load_pem_private_key(data=private_key_pem, password=None, backend=default_backend())
+            if not isinstance(private_key, RSAPrivateKey):
+                raise ValueError("Key must be RSA")
+            rsa_private_key = private_key
 
         super().__init__()
-        self.rsa_private_key = private_key
+        self.rsa_private_key = rsa_private_key
         self._key_size = None
         self._header_size = None
 
@@ -513,12 +521,12 @@ class Decryptor(BaseDecryptor):
 
 
 class DecryptorFile(BaseDecryptorFile):
-    def __init__(self, next_fp: FileLike, private_key_pem: Union[bytes, str]):
+    def __init__(self, next_fp: FileLike, private_key_pem: Union[bytes, str, RSAPrivateKey]):
         super().__init__(next_fp, lambda: Decryptor(private_key_pem))
 
 
 class DecryptSink(BaseDecryptSink):
-    def __init__(self, next_sink: HasWrite, file_size: int, private_key_pem: Union[bytes, str]):
+    def __init__(self, next_sink: HasWrite, file_size: int, private_key_pem: Union[bytes, str, RSAPrivateKey]):
         super().__init__(next_sink, file_size, Decryptor(private_key_pem))
 
 
