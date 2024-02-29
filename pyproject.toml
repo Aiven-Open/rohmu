@@ -11,6 +11,7 @@ extend-select = [
   "F",
   "E",
   "I",
+  "UP",
   "BLE",
   "Q",
   "TID",
@@ -25,6 +26,8 @@ extend-ignore = [
   "PLR0915", # too-many-statements
   "PLR0916", # too-many-boolean-expressions
   "PLR2004", # magic-value-comparison
+  "UP006", # non-pep585-annotation
+  "UP007", # non-pep604-annotation
 ]
 
 [tool.ruff.lint.isort]

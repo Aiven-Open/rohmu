@@ -92,7 +92,7 @@ class LocalTransfer(BaseTransfer[Config]):
             raise FileNotFoundFromStorageError(key)
         metadata_path = source_path + ".metadata"
         try:
-            with open(metadata_path, "r", encoding="utf-8") as fp:
+            with open(metadata_path, encoding="utf-8") as fp:
                 return json.load(fp)
         except FileNotFoundError:
             raise FileNotFoundFromStorageError(key)

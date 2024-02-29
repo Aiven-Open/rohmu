@@ -291,7 +291,7 @@ class GoogleTransfer(BaseTransfer[Config]):
         )
 
     def _copy_file_from_bucket(
-        self, *, source_bucket: "GoogleTransfer", source_key: str, destination_key: str, metadata: Optional[Metadata] = None
+        self, *, source_bucket: GoogleTransfer, source_key: str, destination_key: str, metadata: Optional[Metadata] = None
     ) -> None:
         source_object = source_bucket.format_key_for_backend(source_key)
         destination_object = self.format_key_for_backend(destination_key)

@@ -134,7 +134,7 @@ class AzureTransfer(BaseTransfer[Config]):
 
     def _copy_file_from_bucket(
         self,
-        source_bucket: "AzureTransfer",
+        source_bucket: AzureTransfer,
         source_key: str,
         destination_key: str,
         metadata: Optional[Metadata] = None,
