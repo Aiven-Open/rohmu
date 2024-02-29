@@ -92,7 +92,7 @@ class LocalTransfer(BaseTransfer[Config]):
             raise FileNotFoundFromStorageError(key)
         metadata_path = source_path + ".metadata"
         try:
-            with open(metadata_path, "r", encoding="utf-8") as fp:
+            with open(metadata_path, encoding="utf-8") as fp:
                 return json.load(fp)
         except FileNotFoundError:
             raise FileNotFoundFromStorageError(key)
@@ -232,9 +232,9 @@ class LocalTransfer(BaseTransfer[Config]):
         fd: BinaryIO,
         metadata: Optional[Metadata] = None,
         *,
-        cache_control: Optional[str] = None,  # pylint: disable=unused-argument
-        mimetype: Optional[str] = None,  # pylint: disable=unused-argument
-        multipart: Optional[bool] = None,  # pylint: disable=unused-argument
+        cache_control: Optional[str] = None,
+        mimetype: Optional[str] = None,
+        multipart: Optional[bool] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
     ) -> None:
         target_path = self.format_key_for_backend(key.strip("/"))
@@ -262,8 +262,8 @@ class LocalTransfer(BaseTransfer[Config]):
         self,
         key: str,
         metadata: Optional[Metadata] = None,
-        mimetype: Optional[str] = None,  # pylint: disable=unused-argument
-        cache_control: Optional[str] = None,  # pylint: disable=unused-argument
+        mimetype: Optional[str] = None,
+        cache_control: Optional[str] = None,
     ) -> ConcurrentUpload:
         upload_id = uuid.uuid4().hex
         upload = ConcurrentUpload("local", upload_id, key, metadata, {})
@@ -305,10 +305,7 @@ class LocalTransfer(BaseTransfer[Config]):
                 (str(chunk_number) for chunk_number in upload.chunks_to_etags),
                 key=int,
             )
-            chunk_files = (
-                open(os.path.join(chunks_dir, chunk_file), "rb")  # pylint: disable=consider-using-with
-                for chunk_file in chunk_filenames
-            )
+            chunk_files = (open(os.path.join(chunks_dir, chunk_file), "rb") for chunk_file in chunk_filenames)
             stream = BinaryStreamsConcatenation(chunk_files)
         except OSError as ex:
             raise ConcurrentUploadError(f"Failed to complete multipart upload for {upload.key}") from ex
@@ -344,7 +341,7 @@ def atomic_create_file(file_path: str) -> Iterator[TextIO]:
             yield out_file
 
         os.rename(tmp_file_path, file_path)
-    except Exception:  # pytest: disable=broad-except
+    except Exception:
         with contextlib.suppress(Exception):
             os.unlink(tmp_file_path)
         raise
@@ -359,7 +356,7 @@ def atomic_create_file_binary(file_path: str) -> Iterator[BinaryIO]:
             yield out_file
 
         os.rename(tmp_file_path, file_path)
-    except Exception:  # pytest: disable=broad-except
+    except Exception:
         with contextlib.suppress(Exception):
             os.unlink(tmp_file_path)
         raise

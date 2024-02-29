@@ -73,7 +73,7 @@ def _atomic_opener(
     """
     parent_dir = final_path.parent
     if not parent_dir.exists():
-        raise IOError(f"Parent directory '{parent_dir}' must exist but is missing")
+        raise OSError(f"Parent directory '{parent_dir}' must exist but is missing")
     if "w" not in mode:
         raise ValueError("Write mode must be used to make actual sense")
 
@@ -81,7 +81,7 @@ def _atomic_opener(
     _fd_spy(fd)
     try:
         file_obj = os.fdopen(fd, mode=mode, encoding=encoding)
-    except Exception:  # pylint: disable=broad-except
+    except Exception:
         # when passing wrong mode, os.fdopen won't close input fd. When passing wrong encoding, it will.
         _fd_close_quietly(fd)
         raise

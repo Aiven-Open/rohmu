@@ -17,7 +17,7 @@ def test_store_file_from_disk() -> None:
         client = MagicMock()
 
         # Size reporting relies on the progress callback from paramiko
-        def upload_side_effect(*args: Any, **kwargs: Any) -> None:  # pylint: disable=unused-argument
+        def upload_side_effect(*args: Any, **kwargs: Any) -> None:
             if kwargs.get("callback"):
                 kwargs["callback"](len(test_data), len(test_data))
 
@@ -60,7 +60,7 @@ def test_store_file_object() -> None:
         file_object = BytesIO(test_data)
 
         # Size reporting relies on the progress callback from paramiko
-        def upload_side_effect(*args: Any, **kwargs: Any) -> None:  # pylint: disable=unused-argument
+        def upload_side_effect(*args: Any, **kwargs: Any) -> None:
             if kwargs.get("callback"):
                 kwargs["callback"](len(test_data), len(test_data))
 

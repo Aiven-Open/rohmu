@@ -110,7 +110,6 @@ def test_upload_size_unknown_to_reporter() -> None:
             (None, {"size": sum(counts)}),
         ]
 
-        # pylint: disable=protected-access
         transfer._upload(
             upload=MagicMock(),
             key="testkey",

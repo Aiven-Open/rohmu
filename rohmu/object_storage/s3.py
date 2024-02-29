@@ -23,7 +23,7 @@ from rohmu.object_storage.base import (
     ProgressProportionCallbackType,
     SourceStorageModelT,
 )
-from rohmu.object_storage.config import (  # pylint: disable=unused-import
+from rohmu.object_storage.config import (  # noqa: F401
     calculate_s3_chunk_size as calculate_chunk_size,
     S3_MULTIPART_CHUNK_SIZE as MULTIPART_CHUNK_SIZE,
     S3_READ_BLOCK_SIZE as READ_BLOCK_SIZE,
@@ -486,8 +486,8 @@ class S3Transfer(BaseTransfer[Config]):
         *,
         cache_control: Optional[str] = None,
         mimetype: Optional[str] = None,
-        multipart: Optional[bool] = None,  # pylint: disable=unused-argument
-        progress_fn: ProgressProportionCallbackType = None,  # pylint: disable=unused-argument
+        multipart: Optional[bool] = None,
+        progress_fn: ProgressProportionCallbackType = None,
     ) -> None:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
         # make sure Body is of type bytes as memoryview's not allowed, only bytes/bytearrays
@@ -520,7 +520,7 @@ class S3Transfer(BaseTransfer[Config]):
         mimetype: Optional[str] = None,
         multipart: Optional[bool] = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
-    ) -> None:  # pylint: disable=unused-argument
+    ) -> None:
         if not self._should_multipart(
             fd=fd, chunk_size=self.multipart_chunk_size, default=True, metadata=metadata, multipart=multipart
         ):

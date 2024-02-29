@@ -51,7 +51,7 @@ class _ZtsdFileReader(FileWrap):
             return
         super().close()
 
-    def read(self, size: Optional[int] = -1) -> bytes:  # pylint: disable=unused-argument
+    def read(self, size: Optional[int] = -1) -> bytes:
         # NOTE: size arg is ignored, random size output is returned
         self._check_not_closed()
         while not self._done:
@@ -72,7 +72,7 @@ class _ZtsdFileReader(FileWrap):
         return True
 
 
-def open(fp: FileLike, mode: str, level: int = 0, threads: int = 0) -> FileWrap:  # pylint: disable=redefined-builtin
+def open(fp: FileLike, mode: str, level: int = 0, threads: int = 0) -> FileWrap:
     if zstd is None:
         raise io.UnsupportedOperation("zstd is not available")
 

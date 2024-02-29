@@ -113,7 +113,7 @@ class InotifyWatcher(Thread):
 
         try:
             st = os.stat(full_path)
-        except:  # pylint: disable=bare-except
+        except:  # noqa: E722
             st = None
 
         self.log.debug("event: %s %s, %r", full_path, ev_type, st)

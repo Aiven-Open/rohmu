@@ -23,7 +23,7 @@ def get_total_memory() -> Optional[int]:
     if platform.system() != "Linux":
         return None
 
-    with open("/proc/meminfo", "r", encoding="utf-8") as in_file:
+    with open("/proc/meminfo", encoding="utf-8") as in_file:
         for line in in_file:
             info = line.split()
             if info[0] == "MemTotal:" and info[-1] == "kB":

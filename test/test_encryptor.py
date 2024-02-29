@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from py.path import LocalPath  # type: ignore[import] # pylint: disable=import-error
+from py.path import LocalPath  # type: ignore[import]
 from rohmu.common.constants import IO_BLOCK_SIZE
 from rohmu.encryptor import (
     BaseDecryptor,
@@ -177,10 +177,10 @@ def test_decryptorfile(
     plaintext = repeat * plaintext1
     encryptor = encryptor_factory()
     ciphertext = encryptor.update(plaintext) + encryptor.finalize()
-    plain_fp = open(tmpdir.join("plain").strpath, mode="w+b")  # pylint: disable=consider-using-with
+    plain_fp = open(tmpdir.join("plain").strpath, mode="w+b")
     plain_fp.write(ciphertext)
     plain_fp.seek(0)
-    fp = decryptor_file_factory(plain_fp)  # pylint: disable=redefined-variable-type
+    fp = decryptor_file_factory(plain_fp)
     assert fp.fileno() == plain_fp.fileno()
     assert fp.readable() is True
     assert fp.writable() is False

@@ -54,7 +54,7 @@ class SnappyFile(FileWrap):
     def writable(self) -> bool:
         return self.encr is not None
 
-    def read(self, size: Optional[int] = -1) -> bytes:  # pylint: disable=unused-argument
+    def read(self, size: Optional[int] = -1) -> bytes:
         # NOTE: size arg is ignored, random size output is returned
         self._check_not_closed()
         if self.decr is None:

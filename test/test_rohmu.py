@@ -112,7 +112,7 @@ def test_rohmu_with_local_storage(compress_algorithm: str, file_size: int, tmp_p
         assert EMPTY_FILE_SHA1 == hasher.hexdigest()
 
 
-def _key_lookup(key_id: str) -> str:  # pylint: disable=unused-argument
+def _key_lookup(key_id: str) -> str:
     return CONSTANT_TEST_RSA_PRIVATE_KEY
 
 
@@ -138,7 +138,10 @@ def _compress_file(  # type: ignore[no-untyped-def]
 
 
 def _upload_compressed_file(
-    storage: BaseTransfer, file_to_upload: str, file_key: str, metadata: Metadata  # type: ignore[type-arg]
+    storage: BaseTransfer,  # type: ignore[type-arg]
+    file_to_upload: str,
+    file_key: str,
+    metadata: Metadata,
 ) -> None:
     def upload_progress_callback(n_bytes: int) -> None:
         log.debug("File: '%s', uploaded %d bytes", file_key, n_bytes)
@@ -148,7 +151,10 @@ def _upload_compressed_file(
 
 
 def _download_and_decompress_with_sink(
-    storage: BaseTransfer, output_path: str, file_key: str, metadata: Metadata  # type: ignore[type-arg]
+    storage: BaseTransfer,  # type: ignore[type-arg]
+    output_path: str,
+    file_key: str,
+    metadata: Metadata,
 ) -> int:
     data, _ = storage.get_contents_to_string(file_key)
     file_size = len(data)
@@ -163,7 +169,10 @@ def _download_and_decompress_with_sink(
 
 
 def _download_and_decompress_with_file(
-    storage: BaseTransfer, output_path: str, file_key: str, metadata: Metadata  # type: ignore[type-arg]
+    storage: BaseTransfer,  # type: ignore[type-arg]
+    output_path: str,
+    file_key: str,
+    metadata: Metadata,
 ) -> int:
     # Download the compressed file
     file_download_path = output_path + ".tmp"

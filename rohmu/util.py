@@ -22,7 +22,7 @@ def increase_pipe_capacity(*pipes: Union[int, HasFileno]) -> None:
     if platform.system() != "Linux":
         return
     try:
-        with open("/proc/sys/fs/pipe-max-size", "r", encoding="utf-8") as f:
+        with open("/proc/sys/fs/pipe-max-size", encoding="utf-8") as f:
             pipe_max_size = int(f.read())
     except FileNotFoundError:
         return
@@ -169,7 +169,7 @@ class ProgressStream(BinaryIO):
         self.bytes_read += sum(map(len, lines))
         return lines
 
-    def __iter__(self) -> "ProgressStream":
+    def __iter__(self) -> ProgressStream:
         return self
 
     def __next__(self) -> bytes:
@@ -177,7 +177,7 @@ class ProgressStream(BinaryIO):
         self.bytes_read += len(data)
         return data
 
-    def __enter__(self) -> "ProgressStream":
+    def __enter__(self) -> ProgressStream:
         self.raw_stream.__enter__()
         return self
 

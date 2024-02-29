@@ -72,7 +72,7 @@ def test_transfer_pool_expiration() -> None:
             pass
 
         rohmu_get_transfer.return_value = FakeTransfer("mock_transfer_2")
-        transfer_item = list(pool._caches.values())[0].transfers_heap[0]  # pylint: disable=protected-access
+        transfer_item = list(pool._caches.values())[0].transfers_heap[0]
         transfer_item.create_time = time.monotonic() - (3600 * 2)
         with pool.with_transfer(storage_config) as next_transfer:
             assert next_transfer == transfer
@@ -124,7 +124,7 @@ def test_transfer_pool_for_thread_safe_transfer_does_not_expire() -> None:
             pass
 
         rohmu_get_transfer.return_value = FakeTransfer("mock_transfer_2", is_thread_safe=True)
-        transfer_item = list(pool._caches.values())[0].transfers_heap[0]  # pylint: disable=protected-access
+        transfer_item = list(pool._caches.values())[0].transfers_heap[0]
         transfer_item.create_time = time.monotonic() - (3600 * 2)
         with pool.with_transfer(storage_config) as next_transfer:
             assert next_transfer == transfer
@@ -134,7 +134,6 @@ def test_transfer_pool_for_thread_safe_transfer_does_not_expire() -> None:
             assert next_transfer == transfer
 
 
-# pylint: disable=protected-access
 def test_transfer_pool_get_return_api() -> None:
     """Test that a cached transfer object is returned, if available."""
     storage_config_1 = {"storage_type": "azure"}
@@ -157,7 +156,6 @@ def test_transfer_pool_get_return_api() -> None:
         assert next_safe_transfer_2._item.transfer != transfer
 
 
-# pylint: disable=protected-access
 def test_transfer_pool_expiration_get_return_api() -> None:
     """Test that a cached transfer object is not returned, if too old."""
     storage_config = {"storage_type": "azure"}
@@ -179,7 +177,6 @@ def test_transfer_pool_expiration_get_return_api() -> None:
         assert next_safe_transfer._item.transfer != transfer_item.transfer
 
 
-# pylint: disable=protected-access
 def test_transfer_pool_get_oldest_get_return_api() -> None:
     """Test that when getting a transfer object from a pool, the oldest one available is returned."""
     storage_config = {"storage_type": "azure"}
@@ -199,7 +196,6 @@ def test_transfer_pool_get_oldest_get_return_api() -> None:
         assert next_safe_transfer._item.transfer == transfer_1
 
 
-# pylint: disable=protected-access
 def test_transfer_pool_for_thread_safe_transfer_always_returns_the_same_instance_get_return_api() -> None:
     """Test that when using a threadsafe transfer object the pool always returns the same instance"""
     storage_config = {"storage_type": "azure"}
@@ -213,7 +209,6 @@ def test_transfer_pool_for_thread_safe_transfer_always_returns_the_same_instance
         assert transfer_1._item.transfer == transfer_2._item.transfer
 
 
-# pylint: disable=protected-access
 def test_transfer_pool_for_thread_safe_transfer_does_not_expire_get_return_api() -> None:
     """Test that a cached transfer object is not returned, if too old, even for thread-safe transfers."""
     storage_config = {"storage_type": "azure"}

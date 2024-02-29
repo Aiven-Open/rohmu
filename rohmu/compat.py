@@ -5,8 +5,8 @@
 # but as rohmu is used outside pghoard itself better keep the imports and throw
 # a deprecation warning.
 
-from contextlib import suppress  # pylint: disable=unused-import
-from os import makedirs  # pylint: disable=unused-import
+from contextlib import suppress  # # noqa: F401
+from os import makedirs  # noqa: F401
 
 import warnings
 

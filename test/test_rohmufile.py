@@ -11,20 +11,20 @@ import pytest
 
 def test_fileobj_name(tmpdir: Any) -> None:
     with NamedTemporaryFile(dir=tmpdir, suffix="foo") as raw_output_obj:
-        result = rohmufile._obj_name(raw_output_obj)  # type: ignore# pylint: disable=protected-access
+        result = rohmufile._obj_name(raw_output_obj)  # type: ignore
         assert result.startswith("open file ")
         assert "foo" in result
 
 
 def test_get_encryption_key_data_no_metadata() -> None:
-    assert rohmufile._get_encryption_key_data(None, None) is None  # pylint: disable=protected-access
-    assert rohmufile._get_encryption_key_data({}, None) is None  # pylint: disable=protected-access
+    assert rohmufile._get_encryption_key_data(None, None) is None
+    assert rohmufile._get_encryption_key_data({}, None) is None
 
 
 def test_get_encryption_key_data_invalid_configuration() -> None:
     metadata = {"encryption-key-id": "foo"}
     with pytest.raises(InvalidConfigurationError, match="File is encrypted with key 'foo' but key not found"):
-        rohmufile._get_encryption_key_data(metadata, lambda key_id: None)  # pylint: disable=protected-access
+        rohmufile._get_encryption_key_data(metadata, lambda key_id: None)
 
 
 def test_get_encryption_key_data() -> None:
@@ -33,7 +33,7 @@ def test_get_encryption_key_data() -> None:
         return "bar"
 
     metadata = {"encryption-key-id": "foo"}
-    key_data = rohmufile._get_encryption_key_data(metadata, _getkey)  # pylint: disable=protected-access
+    key_data = rohmufile._get_encryption_key_data(metadata, _getkey)
     assert key_data == "bar"
 
 

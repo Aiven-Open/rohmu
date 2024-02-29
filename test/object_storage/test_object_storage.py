@@ -108,7 +108,7 @@ def test_list(transfer_type: str, request: Any) -> None:
 
     files = transfer.list_path("", deep=True)
     assert len(files) == 2
-    assert set(f["name"] for f in files) == {"dummy", "dummydir/dummy"}
+    assert {f["name"] for f in files} == {"dummy", "dummydir/dummy"}
 
 
 def test_hidden_local_files(local_transfer: LocalTransfer) -> None:
