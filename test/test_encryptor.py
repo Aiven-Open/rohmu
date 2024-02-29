@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from py.path import LocalPath  # type: ignore[import]
+from pathlib import Path
 from rohmu.common.constants import IO_BLOCK_SIZE
 from rohmu.encryptor import (
     BaseDecryptor,
@@ -167,7 +167,7 @@ def test_encryptor_stream(
     ),
 )
 def test_decryptorfile(
-    tmpdir: LocalPath,
+    tmp_path: Path,
     encryptor_factory: Callable[[], BaseEncryptor],
     decryptor_file_factory: Callable[[HasWrite], BaseDecryptorFile],
 ) -> None:
@@ -177,7 +177,7 @@ def test_decryptorfile(
     plaintext = repeat * plaintext1
     encryptor = encryptor_factory()
     ciphertext = encryptor.update(plaintext) + encryptor.finalize()
-    plain_fp = open(tmpdir.join("plain").strpath, mode="w+b")
+    plain_fp = open(tmp_path / "plain", mode="w+b")
     plain_fp.write(ciphertext)
     plain_fp.seek(0)
     fp = decryptor_file_factory(plain_fp)
@@ -258,12 +258,12 @@ def test_decryptorfile(
     ),
 )
 def test_decryptorfile_for_tarfile(
-    tmpdir: LocalPath,
+    tmp_path: Path,
     encryptor_factory: Callable[[], BaseEncryptor],
     decryptor_file_factory: Callable[[HasWrite], BaseDecryptorFile],
 ) -> None:
     testdata = b"file contents"
-    data_tmp_name = tmpdir.join("plain.data").strpath
+    data_tmp_name = tmp_path / "plain.data"
     with open(data_tmp_name, mode="wb") as data_tmp:
         data_tmp.write(testdata)
 
@@ -274,7 +274,7 @@ def test_decryptorfile_for_tarfile(
 
     encryptor = encryptor_factory()
     ciphertext = encryptor.update(plaintext) + encryptor.finalize()
-    enc_tar_name = tmpdir.join("enc.tar.data").strpath
+    enc_tar_name = tmp_path / "enc.tar.data"
     with open(enc_tar_name, "w+b") as enc_tar:
         enc_tar.write(ciphertext)
         enc_tar.seek(0)
@@ -290,7 +290,7 @@ def test_decryptorfile_for_tarfile(
             content_file.close()
             assert testdata == content
 
-            decout = tmpdir.join("dec_out_dir").strpath
+            decout = tmp_path / "dec_out_dir"
             os.makedirs(decout)
             tar.extract("archived_content", decout)
             extracted_path = os.path.join(decout, "archived_content")
@@ -312,7 +312,7 @@ def test_decryptorfile_for_tarfile(
     ),
 )
 def test_encryptorfile(
-    tmpdir: LocalPath,
+    tmp_path: Path,
     encryptor_file_factory: Callable[[HasWrite], BaseEncryptorFile],
     decryptor_file_factory: Callable[[HasWrite], BaseDecryptorFile],
 ) -> None:
@@ -321,7 +321,7 @@ def test_encryptorfile(
     repeat = int(1.5 * IO_BLOCK_SIZE / len(plaintext1))
     plaintext = repeat * plaintext1
 
-    fn = tmpdir.join("data").strpath
+    fn = tmp_path / "data"
     with open(fn, "w+b") as plain_fp:
         enc_fp = encryptor_file_factory(plain_fp)
         assert enc_fp.fileno() == plain_fp.fileno()
@@ -369,16 +369,16 @@ def test_encryptorfile(
     ),
 )
 def test_encryptorfile_for_tarfile(
-    tmpdir: LocalPath,
+    tmp_path: Path,
     encryptor_file_factory: Callable[[HasWrite], BaseEncryptorFile],
     decryptor_file_factory: Callable[[HasWrite], BaseDecryptorFile],
 ) -> None:
     testdata = b"file contents"
-    data_tmp_name = tmpdir.join("plain.data").strpath
+    data_tmp_name = tmp_path / "plain.data"
     with open(data_tmp_name, mode="wb") as data_tmp:
         data_tmp.write(testdata)
 
-    enc_tar_name = tmpdir.join("enc.tar.data").strpath
+    enc_tar_name = tmp_path / "enc.tar.data"
     with open(enc_tar_name, "w+b") as plain_fp:
         enc_fp = encryptor_file_factory(plain_fp)
         with tarfile.open(name="foo", fileobj=cast(IO[bytes], enc_fp), mode="w") as tar:
