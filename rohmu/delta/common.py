@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from multiprocessing.dummy import Pool
 from pathlib import Path
 from pydantic import BaseModel, Field
 from rohmu.dates import now
 from rohmu.typing import AnyPath, HasRead
 from types import TracebackType
-from typing import Any, Callable, Iterable, List, Optional, Sequence, Type, TypeVar
+from typing import Any, Callable, Iterable, List, Optional, Sequence, Type, TypedDict, TypeVar
 
 import functools
 import hashlib
@@ -26,6 +27,20 @@ _log_1_1 = math.log(1.1)
 EMBEDDED_FILE_SIZE = 150
 
 logger = logging.getLogger(__name__)
+
+
+class ProgressMetrics(TypedDict, total=True):
+    handled: int
+    failed: int
+    total: int
+    final: bool
+
+
+class ProgressStep(Enum):
+    CREATING_MISSING_DIRECTORIES = "creating_missing_directories"
+    REMOVING_EXTRA_FILES = "removing_extra_files"
+    ADDING_MISSING_FILES = "adding_missing_files"
+    PROCESSING_AND_HASHING_SNAPSHOT_FILES = "processing_and_hashing_snapshot_files"
 
 
 def hash_hexdigest_readable(f: HasRead, *, read_buffer: int = 1_000_000) -> str:
@@ -253,6 +268,9 @@ class Progress(DeltaModel):
         if increase_worth_reporting(old_handled, self.handled, total=self.total):
             logger.debug("%s %r -> %r", info, n, self)
         assert not self.final
+
+    def progress_metrics(self) -> ProgressMetrics:
+        return {"handled": self.handled, "failed": self.failed, "total": self.total, "final": self.final}
 
     def download_success(self, size: int) -> None:
         self.add_success(size, info="download_success")

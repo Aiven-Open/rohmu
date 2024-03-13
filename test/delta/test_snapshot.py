@@ -3,7 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
-from rohmu.delta.common import BackupPath, EMBEDDED_FILE_SIZE, Progress, SizeLimitedFile, SnapshotFile, SnapshotHash
+from rohmu.delta.common import (
+    BackupPath,
+    EMBEDDED_FILE_SIZE,
+    Progress,
+    ProgressMetrics,
+    ProgressStep,
+    SizeLimitedFile,
+    SnapshotFile,
+    SnapshotHash,
+)
 from rohmu.typing import AnyPath
 from test.conftest import SnapshotterWithDefaults
 from typing import Any, Callable, Union
@@ -202,3 +211,49 @@ def test_snapshot_error_when_required_files_not_found(snapshotter_creator: Calla
         with patch("rohmu.delta.snapshot.Path.stat", side_effect=FileNotFoundError):
             with pytest.raises(FileNotFoundError):
                 snapshotter.snapshot(progress=Progress(), reuse_old_snapshotfiles=True)
+
+
+@pytest.mark.timeout(2)
+def test_snapshot_with_callback(snapshotter_creator: Callable[..., SnapshotterWithDefaults]) -> None:
+    snapshotter = snapshotter_creator()
+    callback_messages: list[str] = []
+
+    def progress_callback(message: ProgressStep, progress_metrics: ProgressMetrics) -> None:
+        callback_message = f"{message.value}: {progress_metrics['handled']}"
+        callback_messages.append(callback_message)
+
+    samples: dict[Union[str, Path], str] = {
+        "foo": "foobar",
+        "foo2": "foobar",
+        "foobig": "foobar" * EMBEDDED_FILE_SIZE,
+        "foobig2": "foobar" * EMBEDDED_FILE_SIZE,
+    }
+
+    src = snapshotter.src
+    for file_name, body in samples.items():
+        (src / file_name).write_text(body)
+
+    with snapshotter.lock:
+        progress = Progress()
+        changes_detected = snapshotter.snapshot(progress=progress, progress_callback=progress_callback)
+        assert changes_detected > 0
+
+        ss1 = snapshotter.get_snapshot_state()
+
+        progress = Progress()
+        assert snapshotter.snapshot(progress=progress, progress_callback=progress_callback) == 0
+
+        ss2 = snapshotter.get_snapshot_state()
+        assert ss1 == ss2
+        expected_messages = [
+            "creating_missing_directories: 1",
+            "adding_missing_files: 3",
+            "processing_and_hashing_snapshot_files: 4",
+            "processing_and_hashing_snapshot_files: 5",
+            "processing_and_hashing_snapshot_files: 6",
+            "processing_and_hashing_snapshot_files: 7",
+            "creating_missing_directories: 1",
+            "adding_missing_files: 3",
+        ]
+
+        assert callback_messages == expected_messages

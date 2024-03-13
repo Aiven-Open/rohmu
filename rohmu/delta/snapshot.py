@@ -10,6 +10,8 @@ from rohmu.delta.common import (
     increase_worth_reporting,
     parallel_map_to,
     Progress,
+    ProgressMetrics,
+    ProgressStep,
     SnapshotFile,
     SnapshotHash,
     SnapshotState,
@@ -177,13 +179,25 @@ class Snapshotter:
             changes += 1
         return changes
 
-    def _snapshot_remove_extra_files(self, *, src_files: Sequence[Path], dst_files: Sequence[Path]) -> int:
+    def _snapshot_remove_extra_files(
+        self,
+        *,
+        src_files: Sequence[Path],
+        dst_files: Sequence[Path],
+        progress: Optional[Progress] = None,
+        progress_callback: Optional[Callable[[ProgressStep, ProgressMetrics], None]] = None,
+    ) -> int:
+        if progress is None:
+            progress = Progress()
         changes = 0
         for i, relative_path in enumerate(set(dst_files).difference(src_files), 1):
             dst_path = self.dst / relative_path
             snapshotfile = self.relative_path_to_snapshotfile.get(relative_path)
             if snapshotfile:
                 self._remove_snapshotfile(snapshotfile)
+                if progress_callback:
+                    progress.add_success()
+                    progress_callback(ProgressStep.REMOVING_EXTRA_FILES, progress.progress_metrics())
             dst_path.unlink()
             if increase_worth_reporting(i):
                 logger.debug("#%d. extra file: %r", i, relative_path)
@@ -218,7 +232,13 @@ class Snapshotter:
             changes += 1
         return changes
 
-    def snapshot(self, *, progress: Optional[Progress] = None, reuse_old_snapshotfiles: bool = True) -> int:
+    def snapshot(
+        self,
+        *,
+        progress: Optional[Progress] = None,
+        reuse_old_snapshotfiles: bool = True,
+        progress_callback: Optional[Callable[[ProgressStep, ProgressMetrics], None]] = None,
+    ) -> int:
         assert self.lock.locked()
 
         if progress is None:
@@ -258,14 +278,20 @@ class Snapshotter:
         # Create missing directories
         changes = self._snapshot_create_missing_directories(src_dirs=src_dirs, dst_dirs=dst_dirs)
         progress.add_success()
+        if progress_callback:
+            progress_callback(ProgressStep.CREATING_MISSING_DIRECTORIES, progress.progress_metrics())
 
         # Remove extra files
-        changes += self._snapshot_remove_extra_files(src_files=src_files, dst_files=dst_files)
+        changes += self._snapshot_remove_extra_files(
+            src_files=src_files, dst_files=dst_files, progress=progress, progress_callback=progress_callback
+        )
         progress.add_success()
 
         # Add missing files
         changes += self._snapshot_add_missing_files(src_files=src_files, dst_files=dst_files)
         progress.add_success()
+        if progress_callback:
+            progress_callback(ProgressStep.ADDING_MISSING_FILES, progress.progress_metrics())
 
         # We COULD also remove extra directories, but it is not
         # probably really worth it and due to ignored files it
@@ -294,6 +320,8 @@ class Snapshotter:
             self._add_snapshotfile(map_out)
             assert progress is not None
             progress.add_success()
+            if progress_callback:
+                progress_callback(ProgressStep.PROCESSING_AND_HASHING_SNAPSHOT_FILES, progress.progress_metrics())
             return True
 
         changes += len(snapshotfiles)
