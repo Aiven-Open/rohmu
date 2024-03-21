@@ -64,6 +64,29 @@ def test_store_file_from_disk(infra: S3Infra) -> None:
     )
 
 
+def test_store_file_object_large(infra: S3Infra) -> None:
+    test_data = b"test-data" * 2
+    chunk_size = len(test_data) // 2
+    file_object = BytesIO(test_data)
+
+    infra.transfer.multipart_chunk_size = chunk_size  # simulate smaller chunk size to force multiple chunks
+
+    metadata = {"Content-Length": len(test_data), "some-date": datetime(2022, 11, 15, 18, 30, 58, 486644)}
+    infra.transfer.store_file_object(key="test_key2", fd=file_object, metadata=metadata, multipart=True)
+
+    notifier = infra.notifier
+    s3_client = infra.s3_client
+
+    s3_client.create_multipart_upload.assert_called()
+    assert s3_client.upload_part.call_count == 2
+    s3_client.complete_multipart_upload.assert_called()
+    notifier.object_created.assert_called_once_with(
+        key="test_key2",
+        size=len(test_data),
+        metadata={"Content-Length": "18", "some-date": "2022-11-15 18:30:58.486644"},
+    )
+
+
 @pytest.mark.parametrize("multipart", [False, None, True])
 def test_store_file_object(infra: S3Infra, multipart: Optional[bool]) -> None:
     test_data = b"test-data"

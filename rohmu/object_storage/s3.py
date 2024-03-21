@@ -447,7 +447,6 @@ class S3Transfer(BaseTransfer[Config]):
                 if progress_fn:
                     # TODO: change this to incremental progress. Size parameter is currently unused.
                     progress_fn(bytes_sent, size)  # type: ignore[arg-type]
-                break
 
         self.stats.operation(StorageOperation.multipart_complete)
         try:
