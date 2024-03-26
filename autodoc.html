@@ -1231,6 +1231,11 @@ keys and deleting them individually but storage providers can implement more eff
 <span class="w">      </span><span class="nt">&quot;aws_session_token&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">         </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Aws Session Token&quot;</span><span class="p">,</span>
 <span class="w">         </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;string&quot;</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">&quot;use_dualstack_endpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">         </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Use Dualstack Endpoint&quot;</span><span class="p">,</span>
+<span class="w">         </span><span class="nt">&quot;default&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">         </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;boolean&quot;</span>
 <span class="w">      </span><span class="p">}</span>
 <span class="w">   </span><span class="p">},</span>
 <span class="w">   </span><span class="nt">&quot;required&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
@@ -1376,6 +1381,7 @@ keys and deleting them individually but storage providers can implement more eff
 <li><p><a class="reference internal" href="#rohmu.object_storage.config.S3ObjectStorageConfig.segment_size" title="rohmu.object_storage.config.S3ObjectStorageConfig.segment_size"><code class="xref py py-obj docutils literal notranslate"><span class="pre">segment_size</span> <span class="pre">(int)</span></code></a></p></li>
 <li><p><a class="reference internal" href="#rohmu.object_storage.config.S3ObjectStorageConfig.statsd_info" title="rohmu.object_storage.config.S3ObjectStorageConfig.statsd_info"><code class="xref py py-obj docutils literal notranslate"><span class="pre">statsd_info</span> <span class="pre">(Optional[StatsdConfig])</span></code></a></p></li>
 <li><p><a class="reference internal" href="#rohmu.object_storage.config.S3ObjectStorageConfig.storage_type" title="rohmu.object_storage.config.S3ObjectStorageConfig.storage_type"><code class="xref py py-obj docutils literal notranslate"><span class="pre">storage_type</span> <span class="pre">(Literal[StorageDriver.s3])</span></code></a></p></li>
+<li><p><a class="reference internal" href="#rohmu.object_storage.config.S3ObjectStorageConfig.use_dualstack_endpoint" title="rohmu.object_storage.config.S3ObjectStorageConfig.use_dualstack_endpoint"><code class="xref py py-obj docutils literal notranslate"><span class="pre">use_dualstack_endpoint</span> <span class="pre">(Optional[bool])</span></code></a></p></li>
 </ul>
 </dd>
 </dl>
@@ -1598,6 +1604,18 @@ keys and deleting them individually but storage providers can implement more eff
 <dl class="py attribute pydantic_field">
 <dt class="sig sig-object py" id="rohmu.object_storage.config.S3ObjectStorageConfig.storage_type">
 <em class="property"><span class="pre">field</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">storage_type</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Literal</span><span class="p"><span class="pre">[</span></span><span class="pre">StorageDriver.s3</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">StorageDriver.s3</span></em><a class="headerlink" href="#rohmu.object_storage.config.S3ObjectStorageConfig.storage_type" title="Permalink to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Validated by</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><a class="reference internal" href="#rohmu.object_storage.config.S3ObjectStorageConfig.validate_is_verify_tls_and_cert_path" title="rohmu.object_storage.config.S3ObjectStorageConfig.validate_is_verify_tls_and_cert_path"><code class="xref py py-obj docutils literal notranslate"><span class="pre">validate_is_verify_tls_and_cert_path</span></code></a></p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute pydantic_field">
+<dt class="sig sig-object py" id="rohmu.object_storage.config.S3ObjectStorageConfig.use_dualstack_endpoint">
+<em class="property"><span class="pre">field</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">use_dualstack_endpoint</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">bool</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">True</span></em><a class="headerlink" href="#rohmu.object_storage.config.S3ObjectStorageConfig.use_dualstack_endpoint" title="Permalink to this definition"></a></dt>
 <dd><dl class="field-list simple">
 <dt class="field-odd">Validated by</dt>
 <dd class="field-odd"><ul class="simple">
