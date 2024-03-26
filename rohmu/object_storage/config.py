@@ -151,6 +151,7 @@ class S3ObjectStorageConfig(StorageModel):
     connect_timeout: Optional[str] = None
     read_timeout: Optional[str] = None
     aws_session_token: Optional[str] = Field(None, repr=False)
+    use_dualstack_endpoint: Optional[bool] = True
     storage_type: Literal[StorageDriver.s3] = StorageDriver.s3
 
     @root_validator(skip_on_failure=True)

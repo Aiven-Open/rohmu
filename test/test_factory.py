@@ -42,7 +42,10 @@ def test_get_transfer_s3(
 ) -> None:
     expected_config_arg = dict(config)
     expected_config_arg.pop("notifier")
-    expected_botocore_config = {"proxies": {"https": "socks5://bob:secret@proxy.test:16666"}}
+    expected_botocore_config = {
+        "proxies": {"https": "socks5://bob:secret@proxy.test:16666"},
+        "use_dualstack_endpoint": True,
+    }
     mock_config_model.return_value = S3ObjectStorageConfig(**expected_config_arg)
 
     transfer_object = get_transfer(config)
