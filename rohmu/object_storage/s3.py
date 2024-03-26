@@ -120,6 +120,7 @@ class S3Transfer(BaseTransfer[Config]):
         read_timeout: Optional[float] = None,
         notifier: Optional[Notifier] = None,
         aws_session_token: Optional[str] = None,
+        use_dualstack_endpoint: Optional[bool] = True,
         statsd_info: Optional[StatsdConfig] = None,
     ) -> None:
         super().__init__(prefix=prefix, notifier=notifier, statsd_info=statsd_info)
@@ -137,6 +138,8 @@ class S3Transfer(BaseTransfer[Config]):
             if proxy_info:
                 proxy_url = get_proxy_url(proxy_info)
                 custom_config["proxies"] = {"https": proxy_url}
+            if use_dualstack_endpoint is True:
+                custom_config["use_dualstack_endpoint"] = True
             self.s3_client = create_s3_client(
                 session=session,
                 config=botocore.config.Config(**custom_config),
