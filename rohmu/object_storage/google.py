@@ -729,8 +729,7 @@ class MediaStreamUpload(MediaUpload):
 
 
 class MediaDownloadProtocol(Protocol):
-    def next_chunk(self) -> tuple[MediaDownloadProgress, bool]:
-        ...
+    def next_chunk(self) -> tuple[MediaDownloadProgress, bool]: ...
 
 
 class MediaIoBaseDownloadWithByteRange:

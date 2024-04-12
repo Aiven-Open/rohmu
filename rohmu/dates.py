@@ -1,6 +1,7 @@
 # Copyright (c) 2017 Ohmu Ltd
 # See LICENSE for details
 """Rohmu - timestamp handling"""
+
 import datetime
 import dateutil.parser
 import dateutil.tz

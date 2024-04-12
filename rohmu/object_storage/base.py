@@ -2,6 +2,7 @@
 # Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 # See LICENSE for details
 """Rohmu - object_storage.base"""
+
 from __future__ import annotations
 
 from contextlib import suppress
