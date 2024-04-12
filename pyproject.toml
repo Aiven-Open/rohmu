@@ -2,6 +2,86 @@
 requires = ['setuptools', 'wheel', 'requests']
 build-backend = 'setuptools.build_meta'
 
+[project]
+name = "rohmu"
+authors = [
+  { name="Aiven", email="opensource@aiven.io" },
+]
+description = "Rohmu is a python library providing an interface to various cloud storage providers."
+readme = "README.rst"
+requires-python = ">=3.8"
+license = {text = "Apache-2.0 license"}
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Database :: Database Engines/Servers",
+    "Topic :: Software Development :: Libraries :: Python Modules"
+]
+dependencies = [
+    "azure-common >= 1.1.28, < 2",
+    "azure-storage-blob >= 2.1.0",
+    "botocore",
+    "cryptography",
+    "google-api-python-client",
+    "httplib2",
+    "oauth2client",
+    "paramiko",
+    "pydantic < 2",
+    "python-dateutil",
+    "python-snappy",
+    "python-swiftclient",
+    "requests",
+    "typing_extensions; python_version<'3.12'",
+    "zstandard",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+dev = [
+    # Kept in sync with the versions in CI
+    "ruff==0.3.3",
+    "mypy==1.9.0",
+    # Kept in sync with Fedora versions
+    "python-snappy==0.6.1",
+    "zstandard==0.21.0",
+    'typing_extensions >= 3.10, < 5; python_version<"3.12"',
+    # Unpinned dependencies, latest is fine
+    "botocore",
+    "botocore-stubs",
+    "mypy_boto3_s3",
+    "pytest",
+    "pytest-cov",
+    "pytest-mock",
+    "pytest-timeout",
+    "pytest-asyncio",
+    "rstfmt",
+    "types-python-dateutil",
+    "types-paramiko",
+    "types-botocore",
+    "types-httplib2",
+    "types-mock",
+    "types-requests",
+    # Extra stubs
+    "google-api-python-client-stubs"
+]
+
+docs  = [
+  "sphinx==5.3.0",
+  "sphinx-rtd-theme==1.0.0",
+  "autodoc-pydantic==1.9.0"  # upgrade to 2.x when rohmu migrates to Pydantic 2.x
+]
+
+[project.urls]
+"Source Repository" = "https://github.com/Aiven-Open/rohmu/"
+
+
 [tool.ruff]
 target-version = "py38"
 line-length = 125
@@ -37,3 +117,9 @@ from-first = true
 lines-between-types = 1
 no-sections = true
 order-by-type = false
+
+[tool.setuptools]
+platforms = [
+    "POSIX",
+    "MacOS"
+]
