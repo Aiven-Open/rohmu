@@ -52,3 +52,7 @@ venv:
 	pip install -U pip && \
 	pip install -r requirements.txt && \
 	pip install -r requirements.dev.txt
+
+.PHONY: clean
+clean:
+	rm -rf venv .mypy_cache/ .pytest_cache/ rohmu.egg-info/ rpm/ rohmu-rpm-src.tar
