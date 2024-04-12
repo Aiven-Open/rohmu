@@ -6,6 +6,7 @@ rohmu - content encryption
 Copyright (c) 2023 Aiven, Helsinki, Finland. https://aiven.io/
 See LICENSE for details
 """
+
 from .common.constants import IO_BLOCK_SIZE
 from .errors import UninitializedError
 from .filewrap import FileWrap, Sink, Stream

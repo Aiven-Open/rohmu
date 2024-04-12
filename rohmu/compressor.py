@@ -1,6 +1,7 @@
 # Copyright (c) 2016 Ohmu Ltd
 # See LICENSE for details
 """Rohmu - compressor interface"""
+
 from .errors import InvalidConfigurationError
 from .filewrap import Sink, Stream
 from .snappyfile import SnappyFile

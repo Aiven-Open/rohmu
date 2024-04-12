@@ -58,4 +58,3 @@ Swift
 
 .. autoclass:: rohmu.object_storage.swift.SwiftTransfer
    :members:
-

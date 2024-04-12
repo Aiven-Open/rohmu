@@ -32,8 +32,7 @@ def atomic_opener(
     encoding: Optional[str] = None,
     _fd_spy: Callable[[int], None] = lambda unused: None,
     _after_link_hook: Callable[[], None] = lambda: None,
-) -> ContextManager[BinaryIO]:
-    ...
+) -> ContextManager[BinaryIO]: ...
 
 
 @overload
@@ -43,8 +42,7 @@ def atomic_opener(
     encoding: Optional[str] = None,
     _fd_spy: Callable[[int], None] = lambda unused: None,
     _after_link_hook: Callable[[], None] = lambda: None,
-) -> ContextManager[TextIO]:
-    ...
+) -> ContextManager[TextIO]: ...
 
 
 def atomic_opener(
