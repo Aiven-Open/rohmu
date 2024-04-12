@@ -103,6 +103,9 @@ jobs:
 
       - id: prepare-python
         uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: pip
 
       - id: prepare-sphinx
         run: pip install "./pr[docs]"
