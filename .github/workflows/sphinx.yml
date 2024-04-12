@@ -31,7 +31,7 @@ jobs:
         uses: actions/setup-python@v4
 
       - name: "Install Sphinx & Theme"
-        run: pip install -r main/requirements.docs.txt
+        run: pip install -e '.[docs]'
 
       - name: "Run Sphinx"
         run: sphinx-build -b html main/docs gh-pages -E -d $GITHUB_WORKSPACE/.doctree
