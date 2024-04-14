@@ -141,7 +141,7 @@ class AzureTransfer(BaseTransfer[Config]):
         timeout: float = 15.0,
     ) -> None:
         source_path = source_bucket.format_key_for_backend(source_key, remove_slash_prefix=True, trailing_slash=False)
-        source_client = source_bucket.conn.get_blob_client(self.container_name, source_path)
+        source_client = source_bucket.conn.get_blob_client(source_bucket.container_name, source_path)
         source_url = source_client.url
 
         destination_path = self.format_key_for_backend(destination_key, remove_slash_prefix=True, trailing_slash=False)
