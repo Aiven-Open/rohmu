@@ -1,13 +1,17 @@
 # Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 from datetime import datetime
 from io import BytesIO
+from pytest_mock import MockerFixture
+from rohmu.common.strenum import StrEnum
 from rohmu.errors import InvalidByteRangeError
+from rohmu.object_storage.azure import AzureTransfer
 from rohmu.object_storage.config import AzureObjectStorageConfig
 from tempfile import NamedTemporaryFile
 from types import ModuleType
 from typing import Any, Optional, Tuple
 from unittest.mock import MagicMock, patch
 
+import azure.storage.blob
 import pytest
 import sys
 
@@ -201,3 +205,35 @@ def test_conn_string(host: Optional[str], port: Optional[int], is_secured: bool,
         account_name="test_name", account_key="test_key", azure_cloud=None, host=host, port=port, is_secure=is_secured
     )
     assert expected == conn_string
+
+
+class MockBucketName(StrEnum):
+    bucket_enum_key = "bucket_enum_value"
+
+
+def test_create_container_enum(mocker: MockerFixture) -> None:
+    container_client_mock = MagicMock(spec=azure.storage.blob.ContainerClient)
+    mocker.patch.object(azure.storage.blob._blob_service_client, "ContainerClient", container_client_mock)
+    notifier = MagicMock()
+    AzureTransfer(
+        bucket_name=MockBucketName.bucket_enum_key,
+        account_name="test_account",
+        account_key="test_key",
+        notifier=notifier,
+    )
+    container_name = container_client_mock.call_args.kwargs["container_name"]
+    assert container_name == "bucket_enum_value"
+
+
+def test_create_container_str(mocker: MockerFixture) -> None:
+    container_client_mock = MagicMock(spec=azure.storage.blob.ContainerClient)
+    mocker.patch.object(azure.storage.blob._blob_service_client, "ContainerClient", container_client_mock)
+    notifier = MagicMock()
+    AzureTransfer(
+        bucket_name="bucket_name",
+        account_name="test_account",
+        account_key="test_key",
+        notifier=notifier,
+    )
+    container_name = container_client_mock.call_args.kwargs["container_name"]
+    assert container_name == "bucket_name"

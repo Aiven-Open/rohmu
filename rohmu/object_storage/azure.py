@@ -29,6 +29,7 @@ from rohmu.typing import Metadata
 from typing import Any, BinaryIO, Collection, Iterator, Optional, Tuple, Union
 
 import azure.common
+import enum
 import logging
 import time
 
@@ -393,6 +394,10 @@ class AzureTransfer(BaseTransfer[Config]):
                     delattr(fd, "tell")
 
     def get_or_create_container(self, container_name: str) -> str:
+        if isinstance(container_name, enum.Enum):
+            # ensure that the enum value is used rather than the enum name
+            # https://github.com/Azure/azure-sdk-for-python/blob/azure-storage-blob_12.8.1/sdk/storage/azure-storage-blob/azure/storage/blob/_blob_service_client.py#L667
+            container_name = container_name.value
         start_time = time.monotonic()
         try:
             self.conn.create_container(container_name)
