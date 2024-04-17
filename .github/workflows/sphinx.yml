@@ -29,6 +29,8 @@ jobs:
 
       - name: "Setup Python & Install Sphinx"
         uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
 
       - name: "Install Sphinx & Theme"
         run: pip install -e '.[docs]'
