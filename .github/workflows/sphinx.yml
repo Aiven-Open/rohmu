@@ -34,7 +34,7 @@ jobs:
           cache: pip
 
       - name: "Install Sphinx & Theme"
-        run: pip install -e '.[docs]'
+        run: pip install -e './main[docs]'
 
       - name: "Run Sphinx"
         run: sphinx-build -b html main/docs gh-pages -E -d $GITHUB_WORKSPACE/.doctree
