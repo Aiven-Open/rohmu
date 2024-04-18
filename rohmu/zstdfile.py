@@ -1,6 +1,7 @@
 # Copyright (c) 2016 Ohmu Ltd
 # See LICENSE for details
 """Rohmu - file-like interface for zstd"""
+
 from .common.constants import IO_BLOCK_SIZE
 from .filewrap import FileWrap
 from .typing import BinaryData, FileLike

@@ -4,6 +4,7 @@
 
 This could be broader, but at least minimal functionality is tested here.
 """
+
 from __future__ import annotations
 
 from rohmu.common import statsd

@@ -29,9 +29,12 @@ jobs:
 
       - name: "Setup Python & Install Sphinx"
         uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+          cache: pip
 
       - name: "Install Sphinx & Theme"
-        run: pip install -r main/requirements.docs.txt
+        run: pip install -e '.[docs]'
 
       - name: "Run Sphinx"
         run: sphinx-build -b html main/docs gh-pages -E -d $GITHUB_WORKSPACE/.doctree
@@ -45,4 +48,3 @@ jobs:
           git diff-index --quiet HEAD || git commit -m "From $GITHUB_REF $(echo ${GITHUB_SHA} | cut -c 1-8)"
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
           git push
-

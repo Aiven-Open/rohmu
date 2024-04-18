@@ -37,14 +37,10 @@ jobs:
       - id: dependencies
         run: |
           sudo apt-get install -y libsnappy-dev
-          pip install --upgrade -r requirements.txt
-          pip install --upgrade -r requirements.dev.txt
+          pip install ".[dev]"
 
       - id: lint
         run: make lint
-
-      - id: pip-freeze
-        run: pip freeze
 
       - id: mypy
         run: make mypy
@@ -78,8 +74,7 @@ jobs:
       - id: dependencies
         run: |
           sudo apt-get install -y libsnappy-dev
-          pip install -r requirements.txt
-          pip install -r requirements.dev.txt
+          pip install ".[dev]"
 
       - id: unittest
         run: make coverage
@@ -108,9 +103,11 @@ jobs:
 
       - id: prepare-python
         uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
 
       - id: prepare-sphinx
-        run: pip install -r pr/requirements.docs.txt
+        run: pip install "./pr[docs]"
 
       - id: run-sphinx
         run: sphinx-build -b html pr/docs gh-pages -E -d $GITHUB_WORKSPACE/.doctree

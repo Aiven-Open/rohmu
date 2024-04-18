@@ -1,6 +1,7 @@
 # Copyright (c) 2016 Ohmu Ltd
 # See LICENSE for details
 """Rohmu - file transformation wrapper"""
+
 from .errors import UninitializedError
 from .typing import BinaryData, FileLike, HasRead, HasWrite
 from typing import Callable, Optional
