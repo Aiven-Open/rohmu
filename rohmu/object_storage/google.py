@@ -22,7 +22,6 @@ from oauth2client import GOOGLE_TOKEN_URI
 from oauth2client.client import GoogleCredentials
 from rohmu.common.models import StorageOperation
 from rohmu.common.statsd import StatsClient, StatsdConfig
-from rohmu.dates import parse_timestamp
 from rohmu.errors import FileNotFoundFromStorageError, InvalidByteRangeError, InvalidConfigurationError
 from rohmu.notifier.interface import Notifier
 from rohmu.object_storage.base import (
@@ -46,6 +45,7 @@ from typing_extensions import Protocol
 
 import codecs
 import dataclasses
+import datetime
 import errno
 
 # NOTE: this import is not needed per-se, but it's imported here first to point the
@@ -387,7 +387,7 @@ class GoogleTransfer(BaseTransfer[Config]):
                         if (size := item.get("size")) is not None:
                             value["size"] = int(size)
                         if (updated := item.get("updated")) is not None:
-                            value["last_modified"] = parse_timestamp(updated)
+                            value["last_modified"] = datetime.datetime.fromisoformat(updated)
                         if (md5 := item.get("md5Hash")) is not None:
                             value["md5"] = base64_to_hex(md5)
                         yield IterKeyItem(type=KEY_TYPE_OBJECT, value=value)
