@@ -15,14 +15,14 @@ import sys
 
 sys.path.insert(0, os.path.abspath(".."))
 # -- Project information -----------------------------------------------------
-from rohmu.version import VERSION
+from rohmu.version import __version__
 
 project = "Rohmu"
 copyright = "2023, Aiven"
 author = "Aiven"
 
 # The full version, including alpha/beta/rc tags
-release = VERSION
+release = __version__
 
 # -- General configuration ---------------------------------------------------
 
