@@ -32,12 +32,14 @@ from rohmu.object_storage.config import (  # noqa: F401
 )
 from rohmu.typing import Metadata
 from rohmu.util import batched, ProgressStream
+from threading import RLock
 from typing import Any, BinaryIO, cast, Collection, Iterator, Optional, Tuple, TYPE_CHECKING, Union
 
 import botocore.client
 import botocore.config
 import botocore.exceptions
 import botocore.session
+import contextlib
 import math
 import time
 
@@ -124,7 +126,6 @@ class S3Transfer(BaseTransfer[Config]):
         statsd_info: Optional[StatsdConfig] = None,
     ) -> None:
         super().__init__(prefix=prefix, notifier=notifier, statsd_info=statsd_info)
-        session = botocore.session.get_session()
         self.bucket_name = bucket_name
         self.location = ""
         self.region = region
@@ -140,14 +141,15 @@ class S3Transfer(BaseTransfer[Config]):
                 custom_config["proxies"] = {"https": proxy_url}
             if use_dualstack_endpoint is True:
                 custom_config["use_dualstack_endpoint"] = True
-            self.s3_client = create_s3_client(
-                session=session,
-                config=botocore.config.Config(**custom_config),
-                aws_access_key_id=aws_access_key_id,
-                aws_secret_access_key=aws_secret_access_key,
-                aws_session_token=aws_session_token,
-                region_name=region,
-            )
+            with self._get_session() as session:
+                self.s3_client = create_s3_client(
+                    session=session,
+                    config=botocore.config.Config(**custom_config),
+                    aws_access_key_id=aws_access_key_id,
+                    aws_secret_access_key=aws_secret_access_key,
+                    aws_session_token=aws_session_token,
+                    region_name=region,
+                )
             if self.region and self.region != "us-east-1":
                 self.location = self.region
         else:
@@ -173,22 +175,42 @@ class S3Transfer(BaseTransfer[Config]):
             )
             if not is_verify_tls and cert_path is not None:
                 raise ValueError("cert_path is set but is_verify_tls is False")
-            self.s3_client = create_s3_client(
-                session=session,
-                aws_access_key_id=aws_access_key_id,
-                aws_secret_access_key=aws_secret_access_key,
-                aws_session_token=aws_session_token,
-                config=boto_config,
-                endpoint_url=custom_url,
-                region_name=region,
-                verify=str(cert_path) if cert_path is not None and is_verify_tls else is_verify_tls,
-            )
+
+            with self._get_session() as session:
+                self.s3_client = create_s3_client(
+                    session=session,
+                    aws_access_key_id=aws_access_key_id,
+                    aws_secret_access_key=aws_secret_access_key,
+                    aws_session_token=aws_session_token,
+                    config=boto_config,
+                    endpoint_url=custom_url,
+                    region_name=region,
+                    verify=str(cert_path) if cert_path is not None and is_verify_tls else is_verify_tls,
+                )
 
         self.check_or_create_bucket()
 
         self.multipart_chunk_size = segment_size
         self.encrypted = encrypted
         self.log.debug("S3Transfer initialized")
+
+    # It is advantageous to share the Session as much as possible since the very
+    # large service model files (eg botocore/data/ec2/2016-11-15/service-2.json)
+    # are cached on the Session, otherwise they will need to be loaded for every
+    # Client - which takes a lot of time and memory.
+    # Sessions are not threadsafe.  We use a lock to ensure that only one thread
+    # is creating a client at a time.  Clients are threadsafe, so it is okay for
+    # the Client to "escape" the lock with any state it shares with the Session.
+    _botocore_session_lock = RLock()
+    _botocore_session: botocore.session.Session | None = None
+
+    @classmethod
+    @contextlib.contextmanager
+    def _get_session(cls) -> Iterator[botocore.session.Session]:
+        with cls._botocore_session_lock:
+            if cls._botocore_session is None:
+                cls._botocore_session = botocore.session.get_session()
+            yield cls._botocore_session
 
     def copy_file(
         self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **_kwargs: Any
