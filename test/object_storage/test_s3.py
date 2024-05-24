@@ -16,6 +16,7 @@ from tempfile import NamedTemporaryFile
 from typing import Any, BinaryIO, Callable, Iterator, Optional, Union
 from unittest.mock import ANY, call, MagicMock, patch
 
+import contextlib
 import pytest
 import rohmu.object_storage.s3
 
@@ -31,10 +32,16 @@ class S3Infra:
 @pytest.fixture(name="infra")
 def fixture_infra(mocker: Any) -> Iterator[S3Infra]:
     notifier = MagicMock()
-    get_session = mocker.patch("botocore.session.get_session")
     s3_client = MagicMock()
     create_client = MagicMock(return_value=s3_client)
-    get_session.return_value = MagicMock(create_client=create_client)
+    session = MagicMock(create_client=create_client)
+
+    @contextlib.contextmanager
+    def _get_session(cls: S3Transfer) -> Iterator[MagicMock]:
+        yield session
+
+    mocker.patch("rohmu.object_storage.s3.S3Transfer._get_session", _get_session)
+
     operation = mocker.patch("rohmu.common.statsd.StatsClient.operation")
     transfer = S3Transfer(
         region="test-region",
