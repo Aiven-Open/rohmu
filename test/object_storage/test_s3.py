@@ -282,6 +282,8 @@ def test_validate_is_verify_tls_and_cert_path() -> None:
             region="test-region",
             bucket_name="test-bucket",
             cert_path=Path("test_cert_path"),
+            aws_secret_access_key=None,
+            aws_session_token=None,
         )
     assert "cert_path is set but is_verify_tls is False" in str(e.value)
 
