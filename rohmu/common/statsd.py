@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager, contextmanager
 from rohmu.common.strenum import StrEnum
 from typing import AsyncIterator, Dict, Iterator, Optional, Union
 
-import pydantic
+import pydantic.v1 as pyd
 import socket
 import time
 
@@ -31,7 +31,7 @@ class MessageFormat(StrEnum):
 Tags = Dict[str, Union[int, str, None]]
 
 
-class StatsdConfig(pydantic.BaseModel):
+class StatsdConfig(pyd.BaseModel):
     host: str = "127.0.0.1"
     port: int = 8125
     message_format: MessageFormat = MessageFormat.telegraf

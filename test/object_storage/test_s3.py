@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from pydantic import ValidationError
+from pydantic.v1 import ValidationError
 from rohmu.common.models import StorageOperation
 from rohmu.errors import InvalidByteRangeError
 from rohmu.object_storage.base import TransferWithConcurrentUploadSupport
