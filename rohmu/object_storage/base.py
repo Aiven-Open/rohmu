@@ -82,6 +82,10 @@ class BaseTransfer(Generic[StorageModelT]):
         self.notifier = notifier or NullNotifier()
         self.stats = StatsClient(statsd_info)
 
+    def close(self) -> None:
+        """Release all resources associated with the Transfer object."""
+        pass
+
     @staticmethod
     def _incremental_to_proportional_progress(
         *, size: int, cb: ProgressProportionCallbackType
