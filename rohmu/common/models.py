@@ -4,7 +4,7 @@ from rohmu.common.strenum import StrEnum
 from typing import Optional
 
 import enum
-import pydantic
+import pydantic.v1 as pyd
 
 
 class StorageOperation(StrEnum):
@@ -42,7 +42,7 @@ class StorageDriver(StrEnum):
     swift = "swift"
 
 
-class RohmuModel(pydantic.BaseModel):
+class RohmuModel(pyd.BaseModel):
     class Config:
         # As we're keen to both export and decode json, just using
         # enum values for encode/decode is much saner than the default
@@ -67,14 +67,14 @@ class ProxyInfo(RohmuModel):
     port: int
     type: ProxyType
     user: Optional[str]
-    password: Optional[str] = pydantic.Field(None, alias="pass")
+    password: Optional[str] = pyd.Field(None, alias="pass")
 
     class Config(RohmuModel.Config):
         # Allow ProxyInfo(**proxy_info.dict()) to work with the alias
         allow_population_by_field_name = True
 
 
-class StorageModel(pydantic.BaseModel):
+class StorageModel(pyd.BaseModel):
     storage_type: StorageDriver
     statsd_info: Optional[StatsdConfig] = None
 

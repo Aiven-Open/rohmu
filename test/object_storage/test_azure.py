@@ -94,24 +94,30 @@ def test_get_contents_to_fileobj_raises_error_on_invalid_byte_range(mock_get_blo
 
 
 def test_minimal_config() -> None:
-    config = AzureObjectStorageConfig(account_name="test")
+    config = AzureObjectStorageConfig(account_name="test", bucket_name=None, account_key=None, sas_token=None)
     assert config.account_name == "test"
 
 
 def test_azure_config_host_port_set_together() -> None:
     with pytest.raises(ValueError):
-        AzureObjectStorageConfig(account_name="test", host="localhost")
+        AzureObjectStorageConfig(account_name="test", host="localhost", bucket_name=None, account_key=None, sas_token=None)
     with pytest.raises(ValueError):
-        AzureObjectStorageConfig(account_name="test", port=10000)
-    config = AzureObjectStorageConfig(account_name="test", host="localhost", port=10000)
+        AzureObjectStorageConfig(account_name="test", port=10000, bucket_name=None, account_key=None, sas_token=None)
+    config = AzureObjectStorageConfig(
+        account_name="test", host="localhost", port=10000, bucket_name=None, account_key=None, sas_token=None
+    )
     assert config.host == "localhost"
     assert config.port == 10000
 
 
 def test_valid_azure_cloud_endpoint() -> None:
     with pytest.raises(ValueError):
-        AzureObjectStorageConfig(account_name="test", azure_cloud="invalid")
-    config = AzureObjectStorageConfig(account_name="test", azure_cloud="public")
+        AzureObjectStorageConfig(
+            account_name="test", azure_cloud="invalid", bucket_name=None, account_key=None, sas_token=None
+        )
+    config = AzureObjectStorageConfig(
+        account_name="test", azure_cloud="public", bucket_name=None, account_key=None, sas_token=None
+    )
     assert config.azure_cloud == "public"
 
 

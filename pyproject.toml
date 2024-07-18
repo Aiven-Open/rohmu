@@ -34,7 +34,7 @@ dependencies = [
     "httplib2",
     "oauth2client",
     "paramiko",
-    "pydantic < 2",
+    "pydantic >= 1.10.17",
     "python-dateutil",
     "python-snappy",
     "python-swiftclient",

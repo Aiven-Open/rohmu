@@ -1,3 +1,4 @@
+from rohmu import ProxyInfo
 from rohmu.factory import Config, get_class_for_transfer, get_transfer, get_transfer_from_model
 from rohmu.object_storage.config import S3ObjectStorageConfig
 from rohmu.object_storage.s3 import S3Transfer
@@ -80,13 +81,17 @@ def test_get_transfer_from_model(
     config = S3ObjectStorageConfig(
         region="dummy-region",
         bucket_name="dummy-bucket",
-        proxy_info={
-            "host": "proxy.test",
-            "port": "16666",
-            "type": "socks5",
-            "user": "bob",
-            "pass": "secret",
-        },
+        proxy_info=ProxyInfo.parse_obj(
+            {
+                "host": "proxy.test",
+                "port": "16666",
+                "type": "socks5",
+                "user": "bob",
+                "pass": "secret",
+            }
+        ),
+        aws_secret_access_key=None,
+        aws_session_token=None,
     )
     get_transfer_from_model(config)
     create_s3_client.assert_called_once_with(
@@ -106,13 +111,17 @@ def test_get_transfer_serialized_model(
     config = S3ObjectStorageConfig(
         region="dummy-region",
         bucket_name="dummy-bucket",
-        proxy_info={
-            "host": "proxy.test",
-            "port": "16666",
-            "type": "socks5",
-            "user": "bob",
-            "pass": "secret",
-        },
+        proxy_info=ProxyInfo.parse_obj(
+            {
+                "host": "proxy.test",
+                "port": "16666",
+                "type": "socks5",
+                "user": "bob",
+                "pass": "secret",
+            }
+        ),
+        aws_secret_access_key=None,
+        aws_session_token=None,
     )
     get_transfer(config.dict())
     create_s3_client.assert_called_once_with(

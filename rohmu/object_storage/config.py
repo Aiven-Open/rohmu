@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from enum import Enum, unique
 from pathlib import Path
-from pydantic import Field, root_validator, validator
+from pydantic.v1 import Field, root_validator, validator
 from rohmu.common.models import ProxyInfo, StorageDriver, StorageModel
 from typing import Any, Dict, Final, Literal, Optional, TypeVar
 

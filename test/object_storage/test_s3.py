@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from pydantic import ValidationError
+from pydantic.v1 import ValidationError
 from rohmu.common.models import StorageOperation
 from rohmu.errors import InvalidByteRangeError
 from rohmu.object_storage.base import TransferWithConcurrentUploadSupport
@@ -282,6 +282,8 @@ def test_validate_is_verify_tls_and_cert_path() -> None:
             region="test-region",
             bucket_name="test-bucket",
             cert_path=Path("test_cert_path"),
+            aws_secret_access_key=None,
+            aws_session_token=None,
         )
     assert "cert_path is set but is_verify_tls is False" in str(e.value)
 
