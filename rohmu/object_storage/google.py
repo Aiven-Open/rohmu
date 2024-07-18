@@ -188,9 +188,17 @@ class GoogleTransfer(BaseTransfer[Config]):
         self.proxy_info = proxy_info
         self.google_creds = get_credentials(credential_file=credential_file, credentials=credentials)
         self.gs: Optional[Resource] = self._init_google_client()
-        self.gs_object_client = None
+        self.gs_object_client: Any = None
         self.bucket_name = self.get_or_create_bucket(bucket_name)
         self.log.debug("GoogleTransfer initialized")
+
+    def close(self) -> None:
+        if self.gs_object_client is not None:
+            self.gs_object_client.close()
+            self.gs_object_client = None
+        if self.gs is not None:
+            self.gs.close()
+            self.gs = None
 
     def _init_google_client(self) -> Resource:
         start_time = time.monotonic()
