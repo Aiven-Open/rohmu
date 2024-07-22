@@ -52,6 +52,14 @@ def fixture_infra(mocker: Any) -> Iterator[S3Infra]:
     yield S3Infra(notifier, operation, s3_client, transfer)
 
 
+def test_close(infra: S3Infra) -> None:
+    infra.transfer.get_client()
+    assert infra.transfer.s3_client is not None
+    infra.transfer.close()
+    assert infra.transfer.s3_client is None
+    infra.s3_client.close.assert_called_once()
+
+
 def test_store_file_from_disk(infra: S3Infra) -> None:
     test_data = b"test-data"
     metadata = {"Content-Length": len(test_data), "some-date": datetime(2022, 11, 15, 18, 30, 58, 486644)}
