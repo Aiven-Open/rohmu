@@ -125,6 +125,7 @@ platforms = [
 
 [tool.hatch.version]
 source = "vcs"
+tag-pattern = "^releases/(?P<version>\\d+.\\d+.\\d+)$"
 
 [tool.hatch.build.hooks.vcs]
 version-file = "rohmu/version.py"
