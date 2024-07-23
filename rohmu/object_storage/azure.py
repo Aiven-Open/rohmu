@@ -71,7 +71,7 @@ class AzureTransfer(BaseTransfer[Config]):
         self.account_key = account_key
         self.container_name = bucket_name
         self.sas_token = sas_token
-        conn_str = self.conn_string(
+        self._conn_str = self.conn_string(
             account_name=account_name,
             account_key=account_key,
             azure_cloud=azure_cloud,
@@ -79,7 +79,7 @@ class AzureTransfer(BaseTransfer[Config]):
             port=port,
             is_secure=is_secure,
         )
-        config: dict[str, Any] = {"max_block_size": MAX_BLOCK_SIZE}
+        self._config: dict[str, Any] = {"max_block_size": MAX_BLOCK_SIZE}
         if proxy_info:
             username = proxy_info.get("user")
             password = proxy_info.get("pass")
@@ -93,15 +93,24 @@ class AzureTransfer(BaseTransfer[Config]):
                 schema = "socks5"
             else:
                 schema = "http"
-            config["proxies"] = {"https": f"{schema}://{auth}{proxy_host}:{proxy_port}"}
-
-        self.conn: BlobServiceClient = BlobServiceClient.from_connection_string(
-            conn_str=conn_str,
-            credential=self.sas_token,
-            **config,
-        )
+            self._config["proxies"] = {"https": f"{schema}://{auth}{proxy_host}:{proxy_port}"}
+        self._blob_service_client: Optional[BlobServiceClient] = None
         self.container = self.get_or_create_container(self.container_name)
         self.log.debug("AzureTransfer initialized, %r", self.container_name)
+
+    def get_blob_service_client(self) -> BlobServiceClient:
+        if self._blob_service_client is None:
+            self._blob_service_client = BlobServiceClient.from_connection_string(
+                conn_str=self._conn_str,
+                credential=self.sas_token,
+                **self._config,
+            )
+        return self._blob_service_client
+
+    def close(self) -> None:
+        if self._blob_service_client is not None:
+            self._blob_service_client.close()
+            self._blob_service_client = None
 
     @staticmethod
     def conn_string(
@@ -142,11 +151,11 @@ class AzureTransfer(BaseTransfer[Config]):
         timeout: float = 15.0,
     ) -> None:
         source_path = source_bucket.format_key_for_backend(source_key, remove_slash_prefix=True, trailing_slash=False)
-        source_client = source_bucket.conn.get_blob_client(source_bucket.container_name, source_path)
+        source_client = source_bucket.get_blob_service_client().get_blob_client(source_bucket.container_name, source_path)
         source_url = source_client.url
 
         destination_path = self.format_key_for_backend(destination_key, remove_slash_prefix=True, trailing_slash=False)
-        destination_client = self.conn.get_blob_client(self.container_name, destination_path)
+        destination_client = self.get_blob_service_client().get_blob_client(self.container_name, destination_path)
         start = time.monotonic()
         destination_client.start_copy_from_url(source_url, metadata=metadata, timeout=timeout)
         while True:
@@ -219,7 +228,7 @@ class AzureTransfer(BaseTransfer[Config]):
 
     def _iter_key(self, *, path: str, with_metadata: bool, deep: bool) -> Iterator[IterKeyItem]:
         include = "metadata" if with_metadata else None
-        container_client = self.conn.get_container_client(self.container_name)
+        container_client = self.get_blob_service_client().get_container_client(self.container_name)
         name_starts_with = None
         delimiter = ""
         if path:
@@ -254,7 +263,7 @@ class AzureTransfer(BaseTransfer[Config]):
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
         self.log.debug("Deleting key: %r", path)
         try:
-            blob_client = self.conn.get_blob_client(container=self.container_name, blob=path)
+            blob_client = self.get_blob_service_client().get_blob_client(container=self.container_name, blob=path)
             result = blob_client.delete_blob()
         except azure.core.exceptions.ResourceNotFoundError as ex:
             raise FileNotFoundFromStorageError(path) from ex
@@ -283,9 +292,9 @@ class AzureTransfer(BaseTransfer[Config]):
         allows reading entire blob into memory at once or returning data from random offsets"""
         file_size = None
         start_range = byte_range[0] if byte_range else 0
-        chunk_size = self.conn._config.max_chunk_get_size  # type: ignore[attr-defined]
+        chunk_size = self.get_blob_service_client()._config.max_chunk_get_size  # type: ignore[attr-defined]
         end_range = chunk_size - 1
-        blob = self.conn.get_blob_client(self.container_name, key)
+        blob = self.get_blob_service_client().get_blob_client(self.container_name, key)
         while True:
             try:
                 if byte_range:
@@ -337,7 +346,7 @@ class AzureTransfer(BaseTransfer[Config]):
     def get_file_size(self, key: str) -> int:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
         try:
-            blob_client = self.conn.get_blob_client(self.container_name, path)
+            blob_client = self.get_blob_service_client().get_blob_client(self.container_name, path)
             return blob_client.get_blob_properties().size
         except azure.core.exceptions.ResourceNotFoundError as ex:
             raise FileNotFoundFromStorageError(path) from ex
@@ -376,7 +385,7 @@ class AzureTransfer(BaseTransfer[Config]):
             fd.tell = lambda: None  # type: ignore[assignment,method-assign,return-value]
         sanitized_metadata = self.sanitize_metadata(metadata, replace_hyphen_with="_")
         try:
-            blob_client = self.conn.get_blob_client(self.container_name, path)
+            blob_client = self.get_blob_service_client().get_blob_client(self.container_name, path)
             blob_client.upload_blob(
                 fd,
                 blob_type=BlobType.BlockBlob,  # type: ignore[arg-type]
@@ -400,7 +409,7 @@ class AzureTransfer(BaseTransfer[Config]):
             container_name = container_name.value
         start_time = time.monotonic()
         try:
-            self.conn.create_container(container_name)
+            self.get_blob_service_client().create_container(container_name)
         except ResourceExistsError:
             pass
         except HttpResponseError as e:

@@ -25,6 +25,21 @@ def fixture_mock_get_blob_client(mocker: MockerFixture) -> MagicMock:
     return get_blob_client_mock
 
 
+def test_close(mock_get_blob_client: MagicMock) -> None:
+    notifier = MagicMock()
+    transfer = AzureTransfer(
+        bucket_name="test_bucket",
+        account_name="test_account",
+        account_key="test_key1",
+        notifier=notifier,
+    )
+    assert transfer._blob_service_client is not None
+    blob_service_client = transfer._blob_service_client
+    transfer.close()
+    blob_service_client.close.assert_called_once()  # type: ignore[attr-defined]
+    assert transfer._blob_service_client is None
+
+
 def test_store_file_from_disk(mock_get_blob_client: MagicMock) -> None:
     notifier = MagicMock()
     transfer = AzureTransfer(

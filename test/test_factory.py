@@ -50,11 +50,12 @@ def test_get_transfer_s3(
     mock_config_model.return_value = S3ObjectStorageConfig(**expected_config_arg)
 
     transfer_object = get_transfer(config)
+    assert isinstance(transfer_object, S3Transfer)
+    transfer_object.get_client()
 
     mock_config_model.assert_called_once_with(**expected_config_arg)
     mock_from_model.assert_called_once_with(mock_config_model(), mock_notifier.return_value)
     mock_notifier.assert_called_once_with(url=config["notifier"]["url"])
-    assert isinstance(transfer_object, S3Transfer)
     assert transfer_object.bucket_name == "dummy-bucket"
     mock_botocore_config.assert_called_once_with(**expected_botocore_config)
     mock_s3_client.assert_called_once_with(

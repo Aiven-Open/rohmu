@@ -16,6 +16,26 @@ import base64
 import pytest
 
 
+def test_close() -> None:
+    with ExitStack() as stack:
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer.get_or_create_bucket"))
+        mock_gs = Mock()
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._init_google_client", return_value=mock_gs))
+        transfer = GoogleTransfer(
+            project_id="test-project-id",
+            bucket_name="test-bucket",
+            notifier=MagicMock(),
+        )
+        assert transfer.gs is not None
+        with transfer._object_client():
+            assert transfer.gs_object_client is not None
+        transfer.close()
+        mock_gs.close.assert_called_once()
+        assert transfer.gs_object_client is None
+        assert transfer.gs is None
+
+
 def test_store_file_from_memory() -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
