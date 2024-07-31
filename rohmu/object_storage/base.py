@@ -10,7 +10,11 @@ from dataclasses import dataclass, field
 from io import BytesIO
 from rohmu.common.models import StorageModel
 from rohmu.common.statsd import StatsClient, StatsdConfig
-from rohmu.errors import FileNotFoundFromStorageError, InvalidByteRangeError, StorageError
+from rohmu.errors import (
+    FileNotFoundFromStorageError,
+    InvalidByteRangeError,
+    StorageError,
+)
 from rohmu.notifier.interface import Notifier
 from rohmu.notifier.null import NullNotifier
 from rohmu.object_storage.config import StorageModelT
@@ -71,8 +75,18 @@ class BaseTransfer(Generic[StorageModelT]):
     supports_concurrent_upload: bool = False
 
     def __init__(
-        self, prefix: Optional[str], notifier: Optional[Notifier] = None, statsd_info: Optional[StatsdConfig] = None
+        self,
+        prefix: Optional[str],
+        notifier: Optional[Notifier] = None,
+        statsd_info: Optional[StatsdConfig] = None,
+        ensure_object_store_available: bool = True,
     ) -> None:
+        """
+        Initialize a Transfer instance. Although it's possible to do implementation-specific IO here, it's preferable to
+        delegate to verify_object_storage and create_object_store_if_needed.
+
+        The ensure_object_store_available flag is here to allow this transition in a backwards-compatible manner.
+        """
         self.log = logging.getLogger(self.__class__.__name__)
         if not prefix:
             prefix = ""
@@ -81,6 +95,40 @@ class BaseTransfer(Generic[StorageModelT]):
         self.prefix = prefix
         self.notifier = notifier or NullNotifier()
         self.stats = StatsClient(statsd_info)
+
+    def _verify_object_storage_unwrapped(self) -> None:
+        """
+        Perform read-only operations to verify the backing object store is available and accessible.
+
+        Raises the implementation-specific exception as-is. This is mainly useful for backwards-compatibility and should
+        never be called directly.
+        """
+        raise NotImplementedError
+
+    def verify_object_storage(self) -> None:
+        """
+        Perform read-only operations to verify the backing object store is available and accessible.
+
+        Raise Rohmu-specific error TransferObjectStoreInitializationError to abstract away implementation-specific details.
+        """
+        raise NotImplementedError
+
+    def _create_object_store_if_needed_unwrapped(self) -> None:
+        """
+        Create the backing object store if it's needed (e.g. creating directories, buckets, etc.).
+
+        Raises the implementation-specific exception as-is. This is mainly useful for backwards-compatibility and should
+        never be called directly.
+        """
+        raise NotImplementedError
+
+    def create_object_store_if_needed(self) -> None:
+        """
+        Create the backing object store if it's needed (e.g. creating directories, buckets, etc.).
+
+        Raise Rohmu-specific error TransferObjectStoreInitializationError to abstract away implementation-specific details.
+        """
+        raise NotImplementedError
 
     def close(self) -> None:
         """Release all resources associated with the Transfer object."""
@@ -138,8 +186,14 @@ class BaseTransfer(Generic[StorageModelT]):
         return int(size) > chunk_size
 
     @classmethod
-    def from_model(cls, model: StorageModelT, notifier: Optional[Notifier] = None) -> Self:
-        return cls(**model.dict(by_alias=True, exclude={"storage_type"}), notifier=notifier)
+    def from_model(
+        cls, model: StorageModelT, notifier: Optional[Notifier] = None, ensure_object_store_available: bool = True
+    ) -> Self:
+        return cls(
+            **model.dict(by_alias=True, exclude={"storage_type"}),
+            notifier=notifier,
+            ensure_object_store_available=ensure_object_store_available,
+        )
 
     def copy_file(
         self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **_kwargs: Any

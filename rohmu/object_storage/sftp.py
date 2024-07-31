@@ -41,8 +41,14 @@ class SFTPTransfer(BaseTransfer[Config]):
         prefix: Optional[str] = None,
         notifier: Optional[Notifier] = None,
         statsd_info: Optional[StatsdConfig] = None,
+        ensure_object_store_available: bool = True,
     ) -> None:
-        super().__init__(prefix=prefix, notifier=notifier, statsd_info=statsd_info)
+        super().__init__(
+            prefix=prefix,
+            notifier=notifier,
+            statsd_info=statsd_info,
+            ensure_object_store_available=ensure_object_store_available,
+        )
         self.server = server
         self.port = port
         self.username = username
@@ -68,6 +74,18 @@ class SFTPTransfer(BaseTransfer[Config]):
         self.client = cast(paramiko.SFTPClient, paramiko.SFTPClient.from_transport(transport))
 
         self.log.debug("SFTPTransfer initialized")
+
+    def _verify_object_storage_unwrapped(self) -> None:
+        """No-op for now. Eventually, the SFTP connection could be tested here instead of in the constructor."""
+
+    def verify_object_storage(self) -> None:
+        """No-op for now. Eventually, the SFTP connection could be tested here instead of in the constructor."""
+
+    def _create_object_store_if_needed_unwrapped(self) -> None:
+        """No-op as it's not applicable to SFTP transfers"""
+
+    def create_object_store_if_needed(self) -> None:
+        """No-op as it's not applicable to SFTP transfers"""
 
     def get_contents_to_fileobj(
         self,

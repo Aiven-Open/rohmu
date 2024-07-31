@@ -11,7 +11,15 @@ from http import HTTPStatus
 from pathlib import Path
 from rohmu.common.models import StorageOperation
 from rohmu.common.statsd import StatsdConfig
-from rohmu.errors import ConcurrentUploadError, FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
+from rohmu.errors import (
+    ConcurrentUploadError,
+    FileNotFoundFromStorageError,
+    InvalidConfigurationError,
+    StorageError,
+    TransferObjectStoreInitializationError,
+    TransferObjectStoreMissingError,
+    TransferObjectStorePermissionError,
+)
 from rohmu.notifier.interface import Notifier
 from rohmu.object_storage.base import (
     BaseTransfer,
@@ -124,8 +132,14 @@ class S3Transfer(BaseTransfer[Config]):
         aws_session_token: Optional[str] = None,
         use_dualstack_endpoint: Optional[bool] = True,
         statsd_info: Optional[StatsdConfig] = None,
+        ensure_object_store_available: bool = True,
     ) -> None:
-        super().__init__(prefix=prefix, notifier=notifier, statsd_info=statsd_info)
+        super().__init__(
+            prefix=prefix,
+            notifier=notifier,
+            statsd_info=statsd_info,
+            ensure_object_store_available=ensure_object_store_available,
+        )
         self.bucket_name = bucket_name
         self.region = region
         self.aws_access_key_id = aws_access_key_id
@@ -153,8 +167,33 @@ class S3Transfer(BaseTransfer[Config]):
                 self.location = self.region
             if not self.is_verify_tls and self.cert_path is not None:
                 raise ValueError("cert_path is set but is_verify_tls is False")
-        self.check_or_create_bucket()
+        if ensure_object_store_available:
+            self._create_object_store_if_needed_unwrapped()
         self.log.debug("S3Transfer initialized")
+
+    def _verify_object_storage_unwrapped(self) -> None:
+        self.check_or_create_bucket(create_if_needed=False)
+
+    def verify_object_storage(self) -> None:
+        try:
+            self._verify_object_storage_unwrapped()
+        except botocore.exceptions.ClientError as ex:
+            if ex.response.get("Error", {}).get("Code") == "AccessDenied":
+                raise TransferObjectStorePermissionError() from ex
+            else:
+                raise TransferObjectStoreInitializationError() from ex
+
+    def _create_object_store_if_needed_unwrapped(self) -> None:
+        self.check_or_create_bucket(create_if_needed=True)
+
+    def create_object_store_if_needed(self) -> None:
+        try:
+            self._create_object_store_if_needed_unwrapped()
+        except botocore.exceptions.ClientError as ex:
+            if ex.response.get("Error", {}).get("Code") == "AccessDenied":
+                raise TransferObjectStorePermissionError() from ex
+            else:
+                raise TransferObjectStoreInitializationError() from ex
 
     def get_client(self) -> S3Client:
         if self.s3_client is None:
@@ -586,8 +625,7 @@ class S3Transfer(BaseTransfer[Config]):
             progress_fn=self._proportional_to_incremental_progress(upload_progress_fn),
         )
 
-    def check_or_create_bucket(self) -> None:
-        create_bucket = False
+    def check_or_create_bucket(self, create_if_needed: bool = True) -> None:
         self.stats.operation(StorageOperation.head_request)
         try:
             self.get_client().head_bucket(Bucket=self.bucket_name)
@@ -598,24 +636,27 @@ class S3Transfer(BaseTransfer[Config]):
                 raise InvalidConfigurationError(f"Wrong region for bucket {self.bucket_name}, check configuration")
             elif status_code == HTTPStatus.FORBIDDEN:
                 # Access denied on bucket check, most likely due to missing s3:ListBucket, assuming write permissions
-                pass
+                return
             elif status_code in {HTTPStatus.BAD_REQUEST, HTTPStatus.NOT_FOUND}:
-                create_bucket = True
+                if not create_if_needed:
+                    raise TransferObjectStoreMissingError()
             else:
                 raise
+        else:
+            # Bucket exists - bail out
+            return
 
-        if create_bucket:
-            self.log.debug("Creating bucket: %r in location: %r", self.bucket_name, self.region)
-            args: dict[str, Any] = {
-                "Bucket": self.bucket_name,
+        self.log.debug("Creating bucket: %r in location: %r", self.bucket_name, self.region)
+        args: dict[str, Any] = {
+            "Bucket": self.bucket_name,
+        }
+        if self.location:
+            args["CreateBucketConfiguration"] = {
+                "LocationConstraint": self.location,
             }
-            if self.location:
-                args["CreateBucketConfiguration"] = {
-                    "LocationConstraint": self.location,
-                }
 
-            self.stats.operation(StorageOperation.create_bucket)
-            self.get_client().create_bucket(**args)
+        self.stats.operation(StorageOperation.create_bucket)
+        self.get_client().create_bucket(**args)
 
     def create_concurrent_upload(
         self,
