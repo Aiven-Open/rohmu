@@ -168,7 +168,16 @@ class AzureTransfer(BaseTransfer[Config]):
                 if time.monotonic() - start < timeout:
                     time.sleep(0.1)
                 else:
-                    destination_client.abort_copy(copy_props.id, timeout=timeout)
+                    if copy_props.id is None:
+                        # The description of CopyProperties tells us copy_id should not be None unless status is also None
+                        # The type checker cannot know this, but we still log a warning if this ever happens
+                        self.log.warning(
+                            "Pending copy operation from %r to %r was missing a copy_id, will not be aborted after timeout",
+                            source_key,
+                            destination_key,
+                        )
+                    else:
+                        destination_client.abort_copy(copy_props.id, timeout=timeout)
                     raise StorageError(
                         f"Copying {repr(source_key)} to {repr(destination_key)} did not complete in {timeout} seconds"
                     )
