@@ -8,7 +8,11 @@ from __future__ import annotations
 from contextlib import suppress
 from rohmu.common.statsd import StatsdConfig
 from rohmu.dates import parse_timestamp
-from rohmu.errors import FileNotFoundFromStorageError
+from rohmu.errors import (
+    FileNotFoundFromStorageError,
+    TransferObjectStoreInitializationError,
+    TransferObjectStoreMissingError,
+)
 from rohmu.notifier.interface import Notifier
 from rohmu.object_storage.base import (
     BaseTransfer,
@@ -80,10 +84,16 @@ class SwiftTransfer(BaseTransfer[Config]):
         endpoint_type: Optional[str] = None,
         notifier: Optional[Notifier] = None,
         statsd_info: Optional[StatsdConfig] = None,
+        ensure_object_store_available: bool = True,
     ) -> None:
         prefix = prefix.lstrip("/") if prefix else ""
-        super().__init__(prefix=prefix, notifier=notifier, statsd_info=statsd_info)
-        self.container_name = container_name
+        super().__init__(
+            prefix=prefix,
+            notifier=notifier,
+            statsd_info=statsd_info,
+            ensure_object_store_available=ensure_object_store_available,
+        )
+        self.container = self.container_name = container_name
 
         if auth_version == "3.0":
             os_options = {
@@ -108,9 +118,28 @@ class SwiftTransfer(BaseTransfer[Config]):
         self.conn = client.Connection(
             user=user, key=key, authurl=auth_url, tenant_name=tenant_name, auth_version=auth_version, os_options=os_options
         )
-        self.container = self.get_or_create_container(self.container_name)
+        if ensure_object_store_available:
+            self._create_object_store_if_needed_unwrapped()
         self.segment_size = segment_size
         self.log.debug("SwiftTransfer initialized")
+
+    def _verify_object_storage_unwrapped(self) -> None:
+        self.get_or_create_container(self.container_name, create_if_needed=False)
+
+    def verify_object_storage(self) -> None:
+        try:
+            self._verify_object_storage_unwrapped()
+        except exceptions.ClientException as ex:
+            raise TransferObjectStoreInitializationError() from ex
+
+    def _create_object_store_if_needed_unwrapped(self) -> None:
+        self.get_or_create_container(self.container_name, create_if_needed=True)
+
+    def create_object_store_if_needed(self) -> None:
+        try:
+            self._create_object_store_if_needed_unwrapped()
+        except exceptions.ClientException as ex:
+            raise TransferObjectStoreInitializationError() from ex
 
     @staticmethod
     def _headers_to_metadata(headers: dict[str, str]) -> Metadata:
@@ -250,12 +279,19 @@ class SwiftTransfer(BaseTransfer[Config]):
         # PGHoard itself, this is only called by external apps that utilize PGHoard's object storage abstraction.
         raise NotImplementedError
 
-    def get_or_create_container(self, container_name: str) -> str:
+    def get_or_create_container(self, container_name: str, create_if_needed: bool = True) -> str:
         start_time = time.monotonic()
         try:
             self.conn.get_container(container_name, headers={}, limit=1)  # Limit 1 here to not traverse the entire folder
         except exceptions.ClientException as ex:
             if ex.http_status == 404:
+                if not create_if_needed:
+                    self.log.debug(
+                        "Will not create container: %r, check took: %.3fs",
+                        container_name,
+                        time.monotonic() - start_time,
+                    )
+                    raise TransferObjectStoreMissingError()
                 self.conn.put_container(container_name, headers={})
                 self.log.debug(
                     "Created container: %r successfully, took: %.3fs",

@@ -66,19 +66,23 @@ def get_transfer_model(storage_config: Config) -> StorageModel:
     return storage_class.config_model(**storage_config)
 
 
-def get_transfer(storage_config: Config) -> BaseTransfer[Any]:
+def get_transfer(storage_config: Config, ensure_object_store_available: bool = True) -> BaseTransfer[Any]:
     storage_config = storage_config.copy()
     notifier_config = storage_config.pop("notifier", None)
     notifier = None
     if notifier_config is not None:
         notifier = get_notifier(notifier_config)
     model = get_transfer_model(storage_config)
-    return get_transfer_from_model(model, notifier)
+    return get_transfer_from_model(model, notifier, ensure_object_store_available=ensure_object_store_available)
 
 
-def get_transfer_from_model(model: StorageModelT, notifier: Optional[Notifier] = None) -> BaseTransfer[StorageModelT]:
+def get_transfer_from_model(
+    model: StorageModelT,
+    notifier: Optional[Notifier] = None,
+    ensure_object_store_available: bool = True,
+) -> BaseTransfer[StorageModelT]:
     storage_class = get_class_for_storage_driver(model.storage_type)
-    return storage_class.from_model(model, notifier)
+    return storage_class.from_model(model, notifier, ensure_object_store_available=ensure_object_store_available)
 
 
 def _to_storage_driver(storage_type: str) -> StorageDriver:

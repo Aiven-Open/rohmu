@@ -8,7 +8,14 @@ from __future__ import annotations
 from azure.core.exceptions import HttpResponseError, ResourceExistsError
 from azure.storage.blob import BlobServiceClient, ContentSettings
 from rohmu.common.statsd import StatsdConfig
-from rohmu.errors import FileNotFoundFromStorageError, InvalidConfigurationError, StorageError
+from rohmu.errors import (
+    FileNotFoundFromStorageError,
+    InvalidConfigurationError,
+    StorageError,
+    TransferObjectStoreInitializationError,
+    TransferObjectStoreMissingError,
+    TransferObjectStorePermissionError,
+)
 from rohmu.notifier.interface import Notifier
 from rohmu.object_storage.base import (
     BaseTransfer,
@@ -61,15 +68,21 @@ class AzureTransfer(BaseTransfer[Config]):
         proxy_info: Optional[dict[str, Union[str, int]]] = None,
         notifier: Optional[Notifier] = None,
         statsd_info: Optional[StatsdConfig] = None,
+        ensure_object_store_available: bool = True,
     ) -> None:
         prefix = prefix.lstrip("/") if prefix else ""
-        super().__init__(prefix=prefix, notifier=notifier, statsd_info=statsd_info)
+        super().__init__(
+            prefix=prefix,
+            notifier=notifier,
+            statsd_info=statsd_info,
+            ensure_object_store_available=ensure_object_store_available,
+        )
         if not account_key and not sas_token:
             raise InvalidConfigurationError("One of account_key or sas_token must be specified to authenticate")
 
         self.account_name = account_name
         self.account_key = account_key
-        self.container_name = bucket_name
+        self.container = self.container_name = bucket_name
         self.sas_token = sas_token
         self._conn_str = self.conn_string(
             account_name=account_name,
@@ -95,8 +108,33 @@ class AzureTransfer(BaseTransfer[Config]):
                 schema = "http"
             self._config["proxies"] = {"https": f"{schema}://{auth}{proxy_host}:{proxy_port}"}
         self._blob_service_client: Optional[BlobServiceClient] = None
-        self.container = self.get_or_create_container(self.container_name)
+        if ensure_object_store_available:
+            self._create_object_store_if_needed_unwrapped()
         self.log.debug("AzureTransfer initialized, %r", self.container_name)
+
+    def _verify_object_storage_unwrapped(self) -> None:
+        self.get_or_create_container(self.container_name, create_if_needed=False)
+
+    def verify_object_storage(self) -> None:
+        try:
+            self._verify_object_storage_unwrapped()
+        except HttpResponseError as ex:
+            if ex.status_code == 403:
+                raise TransferObjectStorePermissionError() from ex
+            else:
+                raise TransferObjectStoreInitializationError() from ex
+
+    def _create_object_store_if_needed_unwrapped(self) -> None:
+        self.get_or_create_container(self.container_name, create_if_needed=True)
+
+    def create_object_store_if_needed(self) -> None:
+        try:
+            self._create_object_store_if_needed_unwrapped()
+        except HttpResponseError as ex:
+            if ex.status_code == 403:
+                raise TransferObjectStorePermissionError() from ex
+            else:
+                raise TransferObjectStoreInitializationError() from ex
 
     def get_blob_service_client(self) -> BlobServiceClient:
         if self._blob_service_client is None:
@@ -411,21 +449,38 @@ class AzureTransfer(BaseTransfer[Config]):
                 else:
                     delattr(fd, "tell")
 
-    def get_or_create_container(self, container_name: str) -> str:
+    def get_or_create_container(self, container_name: str, create_if_needed: bool = True) -> str:
         if isinstance(container_name, enum.Enum):
             # ensure that the enum value is used rather than the enum name
             # https://github.com/Azure/azure-sdk-for-python/blob/azure-storage-blob_12.8.1/sdk/storage/azure-storage-blob/azure/storage/blob/_blob_service_client.py#L667
             container_name = container_name.value
         start_time = time.monotonic()
-        try:
-            self.get_blob_service_client().create_container(container_name)
-        except ResourceExistsError:
-            pass
-        except HttpResponseError as e:
-            if "request is not authorized" in e.exc_msg:
-                self.log.debug("Container creation unauthorized. Assuming container %r already exists", container_name)
-                return container_name
-            else:
-                raise e
+        if create_if_needed:
+            try:
+                self.get_blob_service_client().create_container(container_name)
+            except ResourceExistsError:
+                pass
+            except HttpResponseError as e:
+                if "request is not authorized" in e.exc_msg:
+                    # Corresponds to a 403/AuthorizationFailure
+                    self.log.debug("Container creation unauthorized. Assuming container %r already exists", container_name)
+                    return container_name
+                else:
+                    raise e
+        else:
+            try:
+                container_exists = self.get_blob_service_client().get_container_client(container_name).exists()
+            except HttpResponseError as e:
+                if e.status_code == 403:
+                    # We have to handle 403/AuthorizationFailure gracefully as container-scoped SAS tokens might have
+                    # all permissions inside the container but won't have permissions on the container itself and we cannot
+                    # assume we'd have an account-scoped SAS token or account key here
+                    self.log.debug("Container metadata unauthorized. Assuming container %r already exists", container_name)
+                    return container_name
+                raise
+            if not container_exists:
+                self.log.debug("Container %r does not exist, creation not requested", container_name)
+                raise TransferObjectStoreMissingError()
+            self.log.debug("Container %r already exists", container_name)
         self.log.debug("Got/Created container: %r successfully, took: %.3fs", container_name, time.monotonic() - start_time)
         return container_name

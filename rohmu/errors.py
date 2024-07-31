@@ -19,6 +19,18 @@ class InvalidConfigurationError(Error):
     """Invalid configuration"""
 
 
+class TransferObjectStoreInitializationError(Error):
+    """Raised when a transient network or permission issue does not allow us to validate access to the object store"""
+
+
+class TransferObjectStorePermissionError(TransferObjectStoreInitializationError):
+    """Raised when a permission issue does not allow us to validate access to the object store"""
+
+
+class TransferObjectStoreMissingError(TransferObjectStoreInitializationError):
+    """Raised when we know for sure the bucket is missing"""
+
+
 class LocalFileIsRemoteFileError(StorageError):
     """File transfer operation source and destination point to the same file"""
 
