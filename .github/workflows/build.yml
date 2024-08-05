@@ -19,6 +19,9 @@ jobs:
       matrix:
         # only use one version for the lint step
         python-version: ["3.11"]
+        fedora-version: ["38"]
+     container:
+       image: fedora:${{ matrix.fedora-version }}
 
     steps:
 
@@ -60,6 +63,9 @@ jobs:
       max-parallel: 4
       matrix:
         python-version: ["3.12", "3.11", "3.10", "3.9", "3.8"]
+        fedora-version: ["38"]
+     container:
+       image: fedora:${{ matrix.fedora-version }}
 
     steps:
       - id: checkout-code
