@@ -135,7 +135,9 @@ class SafeTransfer(BaseTransfer[StorageModel]):
         return super().__getattribute__(attr)
 
     @classmethod
-    def from_model(cls, model: StorageModel, notifier: Optional[Notifier] = None) -> Self:
+    def from_model(
+        cls, model: StorageModel, notifier: Optional[Notifier] = None, ensure_object_store_available: bool = True
+    ) -> Self:
         raise InvalidTransferError("You should not call class methods on SafeTransfer instances")
 
     def return_to_pool(self) -> None:

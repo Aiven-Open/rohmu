@@ -50,10 +50,28 @@ class LocalTransfer(BaseTransfer[Config]):
         prefix: Optional[str] = None,
         notifier: Optional[Notifier] = None,
         statsd_info: Optional[StatsdConfig] = None,
+        ensure_object_store_available: bool = True,
     ) -> None:
         prefix = os.path.join(directory, (prefix or "").strip("/"))
-        super().__init__(prefix=prefix, notifier=notifier, statsd_info=statsd_info)
+        super().__init__(
+            prefix=prefix,
+            notifier=notifier,
+            statsd_info=statsd_info,
+            ensure_object_store_available=ensure_object_store_available,
+        )
         self.log.debug("LocalTransfer initialized")
+
+    def _verify_object_storage_unwrapped(self) -> None:
+        """No-op as there's no need to check for the existence of the directory at setup time."""
+
+    def verify_object_storage(self) -> None:
+        """No-op as there's no need to check for the existence of the directory at setup time."""
+
+    def _create_object_store_if_needed_unwrapped(self) -> None:
+        """No-op as there's no need to create the directory ahead of time."""
+
+    def create_object_store_if_needed(self) -> None:
+        """No-op as there's no need to create the directory ahead of time."""
 
     def copy_file(
         self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **_kwargs: Any

@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from googleapiclient.discovery import build, Resource
+from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import (
     build_http,
@@ -22,7 +22,14 @@ from oauth2client import GOOGLE_TOKEN_URI
 from oauth2client.client import GoogleCredentials
 from rohmu.common.models import StorageOperation
 from rohmu.common.statsd import StatsClient, StatsdConfig
-from rohmu.errors import FileNotFoundFromStorageError, InvalidByteRangeError, InvalidConfigurationError
+from rohmu.errors import (
+    FileNotFoundFromStorageError,
+    InvalidByteRangeError,
+    InvalidConfigurationError,
+    TransferObjectStoreInitializationError,
+    TransferObjectStoreMissingError,
+    TransferObjectStorePermissionError,
+)
 from rohmu.notifier.interface import Notifier
 from rohmu.object_storage.base import (
     BaseTransfer,
@@ -40,7 +47,21 @@ from rohmu.object_storage.config import (
 )
 from rohmu.typing import AnyPath, Metadata
 from rohmu.util import get_total_size_from_content_range
-from typing import Any, BinaryIO, Callable, cast, Collection, Iterable, Iterator, Optional, TextIO, Tuple, TypeVar, Union
+from typing import (
+    Any,
+    BinaryIO,
+    Callable,
+    cast,
+    Collection,
+    Iterable,
+    Iterator,
+    Optional,
+    TextIO,
+    Tuple,
+    TYPE_CHECKING,
+    TypeVar,
+    Union,
+)
 from typing_extensions import Protocol
 
 import codecs
@@ -80,6 +101,9 @@ except ImportError:
             scopes=scopes,
         )
 
+
+if TYPE_CHECKING:
+    from googleapiclient._apis.storage.v1 import StorageResource
 
 # Silence Google API client verbose spamming
 logging.getLogger("googleapiclient.discovery_cache").setLevel(logging.ERROR)
@@ -182,25 +206,37 @@ class GoogleTransfer(BaseTransfer[Config]):
         proxy_info: Optional[dict[str, Union[str, int]]] = None,
         notifier: Optional[Notifier] = None,
         statsd_info: Optional[StatsdConfig] = None,
+        ensure_object_store_available: bool = True,
     ) -> None:
-        super().__init__(prefix=prefix, notifier=notifier, statsd_info=statsd_info)
+        super().__init__(
+            prefix=prefix,
+            notifier=notifier,
+            statsd_info=statsd_info,
+            ensure_object_store_available=ensure_object_store_available,
+        )
         self.project_id = project_id
         self.proxy_info = proxy_info
         self.google_creds = get_credentials(credential_file=credential_file, credentials=credentials)
-        self.gs: Optional[Resource] = self._init_google_client()
-        self.gs_object_client: Any = None
-        self.bucket_name = self.get_or_create_bucket(bucket_name)
+        self.gs: Optional[StorageResource] = self._init_google_client()
+        self.gs_object_client: Optional[StorageResource.ObjectsResource] = None
+        self.gs_bucket_client: Optional[StorageResource.BucketsResource] = None
+        self.bucket_name = bucket_name
+        if ensure_object_store_available:
+            self._create_object_store_if_needed_unwrapped()
         self.log.debug("GoogleTransfer initialized")
 
     def close(self) -> None:
         if self.gs_object_client is not None:
             self.gs_object_client.close()
             self.gs_object_client = None
+        if self.gs_bucket_client is not None:
+            self.gs_bucket_client.close()
+            self.gs_bucket_client = None
         if self.gs is not None:
             self.gs.close()
             self.gs = None
 
-    def _init_google_client(self) -> Resource:
+    def _init_google_client(self) -> StorageResource:
         start_time = time.monotonic()
         delay = 2
         while True:
@@ -242,7 +278,7 @@ class GoogleTransfer(BaseTransfer[Config]):
             if self.gs is None:
                 self.gs = self._init_google_client()
             # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.objects.html
-            self.gs_object_client = self.gs.objects()  # type: ignore[attr-defined]
+            self.gs_object_client = self.gs.objects()
         try:
             yield self.gs_object_client
         except HttpError as ex:
@@ -253,6 +289,20 @@ class GoogleTransfer(BaseTransfer[Config]):
                 self.gs = None
                 self.gs_object_client = None
             raise
+
+    @contextmanager
+    def _bucket_client(self) -> Iterator[Any]:
+        """
+        (Re-)initialize object client lazily if required.
+        There is no reset logic for the buckets client (as opposed to the object client) as that's not strictly needed
+        since it's only used once at setup.
+        """
+        if self.gs_bucket_client is None:
+            if self.gs is None:
+                self.gs = self._init_google_client()
+            # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.objects.html
+            self.gs_bucket_client = self.gs.buckets()
+        yield self.gs_bucket_client
 
     def _retry_on_reset(self, request: HttpRequest, action: Callable[[], ResType], retry_reporter: Reporter) -> ResType:
         retries = 60
@@ -586,7 +636,40 @@ class GoogleTransfer(BaseTransfer[Config]):
         )
         self.notifier.object_created(key=key, size=int(result["size"]), metadata=sanitized_metadata)
 
-    def get_or_create_bucket(self, bucket_name: str) -> str:
+    def _verify_object_storage_unwrapped(self) -> None:
+        """Look up the bucket to see if it already exists or raise TransferObjectStoreMissingError if not."""
+        start_time = time.time()
+        with self._bucket_client() as gs_buckets:
+            try:
+                self._try_get_bucket(gs_buckets)
+                self.log.debug("Bucket: %r already exists, took: %.3fs", self.bucket_name, time.time() - start_time)
+            except HttpError as ex:
+                if ex.resp["status"] == "404":
+                    raise TransferObjectStoreMissingError()
+                elif ex.resp["status"] == "403":
+                    raise InvalidConfigurationError(f"Bucket {repr(self.bucket_name)} exists but isn't accessible")
+                else:
+                    raise
+
+    def _try_get_bucket(self, gs_buckets: StorageResource.BucketsResource) -> None:
+        """Useful for mocking in tests"""
+        request = gs_buckets.get(bucket=self.bucket_name)
+        reporter = Reporter(StorageOperation.head_request)
+        self._retry_on_reset(request, request.execute, retry_reporter=reporter)
+        reporter.report(self.stats)
+
+    def verify_object_storage(self) -> None:
+        try:
+            self._verify_object_storage_unwrapped()
+        except InvalidConfigurationError as ex:
+            # The only reason we'd raise this exception is if we caught a 403 and raised this exception for the older apps
+            # In this method, we can raise a "proper" exception for permission errors
+            raise TransferObjectStorePermissionError() from ex
+        except HttpError as ex:
+            # Wrap implementation-specific exceptions with rohmu's
+            raise TransferObjectStoreInitializationError() from ex
+
+    def _create_object_store_if_needed_unwrapped(self) -> None:
         """Look up the bucket if it already exists and try to create the
         bucket in case it doesn't.  Note that we can't just always try to
         unconditionally create the bucket as Google imposes a strict rate
@@ -598,41 +681,52 @@ class GoogleTransfer(BaseTransfer[Config]):
         invalid bucket names ("Invalid bucket name") as well as for invalid
         project ("Invalid argument"), try to handle both gracefully."""
         start_time = time.time()
-        gs_buckets = self.gs.buckets()  # type: ignore[union-attr]
         try:
-            request = gs_buckets.get(bucket=bucket_name)
-            reporter = Reporter(StorageOperation.head_request)
-            self._retry_on_reset(request, request.execute, retry_reporter=reporter)
-            reporter.report(self.stats)
-            self.log.debug("Bucket: %r already exists, took: %.3fs", bucket_name, time.time() - start_time)
-        except HttpError as ex:
-            if ex.resp["status"] == "404":
-                pass  # we need to create it
-            elif ex.resp["status"] == "403":
-                raise InvalidConfigurationError(f"Bucket {repr(bucket_name)} exists but isn't accessible")
-            else:
-                raise
+            self._verify_object_storage_unwrapped()
+        except TransferObjectStoreMissingError:
+            pass  # We only continue with creation in case the bucket does not exist
         else:
-            return bucket_name
+            return
+        with self._bucket_client() as gs_buckets:
+            try:
+                self._try_create_bucket(gs_buckets)
+                self.log.debug("Created bucket: %r successfully, took: %.3fs", self.bucket_name, time.time() - start_time)
+            except HttpError as ex:
+                error = json.loads(ex.content.decode("utf-8"))["error"]
+                if error["message"].startswith("You already own this bucket"):
+                    self.log.debug("Bucket: %r already exists, took: %.3fs", self.bucket_name, time.time() - start_time)
+                elif error["message"] == "Invalid argument.":
+                    raise InvalidConfigurationError(f"Invalid project id {repr(self.project_id)}")
+                elif error["message"].startswith("Invalid bucket name"):
+                    raise InvalidConfigurationError(f"Invalid bucket name {repr(self.bucket_name)}")
+                else:
+                    raise
 
+    def _try_create_bucket(self, gs_buckets: StorageResource.BucketsResource) -> None:
+        """Useful for mocking in tests"""
+        req = gs_buckets.insert(project=self.project_id, body={"name": self.bucket_name})
+        reporter = Reporter(StorageOperation.create_bucket)
+        self._retry_on_reset(req, req.execute, retry_reporter=reporter)
+        reporter.report(self.stats)
+
+    def create_object_store_if_needed(self) -> None:
         try:
-            req = gs_buckets.insert(project=self.project_id, body={"name": bucket_name})
-            reporter = Reporter(StorageOperation.create_bucket)
-            self._retry_on_reset(req, req.execute, retry_reporter=reporter)
-            reporter.report(self.stats)
-            self.log.debug("Created bucket: %r successfully, took: %.3fs", bucket_name, time.time() - start_time)
+            self._create_object_store_if_needed_unwrapped()
         except HttpError as ex:
-            error = json.loads(ex.content.decode("utf-8"))["error"]
-            if error["message"].startswith("You already own this bucket"):
-                self.log.debug("Bucket: %r already exists, took: %.3fs", bucket_name, time.time() - start_time)
-            elif error["message"] == "Invalid argument.":
-                raise InvalidConfigurationError(f"Invalid project id {repr(self.project_id)}")
-            elif error["message"].startswith("Invalid bucket name"):
-                raise InvalidConfigurationError(f"Invalid bucket name {repr(bucket_name)}")
+            if ex.resp["status"] == "403":
+                # Translate 403 errors to the proper exception
+                raise TransferObjectStorePermissionError() from ex
             else:
-                raise
+                # Other special cases involving invalid input are already handled
+                # Wrap implementation-specific exceptions with rohmu's
+                raise TransferObjectStoreInitializationError() from ex
 
-        return bucket_name
+    def get_or_create_bucket(self, bucket_name: str) -> str:
+        """Deprecated: use create_object_store_if_needed() instead"""
+        if self.bucket_name != bucket_name:
+            raise ValueError("This method is not meant to be used with a different bucket name than the one configured")
+        self._verify_object_storage_unwrapped()
+        return self.bucket_name
 
 
 class MediaStreamUpload(MediaUpload):
