@@ -3,23 +3,27 @@ from __future__ import annotations
 
 from contextlib import ExitStack
 from datetime import datetime, timezone
+from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaUploadProgress
 from io import BytesIO
+from rohmu import InvalidConfigurationError
 from rohmu.common.models import StorageOperation
-from rohmu.errors import InvalidByteRangeError
+from rohmu.errors import InvalidByteRangeError, TransferObjectStoreMissingError, TransferObjectStorePermissionError
 from rohmu.object_storage.base import IterKeyItem
 from rohmu.object_storage.google import GoogleTransfer, MediaIoBaseDownloadWithByteRange, Reporter
 from tempfile import NamedTemporaryFile
 from unittest.mock import ANY, call, MagicMock, Mock, patch
 
 import base64
+import googleapiclient.errors
+import httplib2
 import pytest
 
 
 def test_close() -> None:
     with ExitStack() as stack:
         stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
-        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer.get_or_create_bucket"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
         mock_gs = Mock()
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._init_google_client", return_value=mock_gs))
         transfer = GoogleTransfer(
@@ -36,11 +40,94 @@ def test_close() -> None:
         assert transfer.gs is None
 
 
+def _mock_403_response_from_google_api() -> Exception:
+    resp = httplib2.Response({"status": "403", "reason": "Unused"})
+    uri = "https://storage.googleapis.com/storage/v1/b?project=project&alt=json"
+    content = (
+        b'{\n  "error": {\n    "code": 403,\n    "message": "account@project.iam.gserviceaccount.com does not have stor'
+        b"age.buckets.create access to the Google Cloud project. Permission 'storage.buckets.create' denied on resource "
+        b'(or it may not exist).",\n    "errors": [\n      {\n        "message": "account@project.iam.gserviceaccount.com '
+        b"does not have storage.buckets.create access to the Google Cloud project. Permission 'storage.buckets.create' "
+        b'denied on resource (or it may not exist).",\n        "domain": "global",\n        "reason": "forbidden"'
+        b"\n      }\n    ]\n  }\n}\n"
+    )
+    return googleapiclient.errors.HttpError(resp, content, uri)
+
+
+def _mock_404_response_from_google_api() -> Exception:
+    resp = httplib2.Response({"status": "404", "reason": "Unused"})
+    uri = "https://storage.googleapis.com/storage/v1/b?project=project&alt=json"
+    content = b"""{"error": {"code": 404, "message": "Does not matter"}}"""
+    return googleapiclient.errors.HttpError(resp, content, uri)
+
+
+@pytest.mark.parametrize(
+    "ensure_object_store_available,bucket_exists,sabotage_create,expect_create_call",
+    [
+        # Happy path
+        pytest.param(True, True, False, False, id="happy-path-exists"),
+        pytest.param(True, False, False, True, id="happy-path-not-exists"),
+        # Happy path - without attempting to create buckets
+        pytest.param(False, True, False, False, id="no-create-exists"),
+        pytest.param(False, False, False, False, id="no-create-not-exists"),
+        # 403 failures when trying to create should not matter with ensure_object_store_available=False
+        pytest.param(False, False, True, False, id="error-behaviour"),
+        # 403 failures when trying to create should crash with ensure_object_store_available=False
+        pytest.param(True, False, True, True, id="graceful-403-handling"),
+    ],
+)
+def test_handle_missing_bucket(
+    ensure_object_store_available: bool, bucket_exists: bool, sabotage_create: bool, expect_create_call: bool
+) -> None:
+    """
+    As part of having nicer exception handling for bucket initialization, we need to make sure the behaviour is unchanged
+    when the backwards-compatibility-flag ensure_object_store_available is set.
+    """
+    # Sanity check: We expect a call to the create function when in "legacy mode" and the bucket is missing
+    assert expect_create_call == (ensure_object_store_available and not bucket_exists)
+
+    with ExitStack() as stack:
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
+
+        _try_get_bucket = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._try_get_bucket"))
+        if not bucket_exists:
+            # If the bucket exists, the return value is ignored. This simulates a missing bucket.
+            _try_get_bucket.side_effect = _mock_404_response_from_google_api()
+
+        _try_create_bucket = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._try_create_bucket"))
+        if sabotage_create:
+            _try_create_bucket.side_effect = _mock_403_response_from_google_api()
+
+        if expect_create_call and sabotage_create:
+            with pytest.raises(googleapiclient.errors.HttpError):
+                _ = GoogleTransfer(
+                    project_id="test-project-id",
+                    bucket_name="test-bucket",
+                    ensure_object_store_available=ensure_object_store_available,
+                )
+        else:
+            GoogleTransfer(
+                project_id="test-project-id",
+                bucket_name="test-bucket",
+                ensure_object_store_available=ensure_object_store_available,
+            )
+
+        if ensure_object_store_available:
+            _try_get_bucket.assert_called_once()
+        else:
+            _try_get_bucket.assert_not_called()
+
+        if expect_create_call:
+            _try_create_bucket.assert_called_once()
+        else:
+            _try_create_bucket.assert_not_called()
+
+
 def test_store_file_from_memory() -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
         stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
-        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer.get_or_create_bucket"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
         upload = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._upload"))
         transfer = GoogleTransfer(
             project_id="test-project-id",
@@ -62,7 +149,7 @@ def test_store_file_from_disk() -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
         stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
-        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer.get_or_create_bucket"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
         upload = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._upload"))
 
         transfer = GoogleTransfer(
@@ -88,7 +175,7 @@ def test_store_file_object() -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
         stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
-        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer.get_or_create_bucket"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
         upload = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._upload"))
         transfer = GoogleTransfer(
             project_id="test-project-id",
@@ -113,7 +200,7 @@ def test_upload_size_unknown_to_reporter() -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
         stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
-        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer.get_or_create_bucket"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
         mock_retry = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._retry_on_reset"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._object_client"))
         mock_operation = stack.enter_context(patch("rohmu.common.statsd.StatsClient.operation"))
@@ -152,7 +239,7 @@ def test_get_contents_to_fileobj_raises_error_on_invalid_byte_range() -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
         stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
-        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer.get_or_create_bucket"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
         transfer = GoogleTransfer(
             project_id="test-project-id",
             bucket_name="test-bucket",
@@ -238,7 +325,7 @@ def test_object_listed_when_missing_md5hash_size_and_updated() -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
         stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
-        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer.get_or_create_bucket"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
         mock_operation = stack.enter_context(patch("rohmu.common.statsd.StatsClient.operation"))
         transfer = GoogleTransfer(
             project_id="test-project-id",
@@ -311,3 +398,57 @@ def test_object_listed_when_missing_md5hash_size_and_updated() -> None:
         ]
         assert len(got) == len(expected)
         assert got == expected
+
+
+def test_error_handling() -> None:
+    with patch("rohmu.object_storage.google.get_credentials"):
+        transfer = GoogleTransfer(
+            project_id="test-project-id",
+            bucket_name="test-bucket",
+            ensure_object_store_available=False,
+        )
+
+        with patch("rohmu.object_storage.google.GoogleTransfer._try_get_bucket") as _try_get_bucket:
+            # Unexpected exceptions bubble up
+            _try_get_bucket.side_effect = RuntimeError("Bad unexpected error")
+            with pytest.raises(RuntimeError, match="Bad unexpected error"):
+                transfer.verify_object_storage()
+
+            # Bucket not found is wrapped with our own exception
+            _try_get_bucket.side_effect = _mock_404_response_from_google_api()
+            with pytest.raises(TransferObjectStoreMissingError):
+                transfer.verify_object_storage()
+
+            # Permission error when checking for bucket existence is also our own exception...
+            _try_get_bucket.side_effect = _mock_403_response_from_google_api()
+            with pytest.raises(TransferObjectStorePermissionError):
+                transfer.verify_object_storage()
+
+        with ExitStack() as stack:
+            _try_get_bucket = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._try_get_bucket"))
+            _try_create_bucket = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._try_create_bucket"))
+            # ... and the legacy behaviour of raising InvalidConfigurationError should not regress
+            _try_get_bucket.side_effect = _mock_403_response_from_google_api()
+            with pytest.raises(InvalidConfigurationError):
+                transfer._create_object_store_if_needed_unwrapped()
+            _try_create_bucket.assert_not_called()
+
+        with ExitStack() as stack:
+            _try_get_bucket = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._try_get_bucket"))
+            _try_create_bucket = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._try_create_bucket"))
+            # Simulate a missing bucket to make it attempt to create
+            _try_get_bucket.side_effect = _mock_404_response_from_google_api()
+
+            # Unexpected exceptions bubble up
+            _try_create_bucket.side_effect = RuntimeError("Bad unexpected error")
+            with pytest.raises(RuntimeError, match="Bad unexpected error"):
+                transfer.create_object_store_if_needed()
+
+            # Permission errors when trying to create the bucket is wrapped with our own exception
+            _try_create_bucket.side_effect = _mock_403_response_from_google_api()
+            with pytest.raises(TransferObjectStorePermissionError):
+                transfer.create_object_store_if_needed()
+
+            # ... and the legacy behaviour of bubbling up should not regress
+            with pytest.raises(HttpError, match="403"):
+                transfer._create_object_store_if_needed_unwrapped()
