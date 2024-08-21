@@ -18,12 +18,12 @@ from rohmu.object_storage.base import (
     KEY_TYPE_OBJECT,
     KEY_TYPE_PREFIX,
     ProgressProportionCallbackType,
-    SourceStorageModelT,
 )
 from rohmu.object_storage.config import LOCAL_CHUNK_SIZE as CHUNK_SIZE, LocalObjectStorageConfig as Config
 from rohmu.typing import Metadata
 from rohmu.util import BinaryStreamsConcatenation, ProgressStream
-from typing import Any, BinaryIO, Collection, Iterator, Optional, TextIO, Tuple, Union
+from typing import Any, BinaryIO, Iterator, Optional, TextIO, Tuple, Union
+from typing_extensions import Self
 
 import contextlib
 import datetime
@@ -81,7 +81,13 @@ class LocalTransfer(BaseTransfer[Config]):
         )
 
     def _copy_file_from_bucket(
-        self, *, source_bucket: LocalTransfer, source_key: str, destination_key: str, metadata: Optional[Metadata] = None
+        self,
+        *,
+        source_bucket: Self,
+        source_key: str,
+        destination_key: str,
+        metadata: Optional[Metadata] = None,
+        timeout: float = 15.0,
     ) -> None:
         source_path = source_bucket.format_key_for_backend(source_key.strip("/"))
         destination_path = self.format_key_for_backend(destination_key.strip("/"))
@@ -96,13 +102,6 @@ class LocalTransfer(BaseTransfer[Config]):
             new_metadata.update(metadata)
             self._save_metadata(destination_path, new_metadata)
         self.notifier.object_copied(key=destination_key, size=os.path.getsize(destination_path), metadata=metadata)
-
-    def copy_files_from(self, *, source: BaseTransfer[SourceStorageModelT], keys: Collection[str]) -> None:
-        if isinstance(source, LocalTransfer):
-            for key in keys:
-                self._copy_file_from_bucket(source_bucket=source, source_key=key, destination_key=key)
-        else:
-            raise NotImplementedError
 
     def _get_metadata_for_key(self, key: str) -> Metadata:
         source_path = self.format_key_for_backend(key.strip("/"))

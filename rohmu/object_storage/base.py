@@ -203,6 +203,21 @@ class BaseTransfer(Generic[StorageModelT]):
         raise NotImplementedError
 
     def copy_files_from(self, *, source: BaseTransfer[SourceStorageModelT], keys: Collection[str]) -> None:
+        if isinstance(source, self.__class__):
+            for key in keys:
+                self._copy_file_from_bucket(source_bucket=source, source_key=key, destination_key=key, timeout=15)
+        else:
+            raise NotImplementedError
+
+    def _copy_file_from_bucket(
+        self,
+        *,
+        source_bucket: Self,
+        source_key: str,
+        destination_key: str,
+        metadata: Optional[Metadata] = None,
+        timeout: float = 15.0,
+    ) -> None:
         raise NotImplementedError
 
     def format_key_for_backend(self, key: str, remove_slash_prefix: bool = False, trailing_slash: bool = False) -> str:

@@ -38,7 +38,6 @@ from rohmu.object_storage.base import (
     KEY_TYPE_OBJECT,
     KEY_TYPE_PREFIX,
     ProgressProportionCallbackType,
-    SourceStorageModelT,
 )
 from rohmu.object_storage.config import (
     GOOGLE_DOWNLOAD_CHUNK_SIZE as DOWNLOAD_CHUNK_SIZE,
@@ -52,7 +51,6 @@ from typing import (
     BinaryIO,
     Callable,
     cast,
-    Collection,
     Iterable,
     Iterator,
     Optional,
@@ -62,7 +60,7 @@ from typing import (
     TypeVar,
     Union,
 )
-from typing_extensions import Protocol
+from typing_extensions import Protocol, Self
 
 import codecs
 import dataclasses
@@ -349,7 +347,13 @@ class GoogleTransfer(BaseTransfer[Config]):
         )
 
     def _copy_file_from_bucket(
-        self, *, source_bucket: GoogleTransfer, source_key: str, destination_key: str, metadata: Optional[Metadata] = None
+        self,
+        *,
+        source_bucket: Self,
+        source_key: str,
+        destination_key: str,
+        metadata: Optional[Metadata] = None,
+        timeout: float = 15.0,
     ) -> None:
         source_object = source_bucket.format_key_for_backend(source_key)
         destination_object = self.format_key_for_backend(destination_key)
@@ -373,13 +377,6 @@ class GoogleTransfer(BaseTransfer[Config]):
                 reporter.size = size
                 self.notifier.object_copied(key=destination_key, size=size, metadata=metadata)
             reporter.report(self.stats)
-
-    def copy_files_from(self, *, source: BaseTransfer[SourceStorageModelT], keys: Collection[str]) -> None:
-        if isinstance(source, GoogleTransfer):
-            for key in keys:
-                self._copy_file_from_bucket(source_bucket=source, source_key=key, destination_key=key)
-        else:
-            raise NotImplementedError
 
     def get_metadata_for_key(self, key: str) -> Metadata:
         path = self.format_key_for_backend(key)
