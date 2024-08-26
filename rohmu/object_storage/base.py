@@ -56,6 +56,10 @@ ProgressProportionCallbackType = Optional[Callable[[int, int], None]]
 IncrementalProgressCallbackType = Optional[Callable[[int], None]]
 
 
+class ObjectTransferProgressCallback(Protocol):
+    def __call__(self, files_completed: int, total_files: int) -> None: ...
+
+
 @dataclass(frozen=True, unsafe_hash=True)
 class ConcurrentUpload:
     backend: str
@@ -202,10 +206,19 @@ class BaseTransfer(Generic[StorageModelT]):
         cannot be copied with this method. If no metadata is given copies the existing metadata."""
         raise NotImplementedError
 
-    def copy_files_from(self, *, source: BaseTransfer[SourceStorageModelT], keys: Collection[str]) -> None:
+    def copy_files_from(
+        self,
+        *,
+        source: BaseTransfer[Any],
+        keys: Collection[str],
+        progress_fn: ObjectTransferProgressCallback | None = None,
+    ) -> None:
         if isinstance(source, self.__class__):
-            for key in keys:
+            total_files = len(keys)
+            for index, key in enumerate(keys):
                 self._copy_file_from_bucket(source_bucket=source, source_key=key, destination_key=key, timeout=15)
+                if progress_fn is not None:
+                    progress_fn(index + 1, total_files)
         else:
             raise NotImplementedError
 
