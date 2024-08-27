@@ -24,7 +24,6 @@ from rohmu.object_storage.base import (
     KEY_TYPE_OBJECT,
     KEY_TYPE_PREFIX,
     ProgressProportionCallbackType,
-    SourceStorageModelT,
 )
 from rohmu.object_storage.config import (  # noqa: F401
     AZURE_ENDPOINT_SUFFIXES as ENDPOINT_SUFFIXES,
@@ -33,7 +32,8 @@ from rohmu.object_storage.config import (  # noqa: F401
     calculate_azure_max_block_size as calculate_max_block_size,
 )
 from rohmu.typing import Metadata
-from typing import Any, BinaryIO, Collection, Iterator, Optional, Tuple, Union
+from typing import Any, BinaryIO, Iterator, Optional, Tuple, Union
+from typing_extensions import Self
 
 import azure.common
 import enum
@@ -182,7 +182,8 @@ class AzureTransfer(BaseTransfer[Config]):
 
     def _copy_file_from_bucket(
         self,
-        source_bucket: AzureTransfer,
+        *,
+        source_bucket: Self,
         source_key: str,
         destination_key: str,
         metadata: Optional[Metadata] = None,
@@ -227,13 +228,6 @@ class AzureTransfer(BaseTransfer[Config]):
                 raise StorageError(
                     f"Copying {repr(source_key)} to {repr(destination_key)} failed, unexpected status: {copy_props.status}"
                 )
-
-    def copy_files_from(self, *, source: BaseTransfer[SourceStorageModelT], keys: Collection[str]) -> None:
-        if isinstance(source, AzureTransfer):
-            for key in keys:
-                self._copy_file_from_bucket(source_bucket=source, source_key=key, destination_key=key, timeout=15)
-        else:
-            raise NotImplementedError
 
     def get_metadata_for_key(self, key: str) -> Metadata:
         path = self.format_key_for_backend(key, remove_slash_prefix=True, trailing_slash=False)

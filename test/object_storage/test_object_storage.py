@@ -4,6 +4,8 @@ from pathlib import Path
 from rohmu import errors
 from rohmu.object_storage.local import LocalTransfer
 from typing import Any
+from unittest import mock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -69,18 +71,26 @@ def test_copy(transfer_type: str, request: Any) -> None:
     assert transfer.get_contents_to_string("dummy_copy_metadata") == (DUMMY_CONTENT, {"new_k": "new_v"})
 
 
-def test_copy_local_files_from(tmp_path: Path) -> None:
+@pytest.mark.parametrize("with_progress_fn", [False, True])
+def test_copy_local_files_from(tmp_path: Path, with_progress_fn: bool) -> None:
     source = LocalTransfer(tmp_path / "source", prefix="s-prefix")
     destination = LocalTransfer(tmp_path / "destination", prefix="d-prefix")
+    mock_progress_fn = MagicMock(return_value=None)
 
     source.store_file_from_memory("some/a/key.ext", b"content_a", metadata={"info": "aaa"})
     source.store_file_from_memory("some/b/key.ext", b"content_b", metadata={"info": "bbb"})
+    source.store_file_from_memory("some/c/key.ext", b"content_c", metadata={"info": "ccc"})
     destination.copy_files_from(
         source=source,
-        keys=["some/a/key.ext", "some/b/key.ext"],
+        keys=["some/a/key.ext", "some/b/key.ext", "some/c/key.ext"],
+        progress_fn=mock_progress_fn if with_progress_fn else None,
     )
+
     assert destination.get_contents_to_string("some/a/key.ext") == (b"content_a", {"info": "aaa", "Content-Length": "9"})
     assert destination.get_contents_to_string("some/b/key.ext") == (b"content_b", {"info": "bbb", "Content-Length": "9"})
+    assert destination.get_contents_to_string("some/c/key.ext") == (b"content_c", {"info": "ccc", "Content-Length": "9"})
+    if with_progress_fn:
+        assert mock_progress_fn.call_args_list == [mock.call(1, 3), mock.call(2, 3), mock.call(3, 3)]
 
 
 @pytest.mark.parametrize("transfer_type", ["local_transfer"])
