@@ -7,8 +7,9 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
+from googleapiclient.errors import BatchError, HttpError
 from googleapiclient.http import (
+    BatchHttpRequest,
     build_http,
     HttpRequest,
     MediaDownloadProgress,
@@ -45,12 +46,13 @@ from rohmu.object_storage.config import (
     GoogleObjectStorageConfig as Config,
 )
 from rohmu.typing import AnyPath, Metadata
-from rohmu.util import get_total_size_from_content_range
+from rohmu.util import batched, get_total_size_from_content_range
 from typing import (
     Any,
     BinaryIO,
     Callable,
     cast,
+    Collection,
     Iterable,
     Iterator,
     Optional,
@@ -302,13 +304,15 @@ class GoogleTransfer(BaseTransfer[Config]):
             self.gs_bucket_client = self.gs.buckets()
         yield self.gs_bucket_client
 
-    def _retry_on_reset(self, request: HttpRequest, action: Callable[[], ResType], retry_reporter: Reporter) -> ResType:
+    def _retry_on_reset(
+        self, request: HttpRequest | BatchHttpRequest, action: Callable[[], ResType], retry_reporter: Reporter
+    ) -> ResType:
         retries = 60
         retry_wait = 2.0
         while True:
             try:
                 return action()
-            except (IncompleteRead, HttpError, ssl.SSLEOFError, socket.timeout, OSError, socket.gaierror) as ex:
+            except (IncompleteRead, HttpError, BatchError, ssl.SSLEOFError, socket.timeout, OSError, socket.gaierror) as ex:
                 # Note that socket.timeout and ssl.SSLEOFError inherit from OSError
                 # and the order of handling the errors here needs to be correct
                 if not retries:
@@ -326,6 +330,9 @@ class GoogleTransfer(BaseTransfer[Config]):
                     raise
                 # getaddrinfo sometimes fails with "Name or service not known"
                 elif isinstance(ex, socket.gaierror) and ex.errno != socket.EAI_NONAME:
+                    raise
+                # batch request or response has a wrong format
+                elif isinstance(ex, BatchError):
                     raise
 
                 self.log.warning("%s failed: %s (%s), retrying in %.2fs", action, ex.__class__.__name__, ex, retry_wait)
@@ -462,6 +469,34 @@ class GoogleTransfer(BaseTransfer[Config]):
             self._retry_on_reset(req, req.execute, retry_reporter=reporter)
             reporter.report(self.stats)
             self.notifier.object_deleted(key)
+
+    def delete_keys(self, keys: Collection[str]) -> None:
+        self.log.debug("Deleting %i keys", len(keys))
+        reporter = Reporter(StorageOperation.delete_key)
+        with self._object_client() as object_resource:
+            for keys_batch in batched(keys, 1000):  # Cannot delete more than 1000 objects at a time
+                assert self.gs is not None
+                batch_request = self.gs.new_batch_http_request(callback=self._delete_keys_callback)
+                for key in keys_batch:
+                    path = self.format_key_for_backend(key)
+                    self.log.debug("Deleting key: %r", path)
+                    batch_request.add(object_resource.delete(bucket=self.bucket_name, object=path), request_id=key)
+
+                self._retry_on_reset(batch_request, batch_request.execute, retry_reporter=reporter)
+
+                for key in keys_batch:
+                    self.log.debug("Deleted key: %r", key)
+                    self.notifier.object_deleted(key)
+
+        reporter.report(self.stats)
+
+    def _delete_keys_callback(self, request_id: str, response: HttpRequest, exception: HttpError | None) -> None:
+        if exception is not None:
+            self.log.error(
+                "Received server error %r for request_id %s, Google API delete operation",
+                exception.resp["status"],
+                request_id,
+            )
 
     def get_contents_to_fileobj(
         self,

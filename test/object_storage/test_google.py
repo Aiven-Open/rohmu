@@ -196,6 +196,45 @@ def test_store_file_object() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("total_keys,expected_bulk_request_count"),
+    (
+        (0, 0),
+        (1, 1),
+        (1000, 1),
+        (1001, 2),
+        (2000, 2),
+        (2001, 3),
+        (10_000, 10),
+    ),
+)
+def test_delete_keys(total_keys: int, expected_bulk_request_count: int) -> None:
+    notifier = MagicMock()
+    test_keys = _generate_keys(total_keys)
+    with ExitStack() as stack:
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
+        mock_retry_on_reset = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._retry_on_reset"))
+        transfer = GoogleTransfer(
+            project_id="test-project-id",
+            bucket_name="test-bucket",
+            notifier=notifier,
+        )
+        mock_client = stack.enter_context(patch.object(transfer, "_object_client"))
+        mock_request = _mock_request([], resumable=None)
+        mock_client.return_value.__enter__.return_value.delete.return_value = mock_request
+
+        transfer.delete_keys(keys=test_keys)
+
+        assert notifier.object_deleted.call_count == total_keys
+        notifier.object_deleted.assert_has_calls([call(key) for key in test_keys])
+        assert mock_retry_on_reset.call_count == expected_bulk_request_count
+
+
+def _generate_keys(total: int, prefix: str = "test_key_") -> list[str]:
+    return [f"{prefix}{i+1}" for i in range(total)]
+
+
 def test_upload_size_unknown_to_reporter() -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
@@ -253,7 +292,7 @@ def test_get_contents_to_fileobj_raises_error_on_invalid_byte_range() -> None:
             )
 
 
-def _mock_request(calls: list[tuple[str, bytes]]) -> Mock:
+def _mock_request(calls: list[tuple[str, bytes]], resumable: bool | None = None) -> Mock:
     results = []
     for call_content_range, call_content in calls:
         response = Mock()
@@ -268,6 +307,7 @@ def _mock_request(calls: list[tuple[str, bytes]]) -> Mock:
     request = Mock()
     request.headers = {}
     request.http.request = http_call
+    request.resumable = resumable
     return request
 
 
