@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from botocore.response import StreamingBody
+from boto3.s3.transfer import TransferConfig
 from functools import partial
 from http import HTTPStatus
 from pathlib import Path
@@ -298,12 +299,15 @@ class S3Transfer(BaseTransfer[Config]):
         destination_path = self.format_key_for_backend(destination_key, remove_slash_prefix=True)
         self.stats.operation(StorageOperation.copy_file)
         try:
-            self.get_client().copy_object(
+            self.get_client().copy(
                 Bucket=self.bucket_name,
                 CopySource=source_path,
                 Key=destination_path,
-                Metadata=metadata or {},
-                MetadataDirective="COPY" if metadata is None else "REPLACE",
+                ExtraArgs={
+                    "Metadata": metadata or {},
+                    "MetadataDirective": "COPY" if metadata is None else "REPLACE",
+                },
+                Config=TransferConfig(use_threads=False),
             )
             self.notifier.object_copied(key=destination_key, size=None, metadata=metadata)
         except botocore.exceptions.ClientError as ex:
