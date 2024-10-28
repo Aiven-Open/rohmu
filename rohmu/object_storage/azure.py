@@ -5,12 +5,13 @@
 
 from __future__ import annotations
 
-from azure.core.exceptions import HttpResponseError, ResourceExistsError
+from azure.core.exceptions import HttpResponseError, IncompleteReadError, ResourceExistsError
 from azure.storage.blob import BlobServiceClient, ContentSettings
 from rohmu.common.statsd import StatsdConfig
 from rohmu.errors import (
     FileNotFoundFromStorageError,
     InvalidConfigurationError,
+    MaybeRecoverableError,
     StorageError,
     TransferObjectStoreInitializationError,
     TransferObjectStoreMissingError,
@@ -379,6 +380,8 @@ class AzureTransfer(BaseTransfer[Config]):
             self._stream_blob(path, fileobj_to_store_to, byte_range, progress_callback)
         except azure.core.exceptions.ResourceNotFoundError as ex:
             raise FileNotFoundFromStorageError(path) from ex
+        except IncompleteReadError as ex:
+            raise MaybeRecoverableError("IncompleteReadError") from ex
 
         if progress_callback:
             progress_callback(1, 1)

@@ -15,6 +15,7 @@ from rohmu.errors import (
     ConcurrentUploadError,
     FileNotFoundFromStorageError,
     InvalidConfigurationError,
+    MaybeRecoverableError,
     StorageError,
     TransferObjectStoreInitializationError,
     TransferObjectStoreMissingError,
@@ -424,7 +425,11 @@ class S3Transfer(BaseTransfer[Config]):
         while data_read < body_length:
             read_amount = body_length - data_read
             read_amount = min(read_amount, READ_BLOCK_SIZE)
-            data = streaming_body.read(amt=read_amount)
+            try:
+                data = streaming_body.read(amt=read_amount)
+            except botocore.exceptions.IncompleteReadError as ex:
+                raise MaybeRecoverableError("botocore.exceptions.IncompleteReadError") from ex
+
             fileobj.write(data)
             data_read += len(data)
             if cb:

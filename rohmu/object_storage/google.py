@@ -889,8 +889,7 @@ class MediaIoBaseDownloadWithByteRange:
         headers = self._headers.copy()
         chunk_start = self._num_bytes_downloaded + self._start_position
         chunk_end = chunk_start + self._chunksize - 1
-        if self._end_position < chunk_end:
-            chunk_end = self._end_position
+        chunk_end = min(self._end_position, chunk_end)
         headers["range"] = f"bytes={chunk_start}-{chunk_end}"
         resp, content = self._http.request(self._uri, "GET", headers=headers)
 
