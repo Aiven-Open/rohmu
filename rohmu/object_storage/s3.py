@@ -368,6 +368,9 @@ class S3Transfer(BaseTransfer[Config]):
                 args["ContinuationToken"] = continuation_token
             self.stats.operation(StorageOperation.iter_key)
             response = self.get_client().list_objects_v2(**args)
+            status_code = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            if status_code:
+                self.stats.increase(metric="rohmu.s3.iter_key_response", tags={"status_code": str(status_code)})
 
             for item in response["Contents"]:
                 if with_metadata:
@@ -405,17 +408,22 @@ class S3Transfer(BaseTransfer[Config]):
         kwargs: dict[str, Any] = {}
         if byte_range:
             kwargs["Range"] = f"bytes={byte_range[0]}-{byte_range[1]}"
+        status_code : int|None = None
         try:
             # Actual usage is accounted for in
             # _read_object_to_fileobj, although that omits the initial
             # get_object call if it fails.
             response = self.get_client().get_object(Bucket=self.bucket_name, Key=path, **kwargs)
+            status_code = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
         except botocore.exceptions.ClientError as ex:
             status_code = ex.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
             if status_code == 404:
                 raise FileNotFoundFromStorageError(path)
             else:
                 raise StorageError(f"Fetching the remote object {path} failed") from ex
+        finally:
+            if status_code:
+                self.stats.increase(metric="rohmu.s3.get_object_stream_response", tags={"status_code": str(status_code)})
         return response["Body"], response["ContentLength"], response["Metadata"]
 
     def _read_object_to_fileobj(
