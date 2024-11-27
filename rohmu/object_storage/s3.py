@@ -369,7 +369,7 @@ class S3Transfer(BaseTransfer[Config]):
             self.stats.operation(StorageOperation.iter_key)
             response = self.get_client().list_objects_v2(**args)
 
-            for item in response.get("Contents", []):
+            for item in response["Contents"]:
                 if with_metadata:
                     try:
                         metadata = {k.lower(): v for k, v in self._metadata_for_key(item["Key"]).items()}
