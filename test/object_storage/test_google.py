@@ -363,7 +363,7 @@ def test_object_listed_when_missing_md5hash_size_and_updated() -> None:
                 sample_item,
                 {"size": 100, **sample_item},
                 {"md5Hash": base64.encodebytes(b"Missing md5Hash!"), **sample_item},
-                {"updated": "2023-11-20T16:18:00+00:00", **sample_item},
+                {"updated": "2023-11-20T16:18:00.000Z", **sample_item},
             ]
         }
 

@@ -442,7 +442,7 @@ class GoogleTransfer(BaseTransfer[Config]):
                         if (size := item.get("size")) is not None:
                             value["size"] = int(size)
                         if (updated := item.get("updated")) is not None:
-                            value["last_modified"] = datetime.datetime.fromisoformat(updated)
+                            value["last_modified"] = datetime.datetime.strptime(updated, "%Y-%m-%dT%H:%M:%S.%f%z")
                         if (md5 := item.get("md5Hash")) is not None:
                             value["md5"] = base64_to_hex(md5)
                         yield IterKeyItem(type=KEY_TYPE_OBJECT, value=value)
