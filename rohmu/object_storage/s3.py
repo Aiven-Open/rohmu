@@ -372,25 +372,23 @@ class S3Transfer(BaseTransfer[Config]):
             if status_code:
                 self.stats.increase(metric="rohmu.s3.iter_key_response", tags={"status_code": str(status_code)})
 
-            for item in response["Contents"]:
-                if with_metadata:
-                    try:
+            if response.get("KeyCount") != 0:
+                for item in response["Contents"]:
+                    if with_metadata:
                         metadata = {k.lower(): v for k, v in self._metadata_for_key(item["Key"]).items()}
-                    except FileNotFoundFromStorageError:
-                        continue
-                else:
-                    metadata = None
-                name = self.format_key_from_backend(item["Key"])
-                yield IterKeyItem(
-                    type=KEY_TYPE_OBJECT,
-                    value={
-                        "last_modified": item["LastModified"],
-                        "md5": item["ETag"].strip('"'),
-                        "metadata": metadata,
-                        "name": name,
-                        "size": item["Size"],
-                    },
-                )
+                    else:
+                        metadata = None
+                    name = self.format_key_from_backend(item["Key"])
+                    yield IterKeyItem(
+                        type=KEY_TYPE_OBJECT,
+                        value={
+                            "last_modified": item["LastModified"],
+                            "md5": item["ETag"].strip('"'),
+                            "metadata": metadata,
+                            "name": name,
+                            "size": item["Size"],
+                        },
+                    )
 
             for common_prefix in response.get("CommonPrefixes", []):
                 yield IterKeyItem(
@@ -408,7 +406,7 @@ class S3Transfer(BaseTransfer[Config]):
         kwargs: dict[str, Any] = {}
         if byte_range:
             kwargs["Range"] = f"bytes={byte_range[0]}-{byte_range[1]}"
-        status_code : int|None = None
+        status_code: int | None = None
         try:
             # Actual usage is accounted for in
             # _read_object_to_fileobj, although that omits the initial
