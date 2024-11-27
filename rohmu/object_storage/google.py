@@ -113,7 +113,9 @@ def get_credentials(
     credential_file: Optional[TextIO] = None, credentials: Optional[dict[str, Any]] = None
 ) -> GoogleCredentials:
     if credential_file:
-        return GoogleCredentials.from_stream(credential_file).create_scoped(["https://www.googleapis.com/auth/cloud-platform"])
+        return GoogleCredentials.from_stream(credential_file).create_scoped(
+            ["https://www.googleapis.com/auth/cloud-platform"]
+        )
 
     if credentials and credentials["type"] == "service_account":
         return ServiceAccountCredentials_from_dict(
