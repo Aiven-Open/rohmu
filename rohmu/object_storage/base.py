@@ -255,20 +255,20 @@ class BaseTransfer(Generic[StorageModelT]):
             raise StorageError(f"Key {repr(key)} does not start with expected prefix {repr(self.prefix)}")
         return key[len(self.prefix) :]
 
-    def delete_key(self, key: str) -> None:
+    def delete_key(self, key: str, preserve_trailing_slash: bool = False) -> None:
         raise NotImplementedError
 
-    def delete_keys(self, keys: Collection[str]) -> None:
+    def delete_keys(self, keys: Collection[str], preserve_trailing_slash: bool = False) -> None:
         """Delete specified keys"""
         for key in keys:
-            self.delete_key(key)
+            self.delete_key(key, preserve_trailing_slash=preserve_trailing_slash)
 
-    def delete_tree(self, key: str) -> None:
+    def delete_tree(self, key: str, preserve_trailing_slash: bool = False) -> None:
         """Delete all keys under given root key. Basic implementation works by just listing all available
         keys and deleting them individually but storage providers can implement more efficient logic."""
         self.log.debug("Deleting tree: %r", key)
         names = [item["name"] for item in self.list_path(key, with_metadata=False, deep=True)]
-        self.delete_keys(names)
+        self.delete_keys(names, preserve_trailing_slash=preserve_trailing_slash)
 
     def get_contents_to_file(
         self, key: str, filepath_to_store_to: AnyPath, *, progress_callback: ProgressProportionCallbackType = None

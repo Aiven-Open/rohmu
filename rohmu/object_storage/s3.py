@@ -331,20 +331,30 @@ class S3Transfer(BaseTransfer[Config]):
 
         return response["Metadata"]
 
-    def delete_key(self, key: str) -> None:
-        path = self.format_key_for_backend(key, remove_slash_prefix=True)
+    def delete_key(self, key: str, preserve_trailing_slash: bool = False) -> None:
+        path = self.format_key_for_backend(
+            key, remove_slash_prefix=True, trailing_slash=preserve_trailing_slash and key.endswith("/")
+        )
         self.log.debug("Deleting key: %r", path)
         self._metadata_for_key(path)  # check that key exists
         self.stats.operation(StorageOperation.delete_key)
         self.get_client().delete_object(Bucket=self.bucket_name, Key=path)
         self.notifier.object_deleted(key=key)
 
-    def delete_keys(self, keys: Collection[str]) -> None:
+    def delete_keys(self, keys: Collection[str], preserve_trailing_slash: bool = False) -> None:
         self.stats.operation(StorageOperation.delete_key, count=len(keys))
         for batch in batched(keys, 1000):  # Cannot delete more than 1000 objects at a time
+            formatted_keys = [
+                self.format_key_for_backend(
+                    k,
+                    remove_slash_prefix=True,
+                    trailing_slash=preserve_trailing_slash and k.endswith("/"),
+                )
+                for k in batch
+            ]
             self.get_client().delete_objects(
                 Bucket=self.bucket_name,
-                Delete={"Objects": [{"Key": self.format_key_for_backend(key, remove_slash_prefix=True)} for key in batch]},
+                Delete={"Objects": [{"Key": key} for key in formatted_keys]},
             )
             # Note: `tree_deleted` is not used here because the operation on S3 is not atomic, i.e.
             # it is possible for a new object to be created after `list_objects` above

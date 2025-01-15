@@ -301,8 +301,10 @@ class AzureTransfer(BaseTransfer[Config]):
                     },
                 )
 
-    def delete_key(self, key: str) -> None:
-        path = self.format_key_for_backend(key, remove_slash_prefix=True)
+    def delete_key(self, key: str, preserve_trailing_slash: bool = False) -> None:
+        path = self.format_key_for_backend(
+            key, remove_slash_prefix=True, trailing_slash=preserve_trailing_slash and key.endswith("/")
+        )
         self.log.debug("Deleting key: %r", path)
         try:
             blob_client = self.get_blob_service_client().get_blob_client(container=self.container_name, blob=path)
