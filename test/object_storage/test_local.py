@@ -3,12 +3,14 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from io import BytesIO
 from itertools import cycle
-from rohmu.errors import FileNotFoundFromStorageError, InvalidByteRangeError
+from rohmu.errors import Error, FileNotFoundFromStorageError, InvalidByteRangeError
 from rohmu.object_storage.base import KEY_TYPE_OBJECT
 from rohmu.object_storage.local import LocalTransfer
 from tempfile import NamedTemporaryFile, TemporaryDirectory
+from typing import Union
 from unittest.mock import MagicMock
 
+import glob
 import hashlib
 import json
 import os
@@ -297,3 +299,71 @@ def test_upload_files_concurrently_can_be_aborted() -> None:
         # we should not be able to find this
         with pytest.raises(FileNotFoundFromStorageError):
             transfer.get_metadata_for_key("test_key1")
+
+
+@pytest.mark.parametrize(
+    ("key", "preserve_trailing_slash", "expected_key"),
+    [
+        ("1", True, "test-prefix/1"),
+        ("2/", True, "test-prefix/2/"),
+        ("1", False, "test-prefix/1"),
+        ("2/", False, "test-prefix/2"),
+        ("1", None, "test-prefix/1"),
+        ("2/", None, "test-prefix/2"),
+    ],
+)
+def test_delete_key(key: str, preserve_trailing_slash: Union[bool, None], expected_key: str) -> None:
+    with TemporaryDirectory() as destdir:
+        notifier = MagicMock()
+        transfer = LocalTransfer(
+            directory=destdir,
+            notifier=notifier,
+            prefix="test-prefix/",
+        )
+
+        transfer.store_file_from_memory(key, memstring=b"Hello")
+        found_files = glob.glob(os.path.join(destdir, "test-prefix", "*"))
+        # ensure we have created some files
+        assert found_files
+        if preserve_trailing_slash:
+            with pytest.raises(Error):
+                transfer.delete_key(key, preserve_trailing_slash=True)
+        else:
+            if preserve_trailing_slash is None:
+                transfer.delete_key(key)
+            else:
+                transfer.delete_key(key, preserve_trailing_slash=preserve_trailing_slash)
+
+            # all files got deleted
+            found_files = glob.glob(os.path.join(destdir, "test-prefix", "*"))
+            assert not found_files
+
+
+@pytest.mark.parametrize("preserve_trailing_slash", [True, False, None])
+def test_delete_keys(preserve_trailing_slash: Union[bool, None]) -> None:
+    with TemporaryDirectory() as destdir:
+        notifier = MagicMock()
+        transfer = LocalTransfer(
+            directory=destdir,
+            notifier=notifier,
+            prefix="test-prefix/",
+        )
+
+        transfer.store_file_from_memory("2", memstring=b"Hello")
+        transfer.store_file_from_memory("3", memstring=b"Hello")
+        transfer.store_file_from_memory("4/", memstring=b"Hello")
+        found_files = glob.glob(os.path.join(destdir, "test-prefix", "*"))
+        # ensure we have created some files
+        assert found_files
+        if preserve_trailing_slash:
+            with pytest.raises(Error):
+                transfer.delete_keys(["2", "3", "4/"], preserve_trailing_slash=True)
+        else:
+            if preserve_trailing_slash is None:
+                transfer.delete_keys(["2", "3", "4/"])
+            else:
+                transfer.delete_keys(["2", "3", "4/"], preserve_trailing_slash=preserve_trailing_slash)
+
+            # all files got deleted
+            found_files = glob.glob(os.path.join(destdir, "test-prefix", "*"))
+            assert not found_files

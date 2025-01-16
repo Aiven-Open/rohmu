@@ -5,7 +5,7 @@
 
 from io import BytesIO
 from rohmu.common.statsd import StatsdConfig
-from rohmu.errors import FileNotFoundFromStorageError, InvalidConfigurationError
+from rohmu.errors import Error, FileNotFoundFromStorageError, InvalidConfigurationError
 from rohmu.notifier.interface import Notifier
 from rohmu.object_storage.base import (
     BaseTransfer,
@@ -210,7 +210,9 @@ class SFTPTransfer(BaseTransfer[Config]):
     ) -> None:
         raise NotImplementedError
 
-    def delete_key(self, key: str) -> None:
+    def delete_key(self, key: str, preserve_trailing_slash: bool = False) -> None:
+        if preserve_trailing_slash:
+            raise Error("SftpTransfer does not support preserving trailing slashes")
         target_path = self.format_key_for_backend(key.strip("/"))
         self.log.info("Removing path: %r", target_path)
 

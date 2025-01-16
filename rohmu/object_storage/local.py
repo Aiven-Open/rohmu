@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from rohmu.common.models import StorageOperation
 from rohmu.common.statsd import StatsdConfig
-from rohmu.errors import ConcurrentUploadError, FileNotFoundFromStorageError
+from rohmu.errors import ConcurrentUploadError, Error, FileNotFoundFromStorageError
 from rohmu.notifier.interface import Notifier
 from rohmu.object_storage.base import (
     BaseTransfer,
@@ -123,8 +123,10 @@ class LocalTransfer(BaseTransfer[Config]):
     def get_metadata_for_key(self, key: str) -> Metadata:
         return self._filter_metadata(self._get_metadata_for_key(key))
 
-    def delete_key(self, key: str) -> None:
+    def delete_key(self, key: str, preserve_trailing_slash: bool = False) -> None:
         self.log.debug("Deleting key: %r", key)
+        if preserve_trailing_slash:
+            raise Error("LocalTransfer does not support preserving trailing slashes")
         target_path = self.format_key_for_backend(key.strip("/"))
         if not os.path.exists(target_path):
             raise FileNotFoundFromStorageError(key)
@@ -137,8 +139,10 @@ class LocalTransfer(BaseTransfer[Config]):
             os.unlink(metadata_path)
         self.notifier.object_deleted(key=key)
 
-    def delete_tree(self, key: str) -> None:
+    def delete_tree(self, key: str, preserve_trailing_slash: bool = False) -> None:
         self.log.debug("Deleting tree: %r", key)
+        if preserve_trailing_slash:
+            raise Error("LocalTransfer does not support preserving trailing slashes")
         target_path = self.format_key_for_backend(key.strip("/"))
         if not os.path.isdir(target_path):
             raise FileNotFoundFromStorageError(key)

@@ -3,7 +3,8 @@ from datetime import datetime
 from io import BytesIO
 from tempfile import NamedTemporaryFile
 from types import ModuleType
-from unittest.mock import MagicMock, patch
+from typing import Union
+from unittest.mock import call, MagicMock, patch
 
 import pytest
 import sys
@@ -76,3 +77,75 @@ def test_iter_key_with_empty_key(swift_module: ModuleType) -> None:
     )
     list(transfer.iter_key(""))
     transfer.conn.get_container.assert_called_with("test_container", prefix="", full_listing=True, delimiter="/")
+
+
+@pytest.mark.parametrize(
+    ("key", "preserve_trailing_slash", "expected_key"),
+    [
+        ("1", True, "test-prefix/1"),
+        ("2/", True, "test-prefix/2/"),
+        ("1", False, "test-prefix/1"),
+        ("2/", False, "test-prefix/2"),
+        ("1", None, "test-prefix/1"),
+        ("2/", None, "test-prefix/2"),
+    ],
+)
+def test_delete_key(
+    swift_module: ModuleType, key: str, preserve_trailing_slash: Union[bool, None], expected_key: str
+) -> None:
+    notifier = MagicMock()
+    connection = MagicMock()
+    swift_module.client.Connection.return_value = connection
+    transfer = swift_module.SwiftTransfer(
+        user="testuser",
+        key="testkey",
+        container_name="test_container",
+        auth_url="http://auth.example.com",
+        notifier=notifier,
+        prefix="test-prefix/",
+    )
+    if preserve_trailing_slash is None:
+        transfer.delete_key(key=key)
+    else:
+        transfer.delete_key(key=key, preserve_trailing_slash=preserve_trailing_slash)
+
+    connection.assert_has_calls(
+        [
+            # ensure container exists
+            call.get_container("test_container", headers={}, limit=1),
+            call.head_object("test_container", expected_key),
+            call.head_object().__contains__("x-object-manifest"),
+            call.delete_object("test_container", expected_key),
+        ]
+    )
+
+
+@pytest.mark.parametrize("preserve_trailing_slash", [True, False, None])
+def test_delete_keys(swift_module: ModuleType, preserve_trailing_slash: Union[bool, None]) -> None:
+    notifier = MagicMock()
+    connection = MagicMock()
+    swift_module.client.Connection.return_value = connection
+    transfer = swift_module.SwiftTransfer(
+        user="testuser",
+        key="testkey",
+        container_name="test_container",
+        auth_url="http://auth.example.com",
+        notifier=notifier,
+        prefix="test-prefix/",
+    )
+    if preserve_trailing_slash is None:
+        transfer.delete_keys(["2", "3", "4/"])
+    else:
+        transfer.delete_keys(["2", "3", "4/"], preserve_trailing_slash=preserve_trailing_slash)
+
+    expected_calls = [call.get_container("test_container", headers={}, limit=1)]
+    expected_keys = ["2", "3", "4/"] if preserve_trailing_slash else ["2", "3", "4"]
+    for expected_key in expected_keys:
+        expected_calls.extend(
+            [
+                call.head_object("test_container", f"test-prefix/{expected_key}"),
+                call.head_object().__contains__("x-object-manifest"),
+                call.delete_object("test_container", f"test-prefix/{expected_key}"),
+            ]
+        )
+    connection.assert_has_calls(expected_calls)

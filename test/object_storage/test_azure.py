@@ -7,8 +7,8 @@ from rohmu.errors import InvalidByteRangeError
 from rohmu.object_storage.azure import AzureTransfer
 from rohmu.object_storage.config import AzureObjectStorageConfig
 from tempfile import NamedTemporaryFile
-from typing import Any, Optional
-from unittest.mock import MagicMock, patch
+from typing import Any, Optional, Union
+from unittest.mock import call, MagicMock, patch
 
 import azure.storage.blob
 import pytest
@@ -241,3 +241,70 @@ def test_create_container_str(mocker: MockerFixture) -> None:
     )
     container_name = container_client_mock.call_args.kwargs["container_name"]
     assert container_name == "bucket_name"
+
+
+@pytest.mark.parametrize(
+    ("key", "preserve_trailing_slash", "expected_key"),
+    [
+        ("1", True, "test-prefix/1"),
+        ("2/", True, "test-prefix/2/"),
+        ("1", False, "test-prefix/1"),
+        ("2/", False, "test-prefix/2"),
+        ("1", None, "test-prefix/1"),
+        ("2/", None, "test-prefix/2"),
+    ],
+)
+def test_delete_key(
+    mock_get_blob_client: MagicMock,
+    key: str,
+    preserve_trailing_slash: Union[bool, None],
+    expected_key: str,
+) -> None:
+    notifier = MagicMock()
+    transfer = AzureTransfer(
+        bucket_name="test_bucket",
+        account_name="test_account",
+        account_key="test_key2",
+        prefix="test-prefix/",
+        notifier=notifier,
+    )
+
+    if preserve_trailing_slash is None:
+        transfer.delete_key(key)
+    else:
+        transfer.delete_key(key, preserve_trailing_slash=preserve_trailing_slash)
+
+    mock_get_blob_client.assert_has_calls(
+        [
+            call(container="test_bucket", blob=expected_key),
+            call().delete_blob(),
+        ]
+    )
+
+
+@pytest.mark.parametrize("preserve_trailing_slash", [True, False, None])
+def test_delete_keys(mock_get_blob_client: MagicMock, preserve_trailing_slash: Union[bool, None]) -> None:
+    notifier = MagicMock()
+    transfer = AzureTransfer(
+        bucket_name="test_bucket",
+        account_name="test_account",
+        account_key="test_key2",
+        prefix="test-prefix/",
+        notifier=notifier,
+    )
+    if preserve_trailing_slash is None:
+        transfer.delete_keys(["2", "3", "4/"])
+    else:
+        transfer.delete_keys(["2", "3", "4/"], preserve_trailing_slash=preserve_trailing_slash)
+
+    expected_keys = ["2", "3", "4/" if preserve_trailing_slash else "4"]
+    expected_calls = []
+    for expected_key in expected_keys:
+        expected_calls.extend(
+            [
+                call(container="test_bucket", blob=f"test-prefix/{expected_key}"),
+                call().delete_blob(),
+            ]
+        )
+
+    mock_get_blob_client.assert_has_calls(expected_calls)

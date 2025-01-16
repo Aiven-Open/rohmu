@@ -452,8 +452,8 @@ class GoogleTransfer(BaseTransfer[Config]):
                 else:
                     raise NotImplementedError(property_name)
 
-    def delete_key(self, key: str) -> None:
-        path = self.format_key_for_backend(key)
+    def delete_key(self, key: str, preserve_trailing_slash: bool = False) -> None:
+        path = self.format_key_for_backend(key, trailing_slash=preserve_trailing_slash and key.endswith("/"))
         self.log.debug("Deleting key: %r", path)
         with self._object_client(not_found=path) as clob:
             # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.objects.html#delete

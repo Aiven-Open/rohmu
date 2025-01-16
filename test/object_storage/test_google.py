@@ -12,6 +12,7 @@ from rohmu.errors import InvalidByteRangeError, TransferObjectStoreMissingError,
 from rohmu.object_storage.base import IterKeyItem
 from rohmu.object_storage.google import GoogleTransfer, MediaIoBaseDownloadWithByteRange, Reporter
 from tempfile import NamedTemporaryFile
+from typing import Union
 from unittest.mock import ANY, call, MagicMock, Mock, patch
 
 import base64
@@ -452,3 +453,79 @@ def test_error_handling() -> None:
             # ... and the legacy behaviour of bubbling up should not regress
             with pytest.raises(HttpError, match="403"):
                 transfer._create_object_store_if_needed_unwrapped()
+
+
+@pytest.mark.parametrize(
+    ("key", "preserve_trailing_slash", "expected_key"),
+    [
+        ("1", True, "test-prefix/1"),
+        ("2/", True, "test-prefix/2/"),
+        ("1", False, "test-prefix/1"),
+        ("2/", False, "test-prefix/2"),
+        ("1", None, "test-prefix/1"),
+        ("2/", None, "test-prefix/2"),
+    ],
+)
+def test_delete_key(key: str, preserve_trailing_slash: Union[bool, None], expected_key: str) -> None:
+    notifier = MagicMock()
+    with ExitStack() as stack:
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
+        _init_google_client_mock = stack.enter_context(
+            patch("rohmu.object_storage.google.GoogleTransfer._init_google_client")
+        )
+
+        transfer = GoogleTransfer(
+            project_id="test-project-id",
+            bucket_name="test-bucket",
+            prefix="test-prefix/",
+            notifier=notifier,
+        )
+        if preserve_trailing_slash is None:
+            transfer.delete_key(key)
+        else:
+            transfer.delete_key(key, preserve_trailing_slash=preserve_trailing_slash)
+
+        mock_client_delete = _init_google_client_mock.return_value.objects().delete
+        mock_client_delete.assert_has_calls(
+            [
+                call(bucket="test-bucket", object=expected_key),
+                call().execute(),
+            ]
+        )
+
+
+@pytest.mark.parametrize("preserve_trailing_slash", [True, False, None])
+def test_delete_keys(preserve_trailing_slash: Union[bool, None]) -> None:
+    notifier = MagicMock()
+    with ExitStack() as stack:
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
+        _init_google_client_mock = stack.enter_context(
+            patch("rohmu.object_storage.google.GoogleTransfer._init_google_client")
+        )
+
+        transfer = GoogleTransfer(
+            project_id="test-project-id",
+            bucket_name="test-bucket",
+            prefix="test-prefix/",
+            notifier=notifier,
+        )
+        if preserve_trailing_slash is None:
+            transfer.delete_keys(["2", "3", "4/"])
+        else:
+            transfer.delete_keys(["2", "3", "4/"], preserve_trailing_slash=preserve_trailing_slash)
+
+        mock_client_delete = _init_google_client_mock.return_value.objects().delete
+
+        mock_client_delete = _init_google_client_mock.return_value.objects().delete
+        expected_keys = ["2", "3", "4"] if not preserve_trailing_slash else ["2", "3", "4/"]
+        expected_calls = []
+        for key in expected_keys:
+            expected_calls.extend(
+                [
+                    call(bucket="test-bucket", object=f"test-prefix/{key}"),
+                    call().execute(),
+                ]
+            )
+        mock_client_delete.assert_has_calls(expected_calls)

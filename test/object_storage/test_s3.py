@@ -168,13 +168,41 @@ def test_operations_reporting(infra: S3Infra) -> None:
     infra.operation.assert_called_once_with(StorageOperation.head_request)
 
 
-def test_deletion(infra: S3Infra) -> None:
-    infra.transfer.delete_keys(["2", "3"])
+@pytest.mark.parametrize("preserve_trailing_slash", [True, False, None])
+def test_delete_keys(infra: S3Infra, preserve_trailing_slash: Union[bool, None]) -> None:
+    if preserve_trailing_slash is None:
+        infra.transfer.delete_keys(["2", "3", "4/"])
+    else:
+        infra.transfer.delete_keys(["2", "3", "4/"], preserve_trailing_slash=preserve_trailing_slash)
     infra.s3_client.delete_objects.assert_called_once_with(
-        Bucket="test-bucket", Delete={"Objects": [{"Key": "test-prefix/2"}, {"Key": "test-prefix/3"}]}
+        Bucket="test-bucket",
+        Delete={
+            "Objects": [
+                {"Key": "test-prefix/2"},
+                {"Key": "test-prefix/3"},
+                {"Key": "test-prefix/4/" if preserve_trailing_slash else "test-prefix/4"},
+            ],
+        },
     )
-    infra.transfer.delete_key("1")
-    infra.s3_client.delete_object.assert_called_once_with(Bucket="test-bucket", Key="test-prefix/1")
+
+
+@pytest.mark.parametrize(
+    ("key", "preserve_trailing_slash", "expected_key"),
+    [
+        ("1", True, "test-prefix/1"),
+        ("2/", True, "test-prefix/2/"),
+        ("1", False, "test-prefix/1"),
+        ("2/", False, "test-prefix/2"),
+        ("1", None, "test-prefix/1"),
+        ("2/", None, "test-prefix/2"),
+    ],
+)
+def test_delete_key(infra: S3Infra, key: str, preserve_trailing_slash: Union[bool, None], expected_key: str) -> None:
+    if preserve_trailing_slash is None:
+        infra.transfer.delete_key(key)
+    else:
+        infra.transfer.delete_key(key, preserve_trailing_slash=preserve_trailing_slash)
+    infra.s3_client.delete_object.assert_called_once_with(Bucket="test-bucket", Key=expected_key)
 
 
 def test_get_contents_to_fileobj_raises_error_on_invalid_byte_range(infra: S3Infra) -> None:
