@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Python API Documentation &mdash; Rohmu 0.1.dev1+g7ed9186 documentation</title>
+  <title>Python API Documentation &mdash; Rohmu 0.1.dev1+g1d0b29e documentation</title>
       <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
       <link rel="stylesheet" href="_static/autodoc_pydantic.css" type="text/css" />
@@ -261,7 +261,7 @@
 <span class="sig-prename descclassname"><span class="pre">rohmu.</span></span><span class="sig-name descname"><span class="pre">S3AddressingStyle</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">&lt;enum</span> <span class="pre">'S3AddressingStyle'&gt;</span></em><a class="headerlink" href="#rohmu.S3AddressingStyle" title="Permalink to this definition"></a></dt>
 <dd><p>Create a collection of name/value pairs.</p>
 <p>Example enumeration:</p>
-<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="k">class</span> <span class="nc">Color</span><span class="p">(</span><span class="n">Enum</span><span class="p">):</span>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="k">class</span><span class="w"> </span><span class="nc">Color</span><span class="p">(</span><span class="n">Enum</span><span class="p">):</span>
 <span class="gp">... </span>    <span class="n">RED</span> <span class="o">=</span> <span class="mi">1</span>
 <span class="gp">... </span>    <span class="n">BLUE</span> <span class="o">=</span> <span class="mi">2</span>
 <span class="gp">... </span>    <span class="n">GREEN</span> <span class="o">=</span> <span class="mi">3</span>
@@ -1666,7 +1666,7 @@ cannot be copied with this method. If no metadata is given copies the existing m
 
 <dl class="py method">
 <dt class="sig sig-object py" id="rohmu.object_storage.local.LocalTransfer.delete_tree">
-<span class="sig-name descname"><span class="pre">delete_tree</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#rohmu.object_storage.local.LocalTransfer.delete_tree" title="Permalink to this definition"></a></dt>
+<span class="sig-name descname"><span class="pre">delete_tree</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">preserve_trailing_slash</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#rohmu.object_storage.local.LocalTransfer.delete_tree" title="Permalink to this definition"></a></dt>
 <dd><p>Delete all keys under given root key. Basic implementation works by just listing all available
 keys and deleting them individually but storage providers can implement more efficient logic.</p>
 </dd></dl>
@@ -2214,7 +2214,7 @@ cannot be copied with this method. If no metadata is given copies the existing m
 
 <dl class="py method">
 <dt class="sig sig-object py" id="rohmu.object_storage.s3.S3Transfer.delete_keys">
-<span class="sig-name descname"><span class="pre">delete_keys</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">keys</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Collection</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#rohmu.object_storage.s3.S3Transfer.delete_keys" title="Permalink to this definition"></a></dt>
+<span class="sig-name descname"><span class="pre">delete_keys</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">keys</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Collection</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">preserve_trailing_slash</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#rohmu.object_storage.s3.S3Transfer.delete_keys" title="Permalink to this definition"></a></dt>
 <dd><p>Delete specified keys</p>
 </dd></dl>
 
