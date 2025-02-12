@@ -9,6 +9,7 @@ from botocore.response import StreamingBody
 from functools import partial
 from http import HTTPStatus
 from pathlib import Path
+from rohmu.common.constants import IO_BLOCK_SIZE
 from rohmu.common.models import StorageOperation
 from rohmu.common.statsd import StatsdConfig
 from rohmu.errors import (
@@ -50,6 +51,7 @@ import botocore.exceptions
 import botocore.session
 import contextlib
 import math
+import tempfile
 import time
 
 if TYPE_CHECKING:
@@ -134,6 +136,7 @@ class S3Transfer(BaseTransfer[Config]):
         use_dualstack_endpoint: Optional[bool] = True,
         statsd_info: Optional[StatsdConfig] = None,
         ensure_object_store_available: bool = True,
+        temporary_directory: Optional[Path] = None,
     ) -> None:
         super().__init__(
             prefix=prefix,
@@ -160,6 +163,7 @@ class S3Transfer(BaseTransfer[Config]):
         self.encrypted = encrypted
         self.s3_client: Optional[S3Client] = None
         self.location = ""
+        self.temporary_directory = temporary_directory
         if not self.host or not self.port:
             if self.region and self.region != "us-east-1":
                 self.location = self.region
@@ -504,21 +508,29 @@ class S3Transfer(BaseTransfer[Config]):
 
         mp_id = cmu_response["UploadId"]
 
+        if self.temporary_directory is not None:
+            self.temporary_directory.mkdir(parents=True, exist_ok=True)
         while True:
-            data = self._read_bytes(fp, self.multipart_chunk_size)
-            if not data:
-                break
-
-            start_of_part_upload = time.monotonic()
-            self.stats.operation(StorageOperation.store_file, size=len(data))
             try:
-                cup_response = self.get_client().upload_part(
-                    Body=data,
-                    Bucket=self.bucket_name,
-                    Key=path,
-                    PartNumber=part_number,
-                    UploadId=mp_id,
-                )
+                # Use a temporary file to minimize memory usage
+                with tempfile.TemporaryFile(dir=self.temporary_directory) as data:
+                    length = 0
+                    while chunk := fp.read(min(IO_BLOCK_SIZE, self.multipart_chunk_size - length)):
+                        data.write(chunk)
+                        length += len(chunk)
+                    if not length:
+                        break
+                    data.seek(0)
+
+                    start_of_part_upload = time.monotonic()
+                    self.stats.operation(StorageOperation.store_file, size=length)
+                    cup_response = self.get_client().upload_part(
+                        Body=data,
+                        Bucket=self.bucket_name,
+                        Key=path,
+                        PartNumber=part_number,
+                        UploadId=mp_id,
+                    )
             except botocore.exceptions.ClientError as ex:
                 self.log.exception("Uploading part %d for %s failed", part_number, path)
                 self.stats.operation(StorageOperation.multipart_aborted)
@@ -536,7 +548,7 @@ class S3Transfer(BaseTransfer[Config]):
                     "Uploaded part %s of %s, size %s in %.2fs",
                     part_number,
                     chunks,
-                    len(data),
+                    length,
                     time.monotonic() - start_of_part_upload,
                 )
                 parts.append(
@@ -546,7 +558,7 @@ class S3Transfer(BaseTransfer[Config]):
                     }
                 )
                 part_number += 1
-                bytes_sent += len(data)
+                bytes_sent += length
                 if progress_fn:
                     # TODO: change this to incremental progress. Size parameter is currently unused.
                     progress_fn(bytes_sent, size)  # type: ignore[arg-type]
