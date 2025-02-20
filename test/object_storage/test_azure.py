@@ -3,7 +3,7 @@ from datetime import datetime
 from io import BytesIO
 from pytest_mock import MockerFixture
 from rohmu.common.strenum import StrEnum
-from rohmu.errors import InvalidByteRangeError
+from rohmu.errors import FileNotFoundFromStorageError, InvalidByteRangeError
 from rohmu.object_storage.azure import AzureTransfer
 from rohmu.object_storage.config import AzureObjectStorageConfig
 from tempfile import NamedTemporaryFile
@@ -106,6 +106,52 @@ def test_get_contents_to_fileobj_raises_error_on_invalid_byte_range(mock_get_blo
             fileobj_to_store_to=BytesIO(),
             byte_range=(100, 10),
         )
+
+
+def test_get_contents_to_fileobj_not_found(mock_get_blob_client: MagicMock) -> None:
+    notifier = MagicMock()
+    transfer = AzureTransfer(
+        bucket_name="test_bucket",
+        account_name="test_account",
+        account_key="test_key2",
+        notifier=notifier,
+    )
+
+    download_blob = MagicMock(side_effect=azure.core.exceptions.ResourceNotFoundError)
+    mock_get_blob_client.return_value = MagicMock(download_blob=download_blob)
+    with pytest.raises(FileNotFoundFromStorageError):
+        transfer.get_contents_to_fileobj(
+            key="testkey",
+            fileobj_to_store_to=BytesIO(),
+        )
+
+
+def test_get_contents_to_fileobj_empty_object(mock_get_blob_client: MagicMock) -> None:
+    notifier = MagicMock()
+    transfer = AzureTransfer(
+        bucket_name="test_bucket",
+        account_name="test_account",
+        account_key="test_key2",
+        notifier=notifier,
+    )
+    transfer._metadata_for_key = MagicMock(return_value={})  # type: ignore[method-assign]
+
+    def download_blob(*args: Any, **kwargs: Any) -> Any:
+        raise azure.core.exceptions.HttpResponseError(
+            message="The range specified is invalid for the current size of the resource.",
+            response=MagicMock(reason="Range Not Satisfiable", status_code=416),
+        )
+
+    def get_blob_properties(*args: Any, **kwargs: Any) -> Any:
+        return MagicMock(size=0)
+
+    mock_get_blob_client.return_value = MagicMock(download_blob=download_blob, get_blob_properties=get_blob_properties)
+    fileobj = BytesIO()
+    transfer.get_contents_to_fileobj(
+        key="testkey",
+        fileobj_to_store_to=fileobj,
+    )
+    assert fileobj.getvalue() == b""
 
 
 def test_minimal_config() -> None:

@@ -362,9 +362,11 @@ class AzureTransfer(BaseTransfer[Config]):
                 if progress_callback:
                     progress_callback(start_range, file_size)
             except azure.core.exceptions.ResourceNotFoundError as ex:
-                if ex.status_code == 416:  # Empty file
-                    return
                 raise FileNotFoundFromStorageError(key) from ex
+            except azure.core.exceptions.HttpResponseError as ex:
+                if ex.status_code == 416 and blob.get_blob_properties().size == 0:  # Empty file
+                    return
+                raise
 
     def get_contents_to_fileobj(
         self,
