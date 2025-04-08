@@ -16,6 +16,7 @@ from tempfile import NamedTemporaryFile
 from typing import Any, BinaryIO, Callable, Iterator, Optional, Union
 from unittest.mock import ANY, call, MagicMock, patch
 
+import botocore.exceptions
 import contextlib
 import pytest
 import rohmu.object_storage.s3
@@ -213,6 +214,34 @@ def test_get_contents_to_fileobj_raises_error_on_invalid_byte_range(infra: S3Inf
             fileobj_to_store_to=BytesIO(),
             byte_range=(100, 10),
         )
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        botocore.exceptions.IncompleteReadError(actual_bytes=80, expected_bytes=200),
+        botocore.exceptions.ReadTimeoutError(endpoint_url="https://example.org"),
+    ],
+    ids=type,
+)
+def test_get_contents_to_fileobj_resumes_on_error(infra: S3Infra, error: Exception) -> None:
+    transfer = infra.transfer
+    body_one = MagicMock()
+    body_one.read.side_effect = [b"x" * 80, error]
+    body_two = MagicMock()
+    body_two.read.side_effect = [b"x" * 120]
+    infra.s3_client.get_object.side_effect = [
+        {"ContentLength": 200, "Body": body_one, "Metadata": {}},
+        {"ContentLength": 120, "Body": body_two, "Metadata": {}},
+    ]
+    transfer.get_contents_to_fileobj(
+        key="testkey",
+        fileobj_to_store_to=BytesIO(),
+    )
+    assert infra.s3_client.get_object.mock_calls == [
+        call(Bucket="test-bucket", Key="test-prefix/testkey"),
+        call(Bucket="test-bucket", Key="test-prefix/testkey", Range="bytes=80-199"),
+    ]
 
 
 def test_get_contents_to_fileobj_passes_the_correct_range_header(infra: S3Infra) -> None:

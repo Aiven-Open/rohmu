@@ -437,8 +437,8 @@ class S3Transfer(BaseTransfer[Config]):
             read_amount = min(read_amount, READ_BLOCK_SIZE)
             try:
                 data = streaming_body.read(amt=read_amount)
-            except botocore.exceptions.IncompleteReadError as ex:
-                raise MaybeRecoverableError("botocore.exceptions.IncompleteReadError") from ex
+            except (botocore.exceptions.IncompleteReadError, botocore.exceptions.ReadTimeoutError) as ex:
+                raise MaybeRecoverableError("botocore.exceptions.IncompleteReadError", position=data_read) from ex
 
             fileobj.write(data)
             data_read += len(data)
@@ -458,7 +458,20 @@ class S3Transfer(BaseTransfer[Config]):
     ) -> Metadata:
         self._validate_byte_range(byte_range)
         stream, length, metadata = self._get_object_stream(key, byte_range)
-        self._read_object_to_fileobj(fileobj_to_store_to, stream, length, cb=progress_callback)
+        try:
+            self._read_object_to_fileobj(fileobj_to_store_to, stream, length, cb=progress_callback)
+        except MaybeRecoverableError as e:
+            if e.position is None:
+                raise
+            start_position = 0 if byte_range is None else byte_range[0]
+            retry_byte_range = (start_position + e.position, start_position + length - 1)
+            self.log.warning("Got recoverable error %r while reading %r, restarting with range %r", e, key, retry_byte_range)
+            self.get_contents_to_fileobj(
+                key,
+                fileobj_to_store_to,
+                byte_range=retry_byte_range,
+                progress_callback=progress_callback,
+            )
         return metadata
 
     def get_file_size(self, key: str) -> int:
