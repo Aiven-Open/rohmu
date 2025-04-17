@@ -33,7 +33,9 @@ from rohmu.object_storage.base import (
 )
 from rohmu.object_storage.config import (  # noqa: F401
     calculate_s3_chunk_size as calculate_chunk_size,
-    S3_MULTIPART_CHUNK_SIZE as MULTIPART_CHUNK_SIZE,
+    S3_DEFAULT_MULTIPART_CHUNK_SIZE as MULTIPART_CHUNK_SIZE,
+    S3_MAX_NUM_PARTS_PER_UPLOAD,
+    S3_MAX_PART_SIZE_BYTES,
     S3_READ_BLOCK_SIZE as READ_BLOCK_SIZE,
     S3AddressingStyle,
     S3ObjectStorageConfig as Config,
@@ -156,7 +158,7 @@ class S3Transfer(BaseTransfer[Config]):
         self.read_timeout = read_timeout
         self.aws_session_token = aws_session_token
         self.use_dualstack_endpoint = use_dualstack_endpoint
-        self.multipart_chunk_size = segment_size
+        self.default_multipart_chunk_size = segment_size
         self.encrypted = encrypted
         self.s3_client: Optional[S3Client] = None
         self.location = ""
@@ -486,6 +488,29 @@ class S3Transfer(BaseTransfer[Config]):
             else:
                 raise StorageError(f"File size lookup failed for {path}") from ex
 
+    def calculate_chunks_and_chunk_size(self, size: Optional[int]) -> tuple[int, int]:
+        """Calculate the number of chunks and chunk size for multipart upload.
+
+        If sizes provided self.default_multipart_chunk_size wil be used as first attempt,
+        if number of chunks is greater than S3_MAX_NUM_PARTS_PER_UPLOAD, chunk size will be doubled,
+        until the number of chunks is less than S3_MAX_NUM_PARTS_PER_UPLOAD.
+        """
+        if size is None:
+            return 1, self.default_multipart_chunk_size
+        chunks = math.ceil(size / self.default_multipart_chunk_size)
+        chunk_size = self.default_multipart_chunk_size
+
+        if chunks > S3_MAX_NUM_PARTS_PER_UPLOAD:
+            chunk_size = math.ceil(size / S3_MAX_NUM_PARTS_PER_UPLOAD)
+            if chunk_size > S3_MAX_PART_SIZE_BYTES:
+                raise StorageError(
+                    f"Cannot upload a file of size {size}. "
+                    f"Chunk size {chunk_size} is too big for each part of multipart upload."
+                )
+            chunks = math.ceil(size / chunk_size)
+
+        return chunks, chunk_size
+
     def multipart_upload_file_object(
         self,
         *,
@@ -500,11 +525,11 @@ class S3Transfer(BaseTransfer[Config]):
         start_of_multipart_upload = time.monotonic()
         bytes_sent = 0
 
-        chunks: int = 1
-        if size is not None:
-            chunks = math.ceil(size / self.multipart_chunk_size)
+        chunks, chunk_size = self.calculate_chunks_and_chunk_size(size)
         args, sanitized_metadata, path = self._init_args_for_multipart(key, metadata, mimetype, cache_control)
-        self.log.debug("Starting to upload multipart file: %r, size: %s, chunks: %s", path, size, chunks)
+        self.log.debug(
+            "Starting to upload multipart file: %r, size: %s, chunks: %d (chunk size: %d)", path, size, chunks, chunk_size
+        )
 
         parts: list[CompletedPartTypeDef] = []
         part_number = 1
@@ -518,7 +543,7 @@ class S3Transfer(BaseTransfer[Config]):
         mp_id = cmu_response["UploadId"]
 
         while True:
-            data = self._read_bytes(fp, self.multipart_chunk_size)
+            data = self._read_bytes(fp, chunk_size)
             if not data:
                 break
 
@@ -635,7 +660,7 @@ class S3Transfer(BaseTransfer[Config]):
         upload_progress_fn: IncrementalProgressCallbackType = None,
     ) -> None:
         if not self._should_multipart(
-            fd=fd, chunk_size=self.multipart_chunk_size, default=True, metadata=metadata, multipart=multipart
+            fd=fd, chunk_size=self.default_multipart_chunk_size, default=True, metadata=metadata, multipart=multipart
         ):
             data = fd.read()
             self.store_file_from_memory(key, data, metadata, cache_control=cache_control, mimetype=mimetype)
