@@ -62,17 +62,24 @@ GOOGLE_UPLOAD_CHUNK_SIZE: Final[int] = 1024 * 1024 * 5
 LOCAL_CHUNK_SIZE: Final[int] = 1024 * 1024
 
 
+S3_MAX_NUM_PARTS_PER_UPLOAD: Final[int] = 10000
+S3_MIN_PART_SIZE_MB: Final[int] = 5
+S3_MAX_PART_SIZE_MB: Final[int] = 524
+S3_MIN_PART_SIZE_BYTES: Final[int] = S3_MIN_PART_SIZE_MB * 1024 * 1024
+S3_MAX_PART_SIZE_BYTES: Final[int] = S3_MAX_PART_SIZE_MB * 1024 * 1024
+
+
 def calculate_s3_chunk_size() -> int:
     total_mem_mib = get_total_memory() or 0
     # At least 5 MiB, at most 524 MiB. Max block size used for hosts with ~210+ GB of memory
-    return max(min(int(total_mem_mib / 400), 524), 5) * 1024 * 1024
+    return max(min(int(total_mem_mib / 400), S3_MAX_PART_SIZE_MB), S3_MIN_PART_SIZE_MB) * 1024 * 1024
 
 
 # Set chunk size based on host memory. S3 supports up to 10k chunks and up to 5 TiB individual
 # files. Minimum chunk size is 5 MiB, which means max ~50 GB files can be uploaded. In order to get
 # to that 5 TiB increase the block size based on host memory; we don't want to use the max for all
 # hosts to avoid allocating too large portion of all available memory.
-S3_MULTIPART_CHUNK_SIZE: Final[int] = calculate_s3_chunk_size()
+S3_DEFAULT_MULTIPART_CHUNK_SIZE: Final[int] = calculate_s3_chunk_size()
 S3_READ_BLOCK_SIZE: Final[int] = 1024 * 1024 * 1
 
 
@@ -145,7 +152,7 @@ class S3ObjectStorageConfig(StorageModel):
     is_secure: bool = False
     is_verify_tls: bool = False
     cert_path: Optional[Path] = None
-    segment_size: int = S3_MULTIPART_CHUNK_SIZE
+    segment_size: int = S3_DEFAULT_MULTIPART_CHUNK_SIZE
     encrypted: bool = False
     proxy_info: Optional[ProxyInfo] = None
     connect_timeout: Optional[str] = None

@@ -8,7 +8,7 @@ from io import BytesIO
 from pathlib import Path
 from pydantic.v1 import ValidationError
 from rohmu.common.models import StorageOperation
-from rohmu.errors import InvalidByteRangeError
+from rohmu.errors import InvalidByteRangeError, StorageError
 from rohmu.object_storage.base import TransferWithConcurrentUploadSupport
 from rohmu.object_storage.config import S3ObjectStorageConfig
 from rohmu.object_storage.s3 import S3Transfer
@@ -85,7 +85,7 @@ def test_store_file_object_large(infra: S3Infra) -> None:
     chunk_size = len(test_data) // 2
     file_object = BytesIO(test_data)
 
-    infra.transfer.multipart_chunk_size = chunk_size  # simulate smaller chunk size to force multiple chunks
+    infra.transfer.default_multipart_chunk_size = chunk_size  # simulate smaller chunk size to force multiple chunks
 
     metadata = {"Content-Length": len(test_data), "some-date": datetime(2022, 11, 15, 18, 30, 58, 486644)}
     infra.transfer.store_file_object(key="test_key2", fd=file_object, metadata=metadata, multipart=True)
@@ -373,3 +373,39 @@ def test_cert_path(is_verify_tls: bool, cert_path: Optional[Path], expected: Uni
         )
         mock.assert_called_once()
         assert mock.call_args[1]["verify"] == expected
+
+
+def mb_to_bytes(size: int) -> int:
+    return size * 1024 * 1024
+
+
+@pytest.mark.parametrize(
+    ("file_size", "default_multipart_chunk_size", "expected_chunks", "expected_chunk_size"),
+    [
+        # for a 100 MB file, on a system with ~4 GB of RAM, default chunk size is 9 MB, so we expect 12 chunks of 9 MB each
+        (100, 9, 12, 9),
+        (10_000, 9, 1112, 9),
+        # for a 150 GB file, on a system with ~4 GB of RAM, default chunk size is 9 MB, so we expect 10000 chunks of 15 MB
+        # each (we increase chunk size to fit the file size in 10000 chunks)
+        (150_000, 9, 10_000, 15),
+    ],
+)
+def test_calculate_chunks_and_chunk_size(
+    infra: S3Infra, file_size: int, default_multipart_chunk_size: int, expected_chunks: int, expected_chunk_size: int
+) -> None:
+    t = infra.transfer
+    t.default_multipart_chunk_size = mb_to_bytes(default_multipart_chunk_size)
+    chunks, chunk_size = t.calculate_chunks_and_chunk_size(mb_to_bytes(file_size))
+    assert chunks == expected_chunks
+    assert chunk_size == mb_to_bytes(expected_chunk_size)
+
+
+def test_calculate_chunks_and_chunk_size_error(infra: S3Infra) -> None:
+    t = infra.transfer
+    t.default_multipart_chunk_size = mb_to_bytes(9)
+    with pytest.raises(StorageError) as e:
+        t.calculate_chunks_and_chunk_size(mb_to_bytes(50000000))
+    assert (
+        str(e.value) == "Cannot upload a file of size 52428800000000. "
+        "Chunk size 5242880000 is too big for each part of multipart upload."
+    )
