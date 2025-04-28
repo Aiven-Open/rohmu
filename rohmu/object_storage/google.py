@@ -193,6 +193,11 @@ class Reporter:
 ResType = TypeVar("ResType")
 
 
+# https://cloud.google.com/storage/docs/json_api/v1/status-codes
+# https://cloud.google.com/storage/docs/exponential-backoff
+RETRY_STATUS_CODES = ("429", "500", "502", "503", "504")
+
+
 class GoogleTransfer(BaseTransfer[Config]):
     config_model = Config
 
@@ -333,7 +338,7 @@ class GoogleTransfer(BaseTransfer[Config]):
                 elif isinstance(ex, HttpError):
                     # https://cloud.google.com/storage/docs/json_api/v1/status-codes
                     # https://cloud.google.com/storage/docs/exponential-backoff
-                    if ex.resp["status"] not in ("429", "500", "502", "503", "504"):
+                    if ex.resp["status"] not in RETRY_STATUS_CODES:
                         raise
                     retry_wait = min(10.0, max(1.0, retry_wait * 2) + random.random())
                 # httplib2 commonly fails with Bad File Descriptor and Connection Reset
@@ -481,33 +486,38 @@ class GoogleTransfer(BaseTransfer[Config]):
             reporter.report(self.stats)
             self.notifier.object_deleted(key)
 
-    def delete_keys(self, keys: Collection[str]) -> None:
+    def delete_keys(self, keys: Collection[str], preserve_trailing_slash: bool = False) -> None:
+        retry_deletion_keys: list[str] = []
+
+        def _delete_keys_callback(key: str, response: HttpRequest, exception: HttpError | None) -> None:
+            if exception is None:
+                self.log.debug("Deleted key: %r", key)
+                self.notifier.object_deleted(key)
+                return
+            if exception.resp["status"] not in RETRY_STATUS_CODES:
+                # Allow upper level to handle the error
+                raise exception
+            # Retry outsize of callback to avoid retry multiplication
+            retry_deletion_keys.append(key)
+
         self.log.debug("Deleting %i keys", len(keys))
         reporter = Reporter(StorageOperation.delete_key)
         with self._object_client() as object_resource:
-            for keys_batch in batched(keys, 1000):  # Cannot delete more than 1000 objects at a time
+            for keys_batch in batched(keys, 100):  # Docs ask to not batch more than 100 requests
                 assert self.gs is not None
-                batch_request = self.gs.new_batch_http_request(callback=self._delete_keys_callback)
+                batch_request = self.gs.new_batch_http_request(callback=_delete_keys_callback)
                 for key in keys_batch:
-                    path = self.format_key_for_backend(key)
+                    path = self.format_key_for_backend(key, trailing_slash=preserve_trailing_slash and key.endswith("/"))
                     self.log.debug("Deleting key: %r", path)
                     batch_request.add(object_resource.delete(bucket=self.bucket_name, object=path), request_id=key)
 
                 self._retry_on_reset(batch_request, batch_request.execute, retry_reporter=reporter)
-
-                for key in keys_batch:
-                    self.log.debug("Deleted key: %r", key)
-                    self.notifier.object_deleted(key)
+                while retry_deletion_keys:
+                    key = retry_deletion_keys.pop(0)
+                    self.log.debug("Retrying deletion of key: %r", key)
+                    self.delete_key(key, preserve_trailing_slash=preserve_trailing_slash)
 
         reporter.report(self.stats)
-
-    def _delete_keys_callback(self, request_id: str, response: HttpRequest, exception: HttpError | None) -> None:
-        if exception is not None:
-            self.log.error(
-                "Received server error %r for request_id %s, Google API delete operation",
-                exception.resp["status"],
-                request_id,
-            )
 
     def get_contents_to_fileobj(
         self,
