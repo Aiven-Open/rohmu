@@ -82,6 +82,12 @@ def calculate_s3_chunk_size() -> int:
 S3_DEFAULT_MULTIPART_CHUNK_SIZE: Final[int] = calculate_s3_chunk_size()
 S3_READ_BLOCK_SIZE: Final[int] = 1024 * 1024 * 1
 
+# When uploading streams as multipart, we might not be able to predict number of parts,
+# we may want to increase chunk size gradually, until we reach the max size, to reduce the
+# chance of exceeding the max number of parts.
+# Default multiplier is set to 1.0 to keep the chunk size constant.
+S3_DEFAULT_MULTIPART_CHUNK_SIZE_INCREASE_RATE: Final[int] = 1000
+S3_DEFAULT_MULTIPART_CHUNK_SIZE_INCREASE_MULTIPLIER: Final[float] = 1.0
 
 SWIFT_CHUNK_SIZE: Final[int] = 1024 * 1024 * 5  # 5 Mi
 SWIFT_SEGMENT_SIZE: Final[int] = 1024 * 1024 * 1024 * 3  # 3 Gi
@@ -160,6 +166,8 @@ class S3ObjectStorageConfig(StorageModel):
     aws_session_token: Optional[str] = Field(None, repr=False)
     use_dualstack_endpoint: Optional[bool] = True
     storage_type: Literal[StorageDriver.s3] = StorageDriver.s3
+    multipart_chunk_size_increase_rate: Optional[int] = S3_DEFAULT_MULTIPART_CHUNK_SIZE_INCREASE_RATE
+    multipart_chunk_size_increase_multiplier: Optional[float] = S3_DEFAULT_MULTIPART_CHUNK_SIZE_INCREASE_MULTIPLIER
 
     @root_validator(skip_on_failure=True)
     @classmethod

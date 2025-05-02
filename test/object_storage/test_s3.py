@@ -10,7 +10,12 @@ from pydantic.v1 import ValidationError
 from rohmu.common.models import StorageOperation
 from rohmu.errors import InvalidByteRangeError, StorageError
 from rohmu.object_storage.base import TransferWithConcurrentUploadSupport
-from rohmu.object_storage.config import S3ObjectStorageConfig
+from rohmu.object_storage.config import (
+    S3_DEFAULT_MULTIPART_CHUNK_SIZE_INCREASE_MULTIPLIER,
+    S3_DEFAULT_MULTIPART_CHUNK_SIZE_INCREASE_RATE,
+    S3_MAX_PART_SIZE_BYTES,
+    S3ObjectStorageConfig,
+)
 from rohmu.object_storage.s3 import S3Transfer
 from tempfile import NamedTemporaryFile
 from typing import Any, BinaryIO, Callable, Iterator, Optional, Union
@@ -375,8 +380,8 @@ def test_cert_path(is_verify_tls: bool, cert_path: Optional[Path], expected: Uni
         assert mock.call_args[1]["verify"] == expected
 
 
-def mb_to_bytes(size: int) -> int:
-    return size * 1024 * 1024
+def mb_to_bytes(size: int | float) -> int:
+    return int(size * 1024 * 1024)
 
 
 @pytest.mark.parametrize(
@@ -390,12 +395,12 @@ def mb_to_bytes(size: int) -> int:
         (150_000, 9, 10_000, 15),
     ],
 )
-def test_calculate_chunks_and_chunk_size(
+def test_get_initial_chunk_and_chunk_size(
     infra: S3Infra, file_size: int, default_multipart_chunk_size: int, expected_chunks: int, expected_chunk_size: int
 ) -> None:
     t = infra.transfer
     t.default_multipart_chunk_size = mb_to_bytes(default_multipart_chunk_size)
-    chunks, chunk_size = t.calculate_chunks_and_chunk_size(mb_to_bytes(file_size))
+    chunks, chunk_size = t.get_initial_chunk_and_chunk_size(mb_to_bytes(file_size))
     assert chunks == expected_chunks
     assert chunk_size == mb_to_bytes(expected_chunk_size)
 
@@ -404,8 +409,100 @@ def test_calculate_chunks_and_chunk_size_error(infra: S3Infra) -> None:
     t = infra.transfer
     t.default_multipart_chunk_size = mb_to_bytes(9)
     with pytest.raises(StorageError) as e:
-        t.calculate_chunks_and_chunk_size(mb_to_bytes(50000000))
+        t.get_initial_chunk_and_chunk_size(mb_to_bytes(50000000))
     assert (
         str(e.value) == "Cannot upload a file of size 52428800000000. "
         "Chunk size 5242880000 is too big for each part of multipart upload."
     )
+
+
+@dataclass(frozen=True)
+class TestChunkSizeOption:
+    description: str
+    multipart_chunk_size_increase_rate: int
+    multipart_chunk_size_increase_multiplier: float
+    current_chunk_size: int
+    current_part_number: int
+    expected_chunk_size: int
+
+
+TEST_INCREASE_CHUNK_SIZE_TEST_DATA = [
+    TestChunkSizeOption(
+        description="before hitting increase rate (42 < 100), chunk size does not change",
+        multipart_chunk_size_increase_rate=1000,
+        multipart_chunk_size_increase_multiplier=1.5,
+        current_chunk_size=mb_to_bytes(9),
+        current_part_number=42,
+        expected_chunk_size=mb_to_bytes(9),
+    ),
+    TestChunkSizeOption(
+        description="when part matches the rate, size increases",
+        multipart_chunk_size_increase_rate=1000,
+        multipart_chunk_size_increase_multiplier=1.5,
+        current_chunk_size=mb_to_bytes(9),
+        current_part_number=1000,
+        expected_chunk_size=mb_to_bytes(13.5),
+    ),
+    TestChunkSizeOption(
+        description="rate and multiplier can change and their values are respected",
+        multipart_chunk_size_increase_rate=250,
+        multipart_chunk_size_increase_multiplier=2,
+        current_chunk_size=mb_to_bytes(36),
+        current_part_number=750,
+        expected_chunk_size=mb_to_bytes(72),
+    ),
+    TestChunkSizeOption(
+        description="chunk size can be increased up to S3_MAX_PART_SIZE_BYTES",
+        multipart_chunk_size_increase_rate=1000,
+        multipart_chunk_size_increase_multiplier=2,
+        current_chunk_size=int(S3_MAX_PART_SIZE_BYTES / 2) + 1,
+        current_part_number=6000,
+        expected_chunk_size=S3_MAX_PART_SIZE_BYTES,
+    ),
+    TestChunkSizeOption(
+        description="chunk size is already at max, it does not change",
+        multipart_chunk_size_increase_rate=1000,
+        multipart_chunk_size_increase_multiplier=2,
+        current_chunk_size=S3_MAX_PART_SIZE_BYTES,
+        current_part_number=7000,
+        expected_chunk_size=S3_MAX_PART_SIZE_BYTES,
+    ),
+    TestChunkSizeOption(
+        description="part number 0 would not cause chunk size increase",
+        multipart_chunk_size_increase_rate=2,
+        multipart_chunk_size_increase_multiplier=2,
+        current_chunk_size=mb_to_bytes(9),
+        current_part_number=0,
+        expected_chunk_size=mb_to_bytes(9),
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "test_data",
+    TEST_INCREASE_CHUNK_SIZE_TEST_DATA,
+    ids=[option.description for option in TEST_INCREASE_CHUNK_SIZE_TEST_DATA],
+)
+def test_get_multipart_chunk_size(infra: S3Infra, test_data: TestChunkSizeOption) -> None:
+    t = infra.transfer
+    t.multipart_chunk_size_increase_rate = test_data.multipart_chunk_size_increase_rate
+    t.multipart_chunk_size_increase_multiplier = test_data.multipart_chunk_size_increase_multiplier
+
+    next_chunk_size = t.get_multipart_chunk_size(
+        current_chunk_size=test_data.current_chunk_size,
+        current_part_number=test_data.current_part_number,
+    )
+    assert next_chunk_size == test_data.expected_chunk_size
+
+
+def test_get_multipart_chunk_size_default_behavior(infra: S3Infra) -> None:
+    t = infra.transfer
+    assert t.multipart_chunk_size_increase_multiplier == S3_DEFAULT_MULTIPART_CHUNK_SIZE_INCREASE_MULTIPLIER == 1.0
+    assert t.multipart_chunk_size_increase_rate == S3_DEFAULT_MULTIPART_CHUNK_SIZE_INCREASE_RATE == 1000
+
+    current_chunk_size = mb_to_bytes(9)
+    next_chunk_size = t.get_multipart_chunk_size(
+        current_chunk_size=current_chunk_size,
+        current_part_number=t.multipart_chunk_size_increase_rate,
+    )
+    assert next_chunk_size == current_chunk_size
