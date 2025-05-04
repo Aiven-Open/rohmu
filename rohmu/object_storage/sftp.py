@@ -18,14 +18,28 @@ from rohmu.object_storage.base import (
 from rohmu.object_storage.config import SFTPObjectStorageConfig as Config
 from rohmu.typing import Metadata
 from stat import S_ISDIR
-from typing import Any, BinaryIO, cast, Iterator, Optional, Tuple
+from typing import Any, BinaryIO, Callable, cast, Iterator, Optional, Tuple, TypeVar
 
 import datetime
+import functools
 import json
 import logging
 import os
 import paramiko
 import warnings
+
+T = TypeVar("T")
+
+def check_socket_closed(method):
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        try:
+            return method(self, *args, **kwargs)
+        except OSError as ex:
+            if ex.args == ('Socket is closed',):
+                self.invalidate_client()
+            raise
+    return wrapper
 
 
 class SFTPTransfer(BaseTransfer[Config]):
@@ -63,17 +77,40 @@ class SFTPTransfer(BaseTransfer[Config]):
         # https://github.com/paramiko/paramiko/issues/1386#issuecomment-470847772
         warnings.filterwarnings(action="ignore", module=".*paramiko.*")
 
-        transport = paramiko.Transport((self.server, self.port))
-
-        if self.private_key:
-            pkey = paramiko.RSAKey.from_private_key_file(self.private_key)
-            transport.connect(username=self.username, pkey=pkey)
-        else:  # password must be defined due to previous check above
-            transport.connect(username=self.username, password=self.password)
-
-        self.client = cast(paramiko.SFTPClient, paramiko.SFTPClient.from_transport(transport))
+        self.client: Optional[paramiko.SFTPClient] = None
+        self.get_client()
 
         self.log.debug("SFTPTransfer initialized")
+
+    def get_client(self) -> paramiko.SFTPClient:
+        if self.client is None:
+            transport = paramiko.Transport((self.server, self.port))
+
+            if self.private_key:
+                pkey = paramiko.RSAKey.from_private_key_file(self.private_key)
+                transport.connect(username=self.username, pkey=pkey)
+            else:  # password must be defined due to previous check above
+                transport.connect(username=self.username, password=self.password)
+
+            self.client = cast(paramiko.SFTPClient, paramiko.SFTPClient.from_transport(transport))
+
+        return self.client
+
+    def invalidate_client(self):
+        self.client = None
+
+    def _retry_idempotent_op(self, operation: Callable[[], T]) -> T:
+        """
+        Retries an operation once (after reconnecting the client) if it fails with a socket closed error.
+        This should only be used to wrap idempotent operations that can be repeated.
+        """
+        try:
+            return operation()
+        except OSError as ex:
+            if ex.args == ('Socket is closed',):
+                self.invalidate_client()
+                return operation()
+            raise
 
     def _verify_object_storage_unwrapped(self) -> None:
         """No-op for now. Eventually, the SFTP connection could be tested here instead of in the constructor."""
@@ -87,6 +124,7 @@ class SFTPTransfer(BaseTransfer[Config]):
     def create_object_store_if_needed(self) -> None:
         """No-op as it's not applicable to SFTP transfers"""
 
+    @check_socket_closed
     def get_contents_to_fileobj(
         self,
         key: str,
@@ -108,20 +146,22 @@ class SFTPTransfer(BaseTransfer[Config]):
 
         try:
             # the paramiko progress callback has the same interface as pghoard for downloads
-            self.client.getfo(remotepath=target_path, fl=fileobj_to_store_to, callback=progress_callback)
+            self.get_client().getfo(remotepath=target_path, fl=fileobj_to_store_to, callback=progress_callback)
         except FileNotFoundError as ex:
             raise FileNotFoundFromStorageError(key) from ex
 
+    @check_socket_closed
     def get_file_size(self, key: str) -> int:
         target_path = self.format_key_for_backend(key.strip("/"))
         try:
-            return self.client.stat(target_path).st_size  # type: ignore
+            return self._retry_idempotent_op(lambda: self.get_client().stat(target_path).st_size)  # type: ignore
         except FileNotFoundError as ex:
             raise FileNotFoundFromStorageError(key) from ex
 
+    @check_socket_closed
     def get_metadata_for_key(self, key: str) -> Metadata:
         bio = BytesIO()
-        self._get_contents_to_fileobj(key + ".metadata", bio)
+        self._retry_idempotent_op(lambda: self._get_contents_to_fileobj(key + ".metadata", bio))
         return json.loads(bio.getvalue().decode())
 
     @staticmethod
@@ -135,7 +175,7 @@ class SFTPTransfer(BaseTransfer[Config]):
         self.log.debug("Listing path: %r", target_path)
 
         try:
-            attrs = self.client.listdir_attr(target_path)
+            attrs = self._retry_idempotent_op(lambda: self.get_client().listdir_attr(target_path))
         except FileNotFoundError:  # if not a directory will throw exception
             if include_key:
                 file_name = os.path.basename(target_path)
@@ -143,7 +183,7 @@ class SFTPTransfer(BaseTransfer[Config]):
                     return
 
                 try:
-                    attr = self.client.stat(target_path)
+                    attr = self._retry_idempotent_op(lambda: self.get_client().stat(target_path))
 
                     if with_metadata:
                         metadata = self.get_metadata_for_key(key)
@@ -210,6 +250,7 @@ class SFTPTransfer(BaseTransfer[Config]):
     ) -> None:
         raise NotImplementedError
 
+    @check_socket_closed
     def delete_key(self, key: str, preserve_trailing_slash: bool = False) -> None:
         if preserve_trailing_slash:
             raise Error("SftpTransfer does not support preserving trailing slashes")
@@ -217,12 +258,13 @@ class SFTPTransfer(BaseTransfer[Config]):
         self.log.info("Removing path: %r", target_path)
 
         try:
-            self.client.remove(target_path + ".metadata")
-            self.client.remove(target_path)
+            self._retry_idempotent_op(lambda: self.get_client().remove(target_path + ".metadata"))
+            self._retry_idempotent_op(lambda: self.get_client().remove(target_path))
             self.notifier.object_deleted(key=key)
         except FileNotFoundError as ex:
             raise FileNotFoundFromStorageError(key) from ex
 
+    @check_socket_closed
     def store_file_object(
         self,
         key: str,
@@ -261,7 +303,7 @@ class SFTPTransfer(BaseTransfer[Config]):
                 upload_progress_fn(bytes_written, total_bytes)
 
         self._mkdir_p(os.path.dirname(target_path))
-        self.client.putfo(fl=fd, remotepath=target_path, callback=wrapper_upload_progress_fn)
+        self.get_client().putfo(fl=fd, remotepath=target_path, callback=wrapper_upload_progress_fn)
 
         # metadata is saved last, because we ignore data files until the metadata file exists
         # see iter_key above
@@ -274,7 +316,7 @@ class SFTPTransfer(BaseTransfer[Config]):
 
         sanitised = self.sanitize_metadata(metadata)
         bio = BytesIO(json.dumps(sanitised).encode())
-        self.client.putfo(fl=bio, remotepath=metadata_path)
+        self.get_client().putfo(fl=bio, remotepath=metadata_path)
 
     # https://stackoverflow.com/questions/14819681/upload-files-using-sftp-in-python-but-create-directories-if-path-doesnt-exist
     def _mkdir_p(self, remote: str) -> None:
@@ -290,6 +332,6 @@ class SFTPTransfer(BaseTransfer[Config]):
         while len(dirs_):
             dir_ = dirs_.pop()
             try:
-                self.client.stat(dir_)
+                self.get_client().stat(dir_)
             except OSError:
-                self.client.mkdir(dir_)
+                self.get_client().mkdir(dir_)
