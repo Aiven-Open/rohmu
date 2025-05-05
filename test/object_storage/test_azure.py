@@ -1,14 +1,15 @@
 # Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
+from contextlib import ExitStack
 from datetime import datetime
 from io import BytesIO
 from pytest_mock import MockerFixture
 from rohmu.common.strenum import StrEnum
-from rohmu.errors import FileNotFoundFromStorageError, InvalidByteRangeError
+from rohmu.errors import FileNotFoundFromStorageError, InvalidByteRangeError, StorageError
 from rohmu.object_storage.azure import AzureTransfer
 from rohmu.object_storage.config import AzureObjectStorageConfig
 from tempfile import NamedTemporaryFile
 from typing import Any, Optional, Union
-from unittest.mock import call, MagicMock, patch
+from unittest.mock import call, MagicMock, Mock, patch
 
 import azure.storage.blob
 import pytest
@@ -329,28 +330,177 @@ def test_delete_key(
 
 
 @pytest.mark.parametrize("preserve_trailing_slash", [True, False, None])
-def test_delete_keys(mock_get_blob_client: MagicMock, preserve_trailing_slash: Union[bool, None]) -> None:
+def test_delete_keys_trailing_slash(mock_get_blob_client: MagicMock, preserve_trailing_slash: Union[bool, None]) -> None:
     notifier = MagicMock()
-    transfer = AzureTransfer(
-        bucket_name="test_bucket",
-        account_name="test_account",
-        account_key="test_key2",
-        prefix="test-prefix/",
-        notifier=notifier,
-    )
-    if preserve_trailing_slash is None:
-        transfer.delete_keys(["2", "3", "4/"])
-    else:
-        transfer.delete_keys(["2", "3", "4/"], preserve_trailing_slash=preserve_trailing_slash)
+    with ExitStack() as stack:
+        stack.enter_context(patch("rohmu.object_storage.azure.AzureTransfer._create_object_store_if_needed_unwrapped"))
+        mock_container_client = MagicMock()
+        mock_container_client.delete_blobs.return_value = [
+            Mock(status_code=202),
+            Mock(status_code=202),
+            Mock(status_code=202),
+        ]
+        mock_service_client = MagicMock()
+        mock_service_client.get_container_client.return_value = mock_container_client
+        stack.enter_context(
+            patch("rohmu.object_storage.azure.AzureTransfer.get_blob_service_client", return_value=mock_service_client)
+        )
+        transfer = AzureTransfer(
+            bucket_name="test_bucket",
+            account_name="test_account",
+            account_key="test_key2",
+            prefix="test-prefix/",
+            notifier=notifier,
+        )
+        if preserve_trailing_slash is None:
+            transfer.delete_keys(["2", "3", "4/"])
+        else:
+            transfer.delete_keys(["2", "3", "4/"], preserve_trailing_slash=preserve_trailing_slash)
 
-    expected_keys = ["2", "3", "4/" if preserve_trailing_slash else "4"]
-    expected_calls = []
-    for expected_key in expected_keys:
-        expected_calls.extend(
-            [
-                call(container="test_bucket", blob=f"test-prefix/{expected_key}"),
-                call().delete_blob(),
-            ]
+        expected_keys = ["test-prefix/2", "test-prefix/3", "test-prefix/4/" if preserve_trailing_slash else "test-prefix/4"]
+        expected_calls = [
+            call.delete_blobs(*expected_keys, raise_on_any_failure=False),
+        ]
+
+        mock_container_client.assert_has_calls(expected_calls)
+
+
+def test_delete_keys_notifier() -> None:
+    notifier = MagicMock()
+    with ExitStack() as stack:
+        stack.enter_context(patch("rohmu.object_storage.azure.AzureTransfer._create_object_store_if_needed_unwrapped"))
+        mock_container_client = MagicMock()
+        mock_container_client.delete_blobs.return_value = [
+            Mock(status_code=202),
+            Mock(status_code=202),
+            Mock(status_code=202),
+        ]
+        mock_service_client = MagicMock()
+        mock_service_client.get_container_client.return_value = mock_container_client
+        stack.enter_context(
+            patch("rohmu.object_storage.azure.AzureTransfer.get_blob_service_client", return_value=mock_service_client)
         )
 
-    mock_get_blob_client.assert_has_calls(expected_calls)
+        transfer = AzureTransfer(
+            bucket_name="test-bucket",
+            account_name="test-account",
+            account_key="test-key",
+            prefix="test-prefix/",
+            notifier=notifier,
+        )
+
+        test_keys = ["key1", "key2", "key3"]
+        transfer.delete_keys(keys=test_keys)
+
+        expected_paths = ["test-prefix/key1", "test-prefix/key2", "test-prefix/key3"]
+        mock_container_client.delete_blobs.assert_called_once_with(*expected_paths, raise_on_any_failure=False)
+
+        # Verify notifier was called for each successful deletion
+        expected_calls = [call(key) for key in test_keys]
+        notifier.object_deleted.assert_has_calls(expected_calls)
+
+
+def test_delete_keys_with_404() -> None:
+    notifier = MagicMock()
+    with ExitStack() as stack:
+        stack.enter_context(patch("rohmu.object_storage.azure.AzureTransfer._create_object_store_if_needed_unwrapped"))
+        mock_container_client = MagicMock()
+        mock_container_client.delete_blobs.return_value = [
+            Mock(status_code=202),
+            Mock(status_code=404),
+            Mock(status_code=202),
+        ]
+        mock_service_client = MagicMock()
+        mock_service_client.get_container_client.return_value = mock_container_client
+        stack.enter_context(
+            patch("rohmu.object_storage.azure.AzureTransfer.get_blob_service_client", return_value=mock_service_client)
+        )
+
+        transfer = AzureTransfer(
+            bucket_name="test-bucket",
+            account_name="test-account",
+            account_key="test-key",
+            notifier=notifier,
+        )
+
+        test_keys = ["key1", "key2", "key3"]
+        with pytest.raises(FileNotFoundFromStorageError):
+            transfer.delete_keys(keys=test_keys)
+
+        # Verify notifier was only called for successful deletions
+        expected_calls = [call("key1")]
+        notifier.object_deleted.assert_has_calls(expected_calls)
+
+
+def test_delete_keys_with_error_status() -> None:
+    notifier = MagicMock()
+    with ExitStack() as stack:
+        stack.enter_context(patch("rohmu.object_storage.azure.AzureTransfer._create_object_store_if_needed_unwrapped"))
+        mock_container_client = MagicMock()
+        mock_container_client.delete_blobs.return_value = [
+            Mock(status_code=202),
+            Mock(status_code=500, reason="Internal Server Error"),
+            Mock(status_code=202),
+        ]
+        mock_service_client = MagicMock()
+        mock_service_client.get_container_client.return_value = mock_container_client
+        stack.enter_context(
+            patch("rohmu.object_storage.azure.AzureTransfer.get_blob_service_client", return_value=mock_service_client)
+        )
+
+        transfer = AzureTransfer(
+            bucket_name="test-bucket",
+            account_name="test-account",
+            account_key="test-key",
+            notifier=notifier,
+        )
+
+        test_keys = ["key1", "key2", "key3"]
+        with pytest.raises(StorageError, match="Failed to delete key: 500 Internal Server Error"):
+            transfer.delete_keys(keys=test_keys)
+
+        # Verify notifier was only called for successful deletions
+        expected_calls = [call("key1")]
+        notifier.object_deleted.assert_has_calls(expected_calls)
+
+
+@pytest.mark.parametrize(
+    ("total_keys,expected_batch_count"),
+    (
+        (0, 0),
+        (1, 1),
+        (255, 1),
+        (256, 1),
+        (257, 2),
+        (511, 2),
+        (512, 2),
+        (513, 3),
+    ),
+)
+def test_delete_keys_batching(total_keys: int, expected_batch_count: int) -> None:
+    notifier = MagicMock()
+    with ExitStack() as stack:
+        stack.enter_context(patch("rohmu.object_storage.azure.AzureTransfer._create_object_store_if_needed_unwrapped"))
+        mock_container_client = MagicMock()
+        mock_container_client.delete_blobs.return_value = [Mock(status_code=202) for _ in range(total_keys)]
+        mock_service_client = MagicMock()
+        mock_service_client.get_container_client.return_value = mock_container_client
+        stack.enter_context(
+            patch("rohmu.object_storage.azure.AzureTransfer.get_blob_service_client", return_value=mock_service_client)
+        )
+
+        transfer = AzureTransfer(
+            bucket_name="test-bucket",
+            account_name="test-account",
+            account_key="test-key",
+            notifier=notifier,
+        )
+
+        test_keys = [f"test_key_{i+1}" for i in range(total_keys)]
+        transfer.delete_keys(keys=test_keys)
+
+        # Verify correct number of batch calls
+        assert mock_container_client.delete_blobs.call_count == expected_batch_count
+
+        # Verify all keys were processed
+        assert notifier.object_deleted.call_count == total_keys

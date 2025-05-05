@@ -33,7 +33,8 @@ from rohmu.object_storage.config import (  # noqa: F401
     calculate_azure_max_block_size as calculate_max_block_size,
 )
 from rohmu.typing import Metadata
-from typing import Any, BinaryIO, Iterator, Optional, Tuple, Union
+from rohmu.util import batched
+from typing import Any, BinaryIO, Collection, Iterator, Optional, Tuple, Union
 from typing_extensions import Self
 
 import azure.common
@@ -315,6 +316,28 @@ class AzureTransfer(BaseTransfer[Config]):
         self.notifier.object_deleted(key)
 
         return result
+
+    def delete_keys(self, keys: Collection[str], preserve_trailing_slash: bool = False) -> None:
+        container_client = self.get_blob_service_client().get_container_client(container=self.container_name)
+        self.log.debug("Deleting %i keys", len(keys))
+        for keys_batch in batched(keys, 256):  # 256 is the maximum batch size for Azure
+            paths_to_delete = []
+            for key in keys_batch:
+                path = self.format_key_for_backend(
+                    key, remove_slash_prefix=True, trailing_slash=preserve_trailing_slash and key.endswith("/")
+                )
+                paths_to_delete.append(path)
+                self.log.debug("Deleting key: %r", path)
+
+            responses = container_client.delete_blobs(*paths_to_delete, raise_on_any_failure=False)
+            for response, key in zip(responses, keys_batch):
+                if response.status_code == 202:
+                    self.log.debug("Deleted key: %r", key)
+                    self.notifier.object_deleted(key)
+                elif response.status_code == 404:
+                    raise FileNotFoundFromStorageError(key)
+                else:
+                    raise StorageError(f"Failed to delete key: {response.status_code} {response.reason}")
 
     @classmethod
     def _parse_length_from_content_range(cls, content_range: str) -> int:
