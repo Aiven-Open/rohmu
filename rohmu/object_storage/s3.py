@@ -136,6 +136,7 @@ class S3Transfer(BaseTransfer[Config]):
         use_dualstack_endpoint: Optional[bool] = True,
         statsd_info: Optional[StatsdConfig] = None,
         ensure_object_store_available: bool = True,
+        min_multipart_chunk_size: Optional[int] = None,
     ) -> None:
         super().__init__(
             prefix=prefix,
@@ -158,7 +159,7 @@ class S3Transfer(BaseTransfer[Config]):
         self.read_timeout = read_timeout
         self.aws_session_token = aws_session_token
         self.use_dualstack_endpoint = use_dualstack_endpoint
-        self.default_multipart_chunk_size = segment_size
+        self.default_multipart_chunk_size = max(segment_size, min_multipart_chunk_size or 0)
         self.encrypted = encrypted
         self.s3_client: Optional[S3Client] = None
         self.location = ""
@@ -492,8 +493,8 @@ class S3Transfer(BaseTransfer[Config]):
         """Calculate the number of chunks and chunk size for multipart upload.
 
         If sizes provided self.default_multipart_chunk_size wil be used as first attempt,
-        if number of chunks is greater than S3_MAX_NUM_PARTS_PER_UPLOAD, chunk size will be doubled,
-        until the number of chunks is less than S3_MAX_NUM_PARTS_PER_UPLOAD.
+        if number of chunks is greater than S3_MAX_NUM_PARTS_PER_UPLOAD, we will try
+        to fit the file into S3_MAX_NUM_PARTS_PER_UPLOAD parts by increasing the chunk size.
         """
         if size is None:
             return 1, self.default_multipart_chunk_size
@@ -508,6 +509,12 @@ class S3Transfer(BaseTransfer[Config]):
                     f"Chunk size {chunk_size} is too big for each part of multipart upload."
                 )
             chunks = math.ceil(size / chunk_size)
+            self.log.info(
+                "default chunk size %d was too small for file size %d, increasing it to %d",
+                self.default_multipart_chunk_size,
+                size,
+                chunk_size,
+            )
 
         return chunks, chunk_size
 
