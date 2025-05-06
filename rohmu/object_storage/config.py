@@ -160,6 +160,7 @@ class S3ObjectStorageConfig(StorageModel):
     aws_session_token: Optional[str] = Field(None, repr=False)
     use_dualstack_endpoint: Optional[bool] = True
     storage_type: Literal[StorageDriver.s3] = StorageDriver.s3
+    min_multipart_chunk_size: Optional[int] = None
 
     @root_validator(skip_on_failure=True)
     @classmethod

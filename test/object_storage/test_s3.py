@@ -10,7 +10,7 @@ from pydantic.v1 import ValidationError
 from rohmu.common.models import StorageOperation
 from rohmu.errors import InvalidByteRangeError, StorageError
 from rohmu.object_storage.base import TransferWithConcurrentUploadSupport
-from rohmu.object_storage.config import S3ObjectStorageConfig
+from rohmu.object_storage.config import S3_MAX_NUM_PARTS_PER_UPLOAD, S3ObjectStorageConfig
 from rohmu.object_storage.s3 import S3Transfer
 from tempfile import NamedTemporaryFile
 from typing import Any, BinaryIO, Callable, Iterator, Optional, Union
@@ -30,12 +30,13 @@ class S3Infra:
     transfer: S3Transfer
 
 
-@pytest.fixture(name="infra")
-def fixture_infra(mocker: Any) -> Iterator[S3Infra]:
+def make_mock_transfer(mocker: Any, transfer_kwargs: dict[str, Any]) -> S3Transfer:
     notifier = MagicMock()
     s3_client = MagicMock()
     create_client = MagicMock(return_value=s3_client)
     session = MagicMock(create_client=create_client)
+
+    assert all(kwarg in transfer_kwargs for kwarg in ["region", "bucket_name", "prefix"]), "Missing required kwargs"
 
     @contextlib.contextmanager
     def _get_session(cls: S3Transfer) -> Iterator[MagicMock]:
@@ -43,14 +44,18 @@ def fixture_infra(mocker: Any) -> Iterator[S3Infra]:
 
     mocker.patch("rohmu.object_storage.s3.S3Transfer._get_session", _get_session)
 
+    transfer_kwargs["notifier"] = notifier
+    transfer = S3Transfer(**transfer_kwargs)
+    return transfer
+
+
+@pytest.fixture(name="infra")
+def fixture_infra(mocker: Any) -> Iterator[S3Infra]:
     operation = mocker.patch("rohmu.common.statsd.StatsClient.operation")
-    transfer = S3Transfer(
-        region="test-region",
-        bucket_name="test-bucket",
-        notifier=notifier,
-        prefix="test-prefix",
-    )
-    yield S3Infra(notifier, operation, s3_client, transfer)
+    transfer = make_mock_transfer(mocker, {"region": "test-region", "bucket_name": "test-bucket", "prefix": "test-prefix"})
+    assert isinstance(transfer.notifier, MagicMock)
+    assert isinstance(transfer.s3_client, MagicMock)
+    yield S3Infra(transfer.notifier, operation, transfer.s3_client, transfer)
 
 
 def test_close(infra: S3Infra) -> None:
@@ -379,25 +384,92 @@ def mb_to_bytes(size: int) -> int:
     return size * 1024 * 1024
 
 
+@dataclass(frozen=True)
+class TransferMinMultipartChunkSizeTestData:
+    description: str
+    size: int | None
+    segment_size: int
+    min_multipart_chunk_size: int | None
+    expected_chunks: int
+    expected_chunk_size: int
+
+
+TEST_TRANSFER_MIN_MULTIPART_CHUNK_SIZE = [
+    TransferMinMultipartChunkSizeTestData(
+        description="For a 100 MB file, on a system with ~4 GB of RAM, default chunk size is 9 MB, "
+        "we expect 12 chunks of 9 MB each",
+        size=mb_to_bytes(100),
+        segment_size=mb_to_bytes(9),
+        min_multipart_chunk_size=None,
+        expected_chunks=12,
+        expected_chunk_size=mb_to_bytes(9),
+    ),
+    TransferMinMultipartChunkSizeTestData(
+        description="Same as above, but min_multipart_chunk_size is set to 50 MB, " "we expect only 2 chunks of 50 MB each",
+        size=mb_to_bytes(100),
+        segment_size=mb_to_bytes(9),
+        min_multipart_chunk_size=mb_to_bytes(50),
+        expected_chunks=2,
+        expected_chunk_size=mb_to_bytes(50),
+    ),
+    TransferMinMultipartChunkSizeTestData(
+        description="for a 150 GB file, on a system with ~4 GB of RAM, default chunk size is 9 MB,"
+        "we expect the chunk size to be 15 MB to fit the file size in 10000 chunks",
+        size=mb_to_bytes(150_000),
+        segment_size=mb_to_bytes(9),
+        min_multipart_chunk_size=None,
+        expected_chunks=S3_MAX_NUM_PARTS_PER_UPLOAD,
+        expected_chunk_size=mb_to_bytes(15),
+    ),
+    TransferMinMultipartChunkSizeTestData(
+        description="same as above but min_multipart_chunk_size is set to 50 MB, we expect 3000 chunks of 50 MB each",
+        size=mb_to_bytes(150_000),
+        segment_size=mb_to_bytes(9),
+        min_multipart_chunk_size=mb_to_bytes(50),
+        expected_chunks=3000,
+        expected_chunk_size=mb_to_bytes(50),
+    ),
+    TransferMinMultipartChunkSizeTestData(
+        description="When size is unknown, we expect the chunk size to be the max between "
+        "segment_size & min_multipart_chunk_size",
+        size=None,
+        segment_size=mb_to_bytes(9),
+        min_multipart_chunk_size=mb_to_bytes(50),
+        expected_chunks=1,
+        expected_chunk_size=mb_to_bytes(50),
+    ),
+    TransferMinMultipartChunkSizeTestData(
+        description="When size is unknown, we expect the chunk size to be the max between "
+        "segment_size & min_multipart_chunk_size",
+        size=None,
+        segment_size=mb_to_bytes(75),
+        min_multipart_chunk_size=mb_to_bytes(50),
+        expected_chunks=1,
+        expected_chunk_size=mb_to_bytes(75),
+    ),
+]
+
+
 @pytest.mark.parametrize(
-    ("file_size", "default_multipart_chunk_size", "expected_chunks", "expected_chunk_size"),
-    [
-        # for a 100 MB file, on a system with ~4 GB of RAM, default chunk size is 9 MB, so we expect 12 chunks of 9 MB each
-        (100, 9, 12, 9),
-        (10_000, 9, 1112, 9),
-        # for a 150 GB file, on a system with ~4 GB of RAM, default chunk size is 9 MB, so we expect 10000 chunks of 15 MB
-        # each (we increase chunk size to fit the file size in 10000 chunks)
-        (150_000, 9, 10_000, 15),
-    ],
+    "test_data",
+    TEST_TRANSFER_MIN_MULTIPART_CHUNK_SIZE,
+    ids=[option.description for option in TEST_TRANSFER_MIN_MULTIPART_CHUNK_SIZE],
 )
-def test_calculate_chunks_and_chunk_size(
-    infra: S3Infra, file_size: int, default_multipart_chunk_size: int, expected_chunks: int, expected_chunk_size: int
-) -> None:
-    t = infra.transfer
-    t.default_multipart_chunk_size = mb_to_bytes(default_multipart_chunk_size)
-    chunks, chunk_size = t.calculate_chunks_and_chunk_size(mb_to_bytes(file_size))
-    assert chunks == expected_chunks
-    assert chunk_size == mb_to_bytes(expected_chunk_size)
+def test_transfer_with_min_multipart_chunk_size(mocker: Any, test_data: TransferMinMultipartChunkSizeTestData) -> None:
+    t = make_mock_transfer(
+        mocker,
+        {
+            "region": "test-region",
+            "bucket_name": "test-bucket",
+            "prefix": "test-prefix",
+            "segment_size": test_data.segment_size,
+            "min_multipart_chunk_size": test_data.min_multipart_chunk_size,
+        },
+    )
+
+    chunks, chunk_size = t.calculate_chunks_and_chunk_size(test_data.size)
+    assert chunks == test_data.expected_chunks
+    assert chunk_size == test_data.expected_chunk_size
 
 
 def test_calculate_chunks_and_chunk_size_error(infra: S3Infra) -> None:
