@@ -4,7 +4,7 @@ from __future__ import annotations
 from contextlib import ExitStack
 from datetime import datetime, timezone
 from googleapiclient.errors import HttpError
-from googleapiclient.http import MediaUploadProgress
+from googleapiclient.http import HttpRequest, MediaUploadProgress
 from io import BytesIO
 from rohmu import InvalidConfigurationError
 from rohmu.common.models import StorageOperation
@@ -12,7 +12,7 @@ from rohmu.errors import InvalidByteRangeError, TransferObjectStoreMissingError,
 from rohmu.object_storage.base import IterKeyItem
 from rohmu.object_storage.google import GoogleTransfer, MediaIoBaseDownloadWithByteRange, Reporter
 from tempfile import NamedTemporaryFile
-from typing import Union
+from typing import Callable, Union
 from unittest.mock import ANY, call, MagicMock, Mock, patch
 
 import base64
@@ -197,6 +197,10 @@ def test_store_file_object() -> None:
         )
 
 
+def _generate_keys(total: int, prefix: str = "test_key_") -> list[str]:
+    return [f"{prefix}{i+1}" for i in range(total)]
+
+
 def test_upload_size_unknown_to_reporter() -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
@@ -254,7 +258,7 @@ def test_get_contents_to_fileobj_raises_error_on_invalid_byte_range() -> None:
             )
 
 
-def _mock_request(calls: list[tuple[str, bytes]]) -> Mock:
+def _mock_request(calls: list[tuple[str, bytes]], resumable: bool | None = None) -> Mock:
     results = []
     for call_content_range, call_content in calls:
         response = Mock()
@@ -269,6 +273,7 @@ def _mock_request(calls: list[tuple[str, bytes]]) -> Mock:
     request = Mock()
     request.headers = {}
     request.http.request = http_call
+    request.resumable = resumable
     return request
 
 
@@ -496,7 +501,7 @@ def test_delete_key(key: str, preserve_trailing_slash: Union[bool, None], expect
 
 
 @pytest.mark.parametrize("preserve_trailing_slash", [True, False, None])
-def test_delete_keys(preserve_trailing_slash: Union[bool, None]) -> None:
+def test_delete_keys_trailing_slash(preserve_trailing_slash: Union[bool, None]) -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
         stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
@@ -518,14 +523,120 @@ def test_delete_keys(preserve_trailing_slash: Union[bool, None]) -> None:
 
         mock_client_delete = _init_google_client_mock.return_value.objects().delete
 
-        mock_client_delete = _init_google_client_mock.return_value.objects().delete
         expected_keys = ["2", "3", "4"] if not preserve_trailing_slash else ["2", "3", "4/"]
         expected_calls = []
         for key in expected_keys:
             expected_calls.extend(
                 [
                     call(bucket="test-bucket", object=f"test-prefix/{key}"),
-                    call().execute(),
                 ]
             )
         mock_client_delete.assert_has_calls(expected_calls)
+
+
+@pytest.mark.parametrize(
+    ("total_keys,expected_bulk_request_count"),
+    (
+        (0, 0),
+        (1, 1),
+        (100, 1),
+        (101, 2),
+        (200, 2),
+        (201, 3),
+        (1_000, 10),
+    ),
+)
+def test_delete_keys_bulk(total_keys: int, expected_bulk_request_count: int) -> None:
+    notifier = MagicMock()
+    test_keys = _generate_keys(total_keys)
+    with ExitStack() as stack:
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
+        mock_retry_on_reset = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._retry_on_reset"))
+        transfer = GoogleTransfer(
+            project_id="test-project-id",
+            bucket_name="test-bucket",
+            notifier=notifier,
+        )
+        mock_client = stack.enter_context(patch.object(transfer, "_object_client"))
+        mock_request = _mock_request([], resumable=None)
+        mock_client.return_value.__enter__.return_value.delete.return_value = mock_request
+
+        transfer.delete_keys(keys=test_keys)
+
+        assert mock_retry_on_reset.call_count == expected_bulk_request_count
+
+
+class BatchRequestProcessor:
+    def __init__(self, callback: Callable[[str, HttpRequest | None, HttpError | None], None]) -> None:
+        self.callback = callback
+        self.operations: list[str] = []
+
+    def execute(self) -> None:
+        for key in self.operations:
+            if "500" in key:
+                self.callback(key, None, HttpError(resp=httplib2.Response({"status": "500"}), content=b"500"))
+                return
+            if "404" in key:
+                self.callback(key, None, HttpError(resp=httplib2.Response({"status": "404"}), content=b"404"))
+                return
+            self.callback(key, None, None)
+
+    def add(self, operation: HttpRequest, request_id: str) -> None:
+        self.operations.append(request_id)
+
+
+def test_delete_keys_callback() -> None:
+    notifier = MagicMock()
+    with ExitStack() as stack:
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
+        mock_delete_key = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer.delete_key"))
+
+        transfer = GoogleTransfer(
+            project_id="test-project-id",
+            bucket_name="test-bucket",
+            notifier=notifier,
+        )
+
+        mock_batch_request = MagicMock()
+        mock_batch_request.execute.return_value = None
+
+        test_keys = ["key1", "key2", "key3_500"]
+
+        mock_gs = MagicMock()
+        mock_gs.new_batch_http_request = lambda callback: BatchRequestProcessor(callback)
+        transfer.gs = mock_gs
+
+        transfer.delete_keys(keys=test_keys)
+
+        notifier.object_deleted.assert_has_calls([call("key1"), call("key2")])
+        mock_delete_key.assert_called_once_with("key3_500", preserve_trailing_slash=False)
+
+
+def test_delete_keys_callback_failure() -> None:
+    notifier = MagicMock()
+    with ExitStack() as stack:
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
+        mock_delete_key = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer.delete_key"))
+
+        transfer = GoogleTransfer(
+            project_id="test-project-id",
+            bucket_name="test-bucket",
+            notifier=notifier,
+        )
+
+        test_keys = ["key1", "key2", "key3_404"]
+
+        mock_gs = MagicMock()
+        mock_gs.new_batch_http_request = lambda callback: BatchRequestProcessor(callback)
+        transfer.gs = mock_gs
+
+        with pytest.raises(HttpError) as exc_info:
+            transfer.delete_keys(keys=test_keys)
+
+        assert exc_info.value.resp["status"] == "404"
+
+        notifier.object_deleted.assert_has_calls([call("key1"), call("key2")])
+        mock_delete_key.assert_not_called()

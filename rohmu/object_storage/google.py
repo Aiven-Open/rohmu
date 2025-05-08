@@ -7,8 +7,9 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
+from googleapiclient.errors import BatchError, HttpError
 from googleapiclient.http import (
+    BatchHttpRequest,
     build_http,
     HttpRequest,
     MediaDownloadProgress,
@@ -45,12 +46,13 @@ from rohmu.object_storage.config import (
     GoogleObjectStorageConfig as Config,
 )
 from rohmu.typing import AnyPath, Metadata
-from rohmu.util import get_total_size_from_content_range
+from rohmu.util import batched, get_total_size_from_content_range
 from typing import (
     Any,
     BinaryIO,
     Callable,
     cast,
+    Collection,
     Iterable,
     Iterator,
     Optional,
@@ -191,6 +193,11 @@ class Reporter:
 ResType = TypeVar("ResType")
 
 
+# https://cloud.google.com/storage/docs/json_api/v1/status-codes
+# https://cloud.google.com/storage/docs/exponential-backoff
+RETRY_STATUS_CODES = ("429", "500", "502", "503", "504")
+
+
 class GoogleTransfer(BaseTransfer[Config]):
     config_model = Config
 
@@ -302,7 +309,9 @@ class GoogleTransfer(BaseTransfer[Config]):
             self.gs_bucket_client = self.gs.buckets()
         yield self.gs_bucket_client
 
-    def _retry_on_reset(self, request: HttpRequest, action: Callable[[], ResType], retry_reporter: Reporter) -> ResType:
+    def _retry_on_reset(
+        self, request: HttpRequest | BatchHttpRequest, action: Callable[[], ResType], retry_reporter: Reporter
+    ) -> ResType:
         retries = 60
         retry_wait = 2.0
         while True:
@@ -311,6 +320,7 @@ class GoogleTransfer(BaseTransfer[Config]):
             except (
                 IncompleteRead,
                 HttpError,
+                BatchError,
                 ssl.SSLEOFError,
                 socket.timeout,
                 OSError,
@@ -328,7 +338,7 @@ class GoogleTransfer(BaseTransfer[Config]):
                 elif isinstance(ex, HttpError):
                     # https://cloud.google.com/storage/docs/json_api/v1/status-codes
                     # https://cloud.google.com/storage/docs/exponential-backoff
-                    if ex.resp["status"] not in ("429", "500", "502", "503", "504"):
+                    if ex.resp["status"] not in RETRY_STATUS_CODES:
                         raise
                     retry_wait = min(10.0, max(1.0, retry_wait * 2) + random.random())
                 # httplib2 commonly fails with Bad File Descriptor and Connection Reset
@@ -336,6 +346,9 @@ class GoogleTransfer(BaseTransfer[Config]):
                     raise
                 # getaddrinfo sometimes fails with "Name or service not known"
                 elif isinstance(ex, socket.gaierror) and ex.errno != socket.EAI_NONAME:
+                    raise
+                # batch request or response has a wrong format
+                elif isinstance(ex, BatchError):
                     raise
 
                 self.log.warning("%s failed: %s (%s), retrying in %.2fs", action, ex.__class__.__name__, ex, retry_wait)
@@ -472,6 +485,39 @@ class GoogleTransfer(BaseTransfer[Config]):
             self._retry_on_reset(req, req.execute, retry_reporter=reporter)
             reporter.report(self.stats)
             self.notifier.object_deleted(key)
+
+    def delete_keys(self, keys: Collection[str], preserve_trailing_slash: bool = False) -> None:
+        retry_deletion_keys: list[str] = []
+
+        def _delete_keys_callback(key: str, response: HttpRequest, exception: HttpError | None) -> None:
+            if exception is None:
+                self.log.debug("Deleted key: %r", key)
+                self.notifier.object_deleted(key)
+                return
+            if exception.resp["status"] not in RETRY_STATUS_CODES:
+                # Allow upper level to handle the error
+                raise exception
+            # Retry outsize of callback to avoid retry multiplication
+            retry_deletion_keys.append(key)
+
+        self.log.debug("Deleting %i keys", len(keys))
+        reporter = Reporter(StorageOperation.delete_key)
+        with self._object_client() as object_resource:
+            for keys_batch in batched(keys, 100):  # Docs ask to not batch more than 100 requests
+                assert self.gs is not None
+                batch_request = self.gs.new_batch_http_request(callback=_delete_keys_callback)
+                for key in keys_batch:
+                    path = self.format_key_for_backend(key, trailing_slash=preserve_trailing_slash and key.endswith("/"))
+                    self.log.debug("Deleting key: %r", path)
+                    batch_request.add(object_resource.delete(bucket=self.bucket_name, object=path), request_id=key)
+
+                self._retry_on_reset(batch_request, batch_request.execute, retry_reporter=reporter)
+                while retry_deletion_keys:
+                    key = retry_deletion_keys.pop(0)
+                    self.log.debug("Retrying deletion of key: %r", key)
+                    self.delete_key(key, preserve_trailing_slash=preserve_trailing_slash)
+
+        reporter.report(self.stats)
 
     def get_contents_to_fileobj(
         self,
