@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from azure.core.exceptions import HttpResponseError, IncompleteReadError, ResourceExistsError
 from azure.storage.blob import BlobServiceClient, ContentSettings
+from collections.abc import Iterable, Sized
 from rohmu.common.statsd import StatsdConfig
 from rohmu.errors import (
     FileNotFoundFromStorageError,
@@ -34,7 +35,7 @@ from rohmu.object_storage.config import (  # noqa: F401
 )
 from rohmu.typing import Metadata
 from rohmu.util import batched
-from typing import Any, BinaryIO, Collection, Iterator, Optional, Tuple, Union
+from typing import Any, BinaryIO, Iterator, Optional, Tuple, Union
 from typing_extensions import Self
 
 import azure.common
@@ -317,9 +318,12 @@ class AzureTransfer(BaseTransfer[Config]):
 
         return result
 
-    def delete_keys(self, keys: Collection[str], preserve_trailing_slash: bool = False) -> None:
+    def delete_keys(self, keys: Iterable[str], preserve_trailing_slash: bool = False) -> None:
         container_client = self.get_blob_service_client().get_container_client(container=self.container_name)
-        self.log.debug("Deleting %i keys", len(keys))
+        if isinstance(keys, Sized):
+            self.log.debug("Deleting %i keys", len(keys))
+        else:
+            self.log.debug("Deleting keys")
         for keys_batch in batched(keys, 256):  # 256 is the maximum batch size for Azure
             paths_to_delete = []
             for key in keys_batch:

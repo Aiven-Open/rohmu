@@ -43,7 +43,7 @@ from rohmu.object_storage.config import (  # noqa: F401
 from rohmu.typing import Metadata
 from rohmu.util import batched, ProgressStream
 from threading import RLock
-from typing import Any, BinaryIO, cast, Collection, Iterator, Optional, Tuple, TYPE_CHECKING, Union
+from typing import Any, BinaryIO, cast, Iterable, Iterator, Optional, Tuple, TYPE_CHECKING, Union
 from typing_extensions import Self
 
 import botocore.client
@@ -344,9 +344,9 @@ class S3Transfer(BaseTransfer[Config]):
         self.get_client().delete_object(Bucket=self.bucket_name, Key=path)
         self.notifier.object_deleted(key=key)
 
-    def delete_keys(self, keys: Collection[str], preserve_trailing_slash: bool = False) -> None:
-        self.stats.operation(StorageOperation.delete_key, count=len(keys))
+    def delete_keys(self, keys: Iterable[str], preserve_trailing_slash: bool = False) -> None:
         for batch in batched(keys, 1000):  # Cannot delete more than 1000 objects at a time
+            self.stats.operation(StorageOperation.delete_key, count=len(batch))
             formatted_keys = [
                 self.format_key_for_backend(
                     k,
