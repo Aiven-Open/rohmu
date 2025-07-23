@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sized
 from contextlib import contextmanager
 from googleapiclient.discovery import build
 from googleapiclient.errors import BatchError, HttpError
@@ -52,7 +53,6 @@ from typing import (
     BinaryIO,
     Callable,
     cast,
-    Collection,
     Iterable,
     Iterator,
     Optional,
@@ -486,7 +486,7 @@ class GoogleTransfer(BaseTransfer[Config]):
             reporter.report(self.stats)
             self.notifier.object_deleted(key)
 
-    def delete_keys(self, keys: Collection[str], preserve_trailing_slash: bool = False) -> None:
+    def delete_keys(self, keys: Iterable[str], preserve_trailing_slash: bool = False) -> None:
         retry_deletion_keys: list[str] = []
 
         def _delete_keys_callback(key: str, response: HttpRequest, exception: HttpError | None) -> None:
@@ -500,7 +500,10 @@ class GoogleTransfer(BaseTransfer[Config]):
             # Retry outsize of callback to avoid retry multiplication
             retry_deletion_keys.append(key)
 
-        self.log.debug("Deleting %i keys", len(keys))
+        if isinstance(keys, Sized):
+            self.log.debug("Deleting %i keys", len(keys))
+        else:
+            self.log.debug("Deleting keys")
         reporter = Reporter(StorageOperation.delete_key)
         with self._object_client() as object_resource:
             for keys_batch in batched(keys, 100):  # Docs ask to not batch more than 100 requests

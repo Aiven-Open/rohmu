@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from contextlib import suppress
 from dataclasses import dataclass, field
 from io import BytesIO
@@ -258,7 +259,7 @@ class BaseTransfer(Generic[StorageModelT]):
     def delete_key(self, key: str, preserve_trailing_slash: bool = False) -> None:
         raise NotImplementedError
 
-    def delete_keys(self, keys: Collection[str], preserve_trailing_slash: bool = False) -> None:
+    def delete_keys(self, keys: Iterable[str], preserve_trailing_slash: bool = False) -> None:
         """Delete specified keys"""
         for key in keys:
             self.delete_key(key, preserve_trailing_slash=preserve_trailing_slash)
