@@ -20,6 +20,8 @@ from googleapiclient.http import (
 )
 from http.client import IncompleteRead
 from io import IOBase
+from oauth2client import GOOGLE_TOKEN_URI
+from oauth2client.client import GoogleCredentials
 from rohmu.common.models import StorageOperation
 from rohmu.common.statsd import StatsClient, StatsdConfig
 from rohmu.errors import (
@@ -66,8 +68,10 @@ import codecs
 import dataclasses
 import datetime
 import errno
-import google.auth
-import google_auth_httplib2  # type: ignore[import-untyped]
+
+# NOTE: this import is not needed per-se, but it's imported here first to point the
+# user to the most important possible missing dependency
+import googleapiclient  # noqa: F401
 import httplib2
 import json
 import logging
@@ -77,49 +81,60 @@ import socket
 import ssl
 import time
 
+try:
+    from oauth2client.service_account import ServiceAccountCredentials
+
+    ServiceAccountCredentials_from_dict = ServiceAccountCredentials.from_json_keyfile_dict
+except ImportError:
+    from oauth2client.service_account import _ServiceAccountCredentials
+
+    def ServiceAccountCredentials_from_dict(
+        credentials: dict[str, Any], scopes: Optional[list[str]] = None
+    ) -> GoogleCredentials:
+        if scopes is None:
+            scopes = []
+        return _ServiceAccountCredentials(
+            service_account_id=credentials["client_id"],
+            service_account_email=credentials["client_email"],
+            private_key_id=credentials["private_key_id"],
+            private_key_pkcs8_text=credentials["private_key"],
+            scopes=scopes,
+        )
+
+
 if TYPE_CHECKING:
-    from google.auth.credentials import Credentials
     from googleapiclient._apis.storage.v1 import StorageResource
 
 # Silence Google API client verbose spamming
 logging.getLogger("googleapiclient.discovery_cache").setLevel(logging.ERROR)
 logging.getLogger("googleapiclient").setLevel(logging.WARNING)
+logging.getLogger("oauth2client").setLevel(logging.WARNING)
 
 
-def get_credentials(credential_file: Optional[TextIO] = None, credentials: Optional[dict[str, Any]] = None) -> Credentials:
-    SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
-
-    # File takes precedence over credentials dict
+def get_credentials(
+    credential_file: Optional[TextIO] = None, credentials: Optional[dict[str, Any]] = None
+) -> GoogleCredentials:
     if credential_file:
-        cred_data = credential_file.read()
-        credentials = json.loads(cred_data)
+        return GoogleCredentials.from_stream(credential_file)
 
-    # project_id is the second element of the returned tuple
-    if credentials:
-        # Ensure service account credentials have required fields with defaults
-        if credentials.get("type") == "service_account":
-            credentials = _ensure_service_account_fields(credentials)
-        gcreds, _ = google.auth.load_credentials_from_dict(credentials, scopes=SCOPES)
-    else:
-        gcreds, _ = google.auth.default(scopes=SCOPES)
-    return gcreds
+    if credentials and credentials["type"] == "service_account":
+        return ServiceAccountCredentials_from_dict(
+            credentials,
+            scopes=["https://www.googleapis.com/auth/cloud-platform"],
+        )
 
+    if credentials and credentials["type"] == "authorized_user":
+        return GoogleCredentials(
+            access_token=None,
+            client_id=credentials["client_id"],
+            client_secret=credentials["client_secret"],
+            refresh_token=credentials["refresh_token"],
+            token_expiry=None,
+            token_uri=GOOGLE_TOKEN_URI,
+            user_agent="pghoard",
+        )
 
-def _ensure_service_account_fields(credentials: dict[str, Any]) -> dict[str, Any]:
-    """Ensure service account credentials have all required fields with sensible defaults."""
-    creds = credentials.copy()
-
-    required_defaults = {
-        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-        "token_uri": "https://oauth2.googleapis.com/token",
-        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-    }
-
-    for field, default_value in required_defaults.items():
-        if field not in creds:
-            creds[field] = default_value
-
-    return creds
+    return GoogleCredentials.get_application_default()
 
 
 def base64_to_hex(b64val: Union[str, bytes]) -> str:
@@ -245,7 +260,7 @@ class GoogleTransfer(BaseTransfer[Config]):
                     proxy_pass=self.proxy_info.get("pass"),
                 )
 
-            http = google_auth_httplib2.AuthorizedHttp(self.google_creds, http=http)
+            http = self.google_creds.authorize(http)
 
             try:
                 # sometimes fails: httplib2.ServerNotFoundError: Unable to find the server at www.googleapis.com
