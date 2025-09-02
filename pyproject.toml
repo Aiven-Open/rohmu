@@ -32,6 +32,7 @@ dependencies = [
     "cryptography",
     "google-api-python-client",
     "httplib2",
+    "oauth2client",
     "paramiko",
     "pydantic >= 1.10.17",
     "python-dateutil",

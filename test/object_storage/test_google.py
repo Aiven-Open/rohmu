@@ -12,7 +12,7 @@ from rohmu.errors import InvalidByteRangeError, TransferObjectStoreMissingError,
 from rohmu.object_storage.base import IterKeyItem
 from rohmu.object_storage.google import GoogleTransfer, MediaIoBaseDownloadWithByteRange, Reporter
 from tempfile import NamedTemporaryFile
-from typing import Any, Callable, Optional, Union
+from typing import Callable, Union
 from unittest.mock import ANY, call, MagicMock, Mock, patch
 
 import base64
@@ -21,27 +21,9 @@ import httplib2
 import pytest
 
 
-class MockCredentials:
-    def __init__(self, expired: bool = False, token: str = "mock-token") -> None:
-        self.universe_domain = "googleapis.com"
-        self.token = token
-        self.expired = expired
-        self.refresh_called = False
-
-    def refresh(self, request: Any) -> None:
-        """Mock refresh method for credential refreshing tests."""
-        self.refresh_called = True
-        self.expired = False
-        self.token = "refreshed-token"
-
-    def apply(self, headers: dict[str, str], token: Optional[str] = None) -> None:
-        """Mock apply method for applying credentials to headers."""
-        headers["Authorization"] = f"Bearer {token or self.token}"
-
-
 def test_close() -> None:
     with ExitStack() as stack:
-        stack.enter_context(patch("rohmu.object_storage.google.get_credentials", return_value=MockCredentials()))
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
         mock_gs = Mock()
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._init_google_client", return_value=mock_gs))
@@ -106,7 +88,7 @@ def test_handle_missing_bucket(
     assert expect_create_call == (ensure_object_store_available and not bucket_exists)
 
     with ExitStack() as stack:
-        stack.enter_context(patch("rohmu.object_storage.google.get_credentials", return_value=MockCredentials()))
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
 
         _try_get_bucket = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._try_get_bucket"))
         if not bucket_exists:
@@ -145,7 +127,7 @@ def test_handle_missing_bucket(
 def test_store_file_from_memory() -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
-        stack.enter_context(patch("rohmu.object_storage.google.get_credentials", return_value=MockCredentials()))
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
         upload = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._upload"))
         transfer = GoogleTransfer(
@@ -167,7 +149,7 @@ def test_store_file_from_memory() -> None:
 def test_store_file_from_disk() -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
-        stack.enter_context(patch("rohmu.object_storage.google.get_credentials", return_value=MockCredentials()))
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
         upload = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._upload"))
 
@@ -193,7 +175,7 @@ def test_store_file_from_disk() -> None:
 def test_store_file_object() -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
-        stack.enter_context(patch("rohmu.object_storage.google.get_credentials", return_value=MockCredentials()))
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
         upload = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._upload"))
         transfer = GoogleTransfer(
@@ -222,7 +204,7 @@ def _generate_keys(total: int, prefix: str = "test_key_") -> list[str]:
 def test_upload_size_unknown_to_reporter() -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
-        stack.enter_context(patch("rohmu.object_storage.google.get_credentials", return_value=MockCredentials()))
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
         mock_retry = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._retry_on_reset"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._object_client"))
@@ -261,7 +243,7 @@ def test_upload_size_unknown_to_reporter() -> None:
 def test_get_contents_to_fileobj_raises_error_on_invalid_byte_range() -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
-        stack.enter_context(patch("rohmu.object_storage.google.get_credentials", return_value=MockCredentials()))
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
         transfer = GoogleTransfer(
             project_id="test-project-id",
@@ -348,7 +330,7 @@ def test_media_io_download_with_byte_range_and_very_small_object() -> None:
 def test_object_listed_when_missing_md5hash_size_and_updated() -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
-        stack.enter_context(patch("rohmu.object_storage.google.get_credentials", return_value=MockCredentials()))
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
         mock_operation = stack.enter_context(patch("rohmu.common.statsd.StatsClient.operation"))
         transfer = GoogleTransfer(
@@ -425,7 +407,7 @@ def test_object_listed_when_missing_md5hash_size_and_updated() -> None:
 
 
 def test_error_handling() -> None:
-    with patch("rohmu.object_storage.google.get_credentials", return_value=MockCredentials()):
+    with patch("rohmu.object_storage.google.get_credentials"):
         transfer = GoogleTransfer(
             project_id="test-project-id",
             bucket_name="test-bucket",
@@ -492,7 +474,7 @@ def test_error_handling() -> None:
 def test_delete_key(key: str, preserve_trailing_slash: Union[bool, None], expected_key: str) -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
-        stack.enter_context(patch("rohmu.object_storage.google.get_credentials", return_value=MockCredentials()))
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
         _init_google_client_mock = stack.enter_context(
             patch("rohmu.object_storage.google.GoogleTransfer._init_google_client")
@@ -522,7 +504,7 @@ def test_delete_key(key: str, preserve_trailing_slash: Union[bool, None], expect
 def test_delete_keys_trailing_slash(preserve_trailing_slash: Union[bool, None]) -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
-        stack.enter_context(patch("rohmu.object_storage.google.get_credentials", return_value=MockCredentials()))
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
         _init_google_client_mock = stack.enter_context(
             patch("rohmu.object_storage.google.GoogleTransfer._init_google_client")
@@ -568,7 +550,7 @@ def test_delete_keys_bulk(total_keys: int, expected_bulk_request_count: int) -> 
     notifier = MagicMock()
     test_keys = _generate_keys(total_keys)
     with ExitStack() as stack:
-        stack.enter_context(patch("rohmu.object_storage.google.get_credentials", return_value=MockCredentials()))
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
         mock_retry_on_reset = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._retry_on_reset"))
         transfer = GoogleTransfer(
@@ -607,7 +589,7 @@ class BatchRequestProcessor:
 def test_delete_keys_callback() -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
-        stack.enter_context(patch("rohmu.object_storage.google.get_credentials", return_value=MockCredentials()))
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
         mock_delete_key = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer.delete_key"))
 
@@ -635,7 +617,7 @@ def test_delete_keys_callback() -> None:
 def test_delete_keys_callback_failure() -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
-        stack.enter_context(patch("rohmu.object_storage.google.get_credentials", return_value=MockCredentials()))
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
         mock_delete_key = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer.delete_key"))
 
@@ -658,149 +640,3 @@ def test_delete_keys_callback_failure() -> None:
 
         notifier.object_deleted.assert_has_calls([call("key1"), call("key2")])
         mock_delete_key.assert_not_called()
-
-
-def test_google_transfer_initialization_with_credentials() -> None:
-    """Test GoogleTransfer initialization with different credential types."""
-    with ExitStack() as stack:
-        mock_creds = MockCredentials()
-        get_creds_mock = stack.enter_context(patch("rohmu.object_storage.google.get_credentials", return_value=mock_creds))
-        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
-        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._init_google_client"))
-
-        # Test with credentials dict
-        creds_dict = {"type": "service_account", "project_id": "test"}
-        transfer = GoogleTransfer(
-            project_id="test-project-id", bucket_name="test-bucket", notifier=MagicMock(), credentials=creds_dict
-        )
-
-        get_creds_mock.assert_called_with(credential_file=None, credentials=creds_dict)
-        assert transfer.google_creds is mock_creds
-
-
-def test_google_transfer_initialization_with_credential_file() -> None:
-    """Test GoogleTransfer initialization with credential file."""
-    from tempfile import NamedTemporaryFile
-
-    import json
-
-    creds_data = {"type": "service_account", "project_id": "test"}
-
-    with ExitStack() as stack:
-        mock_creds = MockCredentials()
-        get_creds_mock = stack.enter_context(patch("rohmu.object_storage.google.get_credentials", return_value=mock_creds))
-        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
-        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._init_google_client"))
-
-        with NamedTemporaryFile(mode="w", delete=False) as f:
-            json.dump(creds_data, f)
-            credential_file_path = f.name
-
-        try:
-            with open(credential_file_path) as cred_file:
-                transfer = GoogleTransfer(
-                    project_id="test-project-id", bucket_name="test-bucket", notifier=MagicMock(), credential_file=cred_file
-                )
-
-            # Should be called with opened file
-            get_creds_mock.assert_called_once()
-            call_args = get_creds_mock.call_args
-            assert call_args[1]["credentials"] is None
-            assert call_args[1]["credential_file"] is not None
-            assert transfer.google_creds is mock_creds
-        finally:
-            import os
-
-            os.unlink(credential_file_path)
-
-
-def test_google_transfer_http_authorization() -> None:
-    """Test that HTTP requests are properly authorized with new auth library."""
-    with ExitStack() as stack:
-        mock_creds = MockCredentials()
-        stack.enter_context(patch("rohmu.object_storage.google.get_credentials", return_value=mock_creds))
-        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
-
-        mock_http = Mock()
-        mock_http.redirect_codes = {301, 302, 303, 307}  # Add redirect_codes attribute
-        mock_authorized_http = Mock()
-
-        # Mock the google_auth_httplib2.AuthorizedHttp
-        auth_http_mock = stack.enter_context(patch("rohmu.object_storage.google.google_auth_httplib2.AuthorizedHttp"))
-        auth_http_mock.return_value = mock_authorized_http
-
-        # Mock httplib2.Http
-        http_mock = stack.enter_context(patch("rohmu.object_storage.google.httplib2.Http"))
-        http_mock.return_value = mock_http
-
-        transfer = GoogleTransfer(
-            project_id="test-project-id",
-            bucket_name="test-bucket",
-            notifier=MagicMock(),
-        )
-
-        # Initialize the client to trigger HTTP setup
-        with patch("rohmu.object_storage.google.build") as build_mock:
-            transfer._init_google_client()
-
-            # Verify AuthorizedHttp was called with our credentials and http instance
-            auth_http_mock.assert_called_with(mock_creds, http=mock_http)
-
-            # Verify the authorized HTTP was passed to the API client
-            build_mock.assert_called_once()
-            call_args = build_mock.call_args
-            assert call_args[1]["http"] is mock_authorized_http
-
-
-def test_google_transfer_proxy_configuration() -> None:
-    """Test that proxy configuration works with the new auth setup."""
-    with ExitStack() as stack:
-        mock_creds = MockCredentials()
-        stack.enter_context(patch("rohmu.object_storage.google.get_credentials", return_value=mock_creds))
-        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
-
-        proxy_info: dict[str, Union[str, int]] = {
-            "host": "proxy.example.com",
-            "port": 8080,
-            "user": "proxyuser",
-            "pass": "proxypass",
-        }
-
-        mock_http = Mock()
-        mock_http.redirect_codes = {301, 302, 303, 307}  # Add redirect_codes attribute
-        mock_authorized_http = Mock()
-
-        auth_http_mock = stack.enter_context(patch("rohmu.object_storage.google.google_auth_httplib2.AuthorizedHttp"))
-        auth_http_mock.return_value = mock_authorized_http
-
-        # Mock build_http instead of httplib2.Http directly
-        build_http_mock = stack.enter_context(patch("rohmu.object_storage.google.build_http"))
-        build_http_mock.return_value = mock_http
-
-        proxy_info_mock = stack.enter_context(patch("rohmu.object_storage.google.httplib2.ProxyInfo"))
-
-        transfer = GoogleTransfer(
-            project_id="test-project-id", bucket_name="test-bucket", notifier=MagicMock(), proxy_info=proxy_info
-        )
-
-        with patch("rohmu.object_storage.google.build"):
-            transfer._init_google_client()
-
-            # Verify proxy was configured - ProxyInfo uses positional args for the first 3 parameters
-            proxy_info_mock.assert_called_with(
-                httplib2.socks.PROXY_TYPE_HTTP,  # type: ignore[attr-defined]  # proxy_type as positional arg
-                "proxy.example.com",  # proxy_host as positional arg
-                8080,  # proxy_port as positional arg
-                proxy_user="proxyuser",
-                proxy_pass="proxypass",
-            )
-
-            # Verify build_http was called to create the initial HTTP client
-            assert build_http_mock.call_count >= 1
-
-            # Verify the proxy_info was set on the HTTP object
-            assert mock_http.proxy_info == proxy_info_mock.return_value
-
-            # Verify AuthorizedHttp was called with credentials and http object
-            auth_http_mock.assert_called_with(mock_creds, http=mock_http)  # Verify the HTTP client was properly authorized
-            auth_http_mock.assert_called_with(mock_creds, http=mock_http)
