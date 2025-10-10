@@ -715,7 +715,15 @@ class S3Transfer(BaseTransfer[Config]):
             }
 
         self.stats.operation(StorageOperation.create_bucket)
-        self.get_client().create_bucket(**args)
+        try:
+            self.get_client().create_bucket(**args)
+        except botocore.exceptions.ClientError as ex:
+            # Ignore BucketAlreadyOwnedByYou error since that means that:
+            # 1. The bucket exists and doesn't need to be created
+            # 2. We own it so we assume permissions have been setup properly
+            # bail out if we get any other error, including BucketAlreadyExists
+            if ex.response.get("Error", {}).get("Code") != "BucketAlreadyOwnedByYou":
+                raise
 
     def create_concurrent_upload(
         self,

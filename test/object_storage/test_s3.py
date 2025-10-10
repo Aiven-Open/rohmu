@@ -8,7 +8,7 @@ from io import BytesIO
 from pathlib import Path
 from pydantic.v1 import ValidationError
 from rohmu.common.models import StorageOperation
-from rohmu.errors import InvalidByteRangeError, StorageError
+from rohmu.errors import InvalidByteRangeError, StorageError, TransferObjectStoreMissingError
 from rohmu.object_storage.base import TransferWithConcurrentUploadSupport
 from rohmu.object_storage.config import S3_MAX_NUM_PARTS_PER_UPLOAD, S3ObjectStorageConfig
 from rohmu.object_storage.s3 import S3Transfer
@@ -481,3 +481,161 @@ def test_calculate_chunks_and_chunk_size_error(infra: S3Infra) -> None:
         str(e.value) == "Cannot upload a file of size 52428800000000. "
         "Chunk size 5242880000 is too big for each part of multipart upload."
     )
+
+
+def test_check_or_create_bucket_ignores_bucket_already_owned_by_you_error(infra: S3Infra) -> None:
+    # OVH S3 compatible Object Storage service returns BAD_REQUEST - 400 when trying to HeadBucket
+    # on a bucket that exists but only allows s3:ListBucket with a condition
+    transfer = infra.transfer
+    mock_s3_client = infra.s3_client
+    mock_s3_client.head_bucket.side_effect = botocore.exceptions.ClientError(
+        error_response={
+            "Error": {"Code": "400"},
+            "ResponseMetadata": {
+                "HTTPStatusCode": 400,
+                "RequestId": "id",
+                "HostId": "id",
+                "HTTPHeaders": {},
+                "RetryAttempts": 0,
+            },
+        },
+        operation_name="head-bucket",
+    )
+    mock_s3_client.create_bucket.side_effect = botocore.exceptions.ClientError(
+        error_response={
+            "Error": {"Code": "BucketAlreadyOwnedByYou"},
+            "ResponseMetadata": {
+                "HTTPStatusCode": 400,
+                "RequestId": "id",
+                "HostId": "id",
+                "HTTPHeaders": {},
+                "RetryAttempts": 0,
+            },
+        },
+        operation_name="bucket-create",
+    )
+    transfer.check_or_create_bucket()
+    mock_s3_client.create_bucket.assert_called_once_with(
+        Bucket="test-bucket", CreateBucketConfiguration={"LocationConstraint": "test-region"}
+    )
+
+
+def test_check_or_create_bucket_bails_out_on_bucket_already_exists(infra: S3Infra) -> None:
+    transfer = infra.transfer
+    mock_s3_client = infra.s3_client
+    mock_s3_client.head_bucket.side_effect = botocore.exceptions.ClientError(
+        error_response={
+            "Error": {"Code": "400"},
+            "ResponseMetadata": {
+                "HTTPStatusCode": 400,
+                "RequestId": "id",
+                "HostId": "id",
+                "HTTPHeaders": {},
+                "RetryAttempts": 0,
+            },
+        },
+        operation_name="head-bucket",
+    )
+    mock_s3_client.create_bucket.side_effect = botocore.exceptions.ClientError(
+        error_response={
+            "Error": {"Code": "BucketAlreadyExists"},
+            "ResponseMetadata": {
+                "HTTPStatusCode": 400,
+                "RequestId": "id",
+                "HostId": "id",
+                "HTTPHeaders": {},
+                "RetryAttempts": 0,
+            },
+        },
+        operation_name="bucket-create",
+    )
+    with pytest.raises(botocore.exceptions.ClientError):
+        transfer.check_or_create_bucket()
+
+
+def test_check_or_create_bucket_does_not_try_to_create_bucket_if_forbidden(infra: S3Infra) -> None:
+    transfer = infra.transfer
+    mock_s3_client = infra.s3_client
+    mock_s3_client.head_bucket.side_effect = botocore.exceptions.ClientError(
+        error_response={
+            "Error": {"Code": "403"},
+            "ResponseMetadata": {
+                "HTTPStatusCode": 403,
+                "RequestId": "id",
+                "HostId": "id",
+                "HTTPHeaders": {},
+                "RetryAttempts": 0,
+            },
+        },
+        operation_name="head-bucket",
+    )
+    transfer.check_or_create_bucket()
+    mock_s3_client.create_bucket.assert_not_called()
+
+
+def test_check_or_create_bucket_raises_error_on_moved_permanently(infra: S3Infra) -> None:
+    transfer = infra.transfer
+    mock_s3_client = infra.s3_client
+    mock_s3_client.head_bucket.side_effect = botocore.exceptions.ClientError(
+        error_response={
+            "Error": {"Code": "301"},
+            "ResponseMetadata": {
+                "HTTPStatusCode": 301,
+                "RequestId": "id",
+                "HostId": "id",
+                "HTTPHeaders": {},
+                "RetryAttempts": 0,
+            },
+        },
+        operation_name="head-bucket",
+    )
+    with pytest.raises(rohmu.errors.InvalidConfigurationError):
+        transfer.check_or_create_bucket()
+    mock_s3_client.create_bucket.assert_not_called()
+
+
+@pytest.mark.parametrize("status", [400, 404])
+def test_check_or_create_bucket_tries_to_create_bucket_on_not_found_or_bad_request(infra: S3Infra, status: int) -> None:
+    transfer = infra.transfer
+    mock_s3_client = infra.s3_client
+    mock_s3_client.head_bucket.side_effect = botocore.exceptions.ClientError(
+        error_response={
+            "Error": {"Code": str(status)},
+            "ResponseMetadata": {
+                "HTTPStatusCode": status,
+                "RequestId": "id",
+                "HostId": "id",
+                "HTTPHeaders": {},
+                "RetryAttempts": 0,
+            },
+        },
+        operation_name="head-bucket",
+    )
+    transfer.check_or_create_bucket()
+    mock_s3_client.create_bucket.assert_called_once_with(
+        Bucket="test-bucket", CreateBucketConfiguration={"LocationConstraint": "test-region"}
+    )
+
+
+@pytest.mark.parametrize("status", [400, 404])
+def test_check_or_create_bucket_raise_error_if_bucket_missing_and_creation_is_disabled(infra: S3Infra, status: int) -> None:
+    transfer = infra.transfer
+    mock_s3_client = infra.s3_client
+    mock_s3_client.head_bucket.side_effect = botocore.exceptions.ClientError(
+        error_response={
+            "Error": {"Code": str(status)},
+            "ResponseMetadata": {
+                "HTTPStatusCode": status,
+                "RequestId": "id",
+                "HostId": "id",
+                "HTTPHeaders": {},
+                "RetryAttempts": 0,
+            },
+        },
+        operation_name="head-bucket",
+    )
+    # NOTE: in reality this is not correct for status code 400 because for OVH EU S3-compatible
+    # Object Storage service it can mean that we are lacking permissions, so we should use
+    # something other than head_bucket to determine if the bucket exists or not
+    with pytest.raises(TransferObjectStoreMissingError):
+        transfer.check_or_create_bucket(create_if_needed=False)
