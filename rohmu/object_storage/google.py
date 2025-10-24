@@ -21,7 +21,7 @@ from googleapiclient.http import (
 from http.client import IncompleteRead
 from io import IOBase
 from oauth2client import GOOGLE_TOKEN_URI
-from oauth2client.client import GoogleCredentials
+from oauth2client.client import AccessTokenCredentials, GoogleCredentials
 from rohmu.common.models import StorageOperation
 from rohmu.common.statsd import StatsClient, StatsdConfig
 from rohmu.errors import (
@@ -134,6 +134,9 @@ def get_credentials(
             token_uri=GOOGLE_TOKEN_URI,
             user_agent="pghoard",
         )
+
+    if credentials and credentials["type"] == "access_token":
+        return AccessTokenCredentials(access_token=credentials["access_token"], user_agent="pghoard")
 
     return GoogleCredentials.get_application_default()
 
