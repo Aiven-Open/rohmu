@@ -207,7 +207,7 @@ class GoogleTransfer(BaseTransfer[Config]):
 
     def __init__(
         self,
-        project_id: str,
+        project_id: str | None,
         bucket_name: str,
         credential_file: Optional[TextIO] = None,
         credentials: Optional[dict[str, Any]] = None,
@@ -743,6 +743,8 @@ class GoogleTransfer(BaseTransfer[Config]):
         race conditions.  Note that we'll get a 400 Bad Request response for
         invalid bucket names ("Invalid bucket name") as well as for invalid
         project ("Invalid argument"), try to handle both gracefully."""
+        if self.project_id is None:
+            raise ValueError("project_id is required for creating storage buckets on demand")
         start_time = time.time()
         try:
             self._verify_object_storage_unwrapped()
@@ -752,7 +754,7 @@ class GoogleTransfer(BaseTransfer[Config]):
             return
         with self._bucket_client() as gs_buckets:
             try:
-                self._try_create_bucket(gs_buckets)
+                self._try_create_bucket(self.project_id, gs_buckets)
                 self.log.debug("Created bucket: %r successfully, took: %.3fs", self.bucket_name, time.time() - start_time)
             except HttpError as ex:
                 error = json.loads(ex.content.decode("utf-8"))["error"]
@@ -765,9 +767,9 @@ class GoogleTransfer(BaseTransfer[Config]):
                 else:
                     raise
 
-    def _try_create_bucket(self, gs_buckets: StorageResource.BucketsResource) -> None:
+    def _try_create_bucket(self, project_id: str, gs_buckets: StorageResource.BucketsResource) -> None:
         """Useful for mocking in tests"""
-        req = gs_buckets.insert(project=self.project_id, body={"name": self.bucket_name})
+        req = gs_buckets.insert(project=project_id, body={"name": self.bucket_name})
         reporter = Reporter(StorageOperation.create_bucket)
         self._retry_on_reset(req, req.execute, retry_reporter=reporter)
         reporter.report(self.stats)
