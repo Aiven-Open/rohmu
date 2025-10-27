@@ -230,7 +230,7 @@ class BaseTransfer(Generic[StorageModelT]):
         source_key: str,
         destination_key: str,
         metadata: Optional[Metadata] = None,
-        timeout: float = 15.0,
+        timeout: int = 15,
     ) -> None:
         raise NotImplementedError
 

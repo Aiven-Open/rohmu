@@ -178,7 +178,7 @@ class AzureTransfer(BaseTransfer[Config]):
     def copy_file(
         self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **kwargs: Any
     ) -> None:
-        timeout = kwargs.get("timeout") or 15.0
+        timeout = kwargs.get("timeout") or 15
         self._copy_file_from_bucket(
             source_bucket=self, source_key=source_key, destination_key=destination_key, metadata=metadata, timeout=timeout
         )
@@ -190,7 +190,7 @@ class AzureTransfer(BaseTransfer[Config]):
         source_key: str,
         destination_key: str,
         metadata: Optional[Metadata] = None,
-        timeout: float = 15.0,
+        timeout: int = 15,
     ) -> None:
         source_path = source_bucket.format_key_for_backend(source_key, remove_slash_prefix=True, trailing_slash=False)
         source_client = source_bucket.get_blob_service_client().get_blob_client(source_bucket.container_name, source_path)
