@@ -40,6 +40,7 @@ from typing_extensions import Self
 
 import logging
 import os
+import sys
 
 KEY_TYPE_OBJECT = "object"
 KEY_TYPE_PREFIX = "prefix"
@@ -270,6 +271,9 @@ class BaseTransfer(Generic[StorageModelT]):
         self.log.debug("Deleting tree: %r", key)
         names = [item["name"] for item in self.list_path(key, with_metadata=False, deep=True)]
         self.delete_keys(names, preserve_trailing_slash=preserve_trailing_slash)
+
+    def calculate_max_unknown_file_size(self) -> int:
+        return sys.maxsize
 
     def get_contents_to_file(
         self, key: str, filepath_to_store_to: AnyPath, *, progress_callback: ProgressProportionCallbackType = None

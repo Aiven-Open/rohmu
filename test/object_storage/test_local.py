@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import pytest
+import sys
 
 
 def test_store_file_from_disk() -> None:
@@ -35,6 +36,15 @@ def test_store_file_from_disk() -> None:
         notifier.object_created.assert_called_once_with(
             key="test_key1", size=len(test_data), metadata={"Content-Length": "9"}
         )
+
+
+def test_calculate_max_unknown_file_size() -> None:
+    with TemporaryDirectory() as destdir:
+        transfer = LocalTransfer(
+            directory=destdir,
+        )
+
+        assert transfer.calculate_max_unknown_file_size() == sys.maxsize
 
 
 def test_store_file_object() -> None:

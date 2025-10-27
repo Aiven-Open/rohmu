@@ -50,14 +50,14 @@ AZURE_ENDPOINT_SUFFIXES = {
 # to that 5 TiB increase the block size based on host memory; we don't want to use the max 100 for all
 # hosts because the uploader will allocate (with default settings) 3 x block size of memory.
 AZURE_MAX_BLOCK_SIZE: Final[int] = calculate_azure_max_block_size()
-
+AZURE_MAX_NUM_PARTS_PER_UPLOAD: Final[int] = 10000
 
 # googleapiclient download performs some 3-4 times better with 50 MB chunk size than 5 MB chunk size;
 # but decrypting/decompressing big chunks needs a lot of memory so use smaller chunks on systems with less
 # than 2 GB RAM
 GOOGLE_DOWNLOAD_CHUNK_SIZE: Final[int] = 1024 * 1024 * 5 if (get_total_memory() or 0) < 2048 else 1024 * 1024 * 50
 GOOGLE_UPLOAD_CHUNK_SIZE: Final[int] = 1024 * 1024 * 5
-
+GOOGLE_MAX_NUM_PARTS_PER_UPLOAD: Final[int] = 10000
 
 LOCAL_CHUNK_SIZE: Final[int] = 1024 * 1024
 
@@ -85,6 +85,7 @@ S3_READ_BLOCK_SIZE: Final[int] = 1024 * 1024 * 1
 
 SWIFT_CHUNK_SIZE: Final[int] = 1024 * 1024 * 5  # 5 Mi
 SWIFT_SEGMENT_SIZE: Final[int] = 1024 * 1024 * 1024 * 3  # 3 Gi
+SWIFT_MAX_NUM_PARTS_PER_UPLOAD = 10000
 
 
 class AzureObjectStorageConfig(StorageModel):

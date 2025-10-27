@@ -49,6 +49,21 @@ def make_mock_transfer(mocker: Any, transfer_kwargs: dict[str, Any]) -> S3Transf
     return transfer
 
 
+def test_calculate_max_unknown_file_size(mocker: Any) -> None:
+    segment_size = 100
+    transfer = make_mock_transfer(
+        mocker,
+        {
+            "region": "test-region",
+            "bucket_name": "test-bucket",
+            "prefix": "test-prefix",
+            "segment_size": segment_size,
+        },
+    )
+
+    assert transfer.calculate_max_unknown_file_size() == segment_size * S3_MAX_NUM_PARTS_PER_UPLOAD
+
+
 @pytest.fixture(name="infra")
 def fixture_infra(mocker: Any) -> Iterator[S3Infra]:
     operation = mocker.patch("rohmu.common.statsd.StatsClient.operation")
