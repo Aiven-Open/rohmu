@@ -24,6 +24,7 @@ from rohmu.object_storage.base import (
 )
 from rohmu.object_storage.config import (
     SWIFT_CHUNK_SIZE as CHUNK_SIZE,
+    SWIFT_MAX_NUM_PARTS_PER_UPLOAD as MAX_NUM_PARTS_PER_UPLOAD,
     SWIFT_SEGMENT_SIZE as SEGMENT_SIZE,
     SwiftObjectStorageConfig as Config,
 )
@@ -152,6 +153,9 @@ class SwiftTransfer(BaseTransfer[Config]):
     def get_metadata_for_key(self, key: str) -> Metadata:
         path = self.format_key_for_backend(key)
         return self._metadata_for_key(path)
+
+    def calculate_max_unknown_file_size(self) -> int:
+        return MAX_NUM_PARTS_PER_UPLOAD * CHUNK_SIZE
 
     def _metadata_for_key(self, key: str, *, resolve_manifest: bool = False) -> Metadata:
         try:

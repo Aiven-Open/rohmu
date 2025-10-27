@@ -43,6 +43,7 @@ from rohmu.object_storage.base import (
 )
 from rohmu.object_storage.config import (
     GOOGLE_DOWNLOAD_CHUNK_SIZE as DOWNLOAD_CHUNK_SIZE,
+    GOOGLE_MAX_NUM_PARTS_PER_UPLOAD as MAX_NUM_PARTS_PER_UPLOAD,
     GOOGLE_UPLOAD_CHUNK_SIZE as UPLOAD_CHUNK_SIZE,
     GoogleObjectStorageConfig as Config,
 )
@@ -400,6 +401,9 @@ class GoogleTransfer(BaseTransfer[Config]):
                 reporter.size = size
                 self.notifier.object_copied(key=destination_key, size=size, metadata=metadata)
             reporter.report(self.stats)
+
+    def calculate_max_unknown_file_size(self) -> int:
+        return MAX_NUM_PARTS_PER_UPLOAD * UPLOAD_CHUNK_SIZE
 
     def get_metadata_for_key(self, key: str) -> Metadata:
         path = self.format_key_for_backend(key)

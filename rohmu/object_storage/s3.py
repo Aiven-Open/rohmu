@@ -178,6 +178,9 @@ class S3Transfer(BaseTransfer[Config]):
     def _verify_object_storage_unwrapped(self) -> None:
         self.check_or_create_bucket(create_if_needed=False)
 
+    def calculate_max_unknown_file_size(self) -> int:
+        return self.default_multipart_chunk_size * S3_MAX_NUM_PARTS_PER_UPLOAD
+
     def verify_object_storage(self) -> None:
         try:
             self._verify_object_storage_unwrapped()

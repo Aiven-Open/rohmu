@@ -30,6 +30,7 @@ from rohmu.object_storage.base import (
 from rohmu.object_storage.config import (  # noqa: F401
     AZURE_ENDPOINT_SUFFIXES as ENDPOINT_SUFFIXES,
     AZURE_MAX_BLOCK_SIZE as MAX_BLOCK_SIZE,
+    AZURE_MAX_NUM_PARTS_PER_UPLOAD as MAX_NUM_PARTS_PER_UPLOAD,
     AzureObjectStorageConfig as Config,
     calculate_azure_max_block_size as calculate_max_block_size,
 )
@@ -139,6 +140,9 @@ class AzureTransfer(BaseTransfer[Config]):
             else:
                 raise TransferObjectStoreInitializationError() from ex
 
+    def calculate_max_unknown_file_size(self) -> int:
+        return MAX_NUM_PARTS_PER_UPLOAD * MAX_BLOCK_SIZE
+
     def get_blob_service_client(self) -> BlobServiceClient:
         if self._blob_service_client is None:
             self._blob_service_client = BlobServiceClient.from_connection_string(
@@ -178,7 +182,7 @@ class AzureTransfer(BaseTransfer[Config]):
     def copy_file(
         self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **kwargs: Any
     ) -> None:
-        timeout = kwargs.get("timeout") or 15.0
+        timeout = kwargs.get("timeout") or 15
         self._copy_file_from_bucket(
             source_bucket=self, source_key=source_key, destination_key=destination_key, metadata=metadata, timeout=timeout
         )
@@ -190,7 +194,7 @@ class AzureTransfer(BaseTransfer[Config]):
         source_key: str,
         destination_key: str,
         metadata: Optional[Metadata] = None,
-        timeout: float = 15.0,
+        timeout: int = 15,
     ) -> None:
         source_path = source_bucket.format_key_for_backend(source_key, remove_slash_prefix=True, trailing_slash=False)
         source_client = source_bucket.get_blob_service_client().get_blob_client(source_bucket.container_name, source_path)
