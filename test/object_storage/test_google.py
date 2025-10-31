@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from googleapiclient.errors import HttpError
 from googleapiclient.http import HttpRequest, MediaUploadProgress
 from io import BytesIO
+from oauth2client.client import AccessTokenCredentials
 from rohmu import InvalidConfigurationError
 from rohmu.common.models import StorageOperation
 from rohmu.errors import InvalidByteRangeError, TransferObjectStoreMissingError, TransferObjectStorePermissionError
@@ -640,3 +641,42 @@ def test_delete_keys_callback_failure() -> None:
 
         notifier.object_deleted.assert_has_calls([call("key1"), call("key2")])
         mock_delete_key.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("project_id", "ensure_object_store_available"),
+    (
+        (None, False),
+        ("project-name", True),
+    ),
+)
+def test_create_transfer_with_access_token_credentials(project_id: str | None, ensure_object_store_available: bool) -> None:
+    """Test that we can create a transfer with access token credentials.
+
+    If creating the bucket on demand is enabled, then we also need to know the ID of the
+    project in which we may need to create it.
+    """
+    notifier = MagicMock()
+    with ExitStack() as stack:
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._verify_object_storage_unwrapped"))
+
+        transfer = GoogleTransfer(
+            project_id=project_id,
+            bucket_name="test-bucket",
+            credentials={"type": "access_token", "access_token": "google-cloud-access-token"},
+            notifier=notifier,
+            ensure_object_store_available=ensure_object_store_available,
+        )
+        assert isinstance(transfer.google_creds, AccessTokenCredentials)
+
+
+def test_project_id_required_for_ensuring_object_store() -> None:
+    notifier = MagicMock()
+    with pytest.raises(ValueError):
+        GoogleTransfer(
+            project_id=None,
+            bucket_name="test-bucket",
+            credentials={"type": "access_token", "access_token": "google-cloud-access-token"},
+            notifier=notifier,
+            ensure_object_store_available=True,
+        )

@@ -117,7 +117,7 @@ class AzureObjectStorageConfig(StorageModel):
 
 
 class GoogleObjectStorageConfig(StorageModel):
-    project_id: str
+    project_id: Optional[str]
     bucket_name: Optional[str]
     # Don't use pydantic FilePath, that class checks the file exists at the wrong time
     credential_file: Optional[Path] = None
@@ -125,6 +125,13 @@ class GoogleObjectStorageConfig(StorageModel):
     proxy_info: Optional[ProxyInfo] = None
     prefix: Optional[str] = None
     storage_type: Literal[StorageDriver.google] = StorageDriver.google
+
+    @root_validator
+    @classmethod
+    def project_id_or_bucket_name_must_be_given(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        if values["project_id"] is None and values["bucket_name"] is None:
+            raise ValueError("at least one of project_id, bucket_name must be set")
+        return values
 
 
 class LocalObjectStorageConfig(StorageModel):
