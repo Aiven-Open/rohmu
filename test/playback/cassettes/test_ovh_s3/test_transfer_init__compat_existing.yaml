@@ -1,0 +1,40 @@
+interactions:
+- request:
+    body: null
+    headers:
+      User-Agent:
+      - Botocore/1.40.72 ua/2.1 os/linux#6.17.8-200.fc42.x86_64 md/arch#x86_64 lang/python#3.13.9
+        md/pyimpl#CPython m/e,N,Z,b,E cfg/retry-mode#standard
+      X-Amz-Content-SHA256:
+      - e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+      X-Amz-Date:
+      - 20251121T133604Z
+      amz-sdk-invocation-id:
+      - 95706e7e-9f6c-4e59-ab63-5f6440fc762a
+      amz-sdk-request:
+      - attempt=1
+      authorization:
+      - AWS4-HMAC-SHA256 Credential={admin_access_key_id}/20251121/eu-west-par/s3/aws4_request,
+        SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=506c3b43149c89b16d6aa9060e4c0b4f2ed53372d2b7b8283bacfd9ff147d4b3
+    method: HEAD
+    uri: https://s3.eu-west-par.io.cloud.ovh.net/rohmu-test-20251121a
+  response:
+    body:
+      string: ''
+    headers:
+      Content-Type:
+      - text/html; charset=utf-8
+      Date:
+      - Fri, 21 Nov 2025 13:36:04 GMT
+      X-Ovh-Bucket-Object-Count:
+      - '0'
+      X-Ovh-Bucket-Size:
+      - '0'
+      x-amz-id-2:
+      - tx257b8e6a0ebe43679dce4-0069206ac4
+      x-amz-request-id:
+      - tx257b8e6a0ebe43679dce4-0069206ac4
+    status:
+      code: 200
+      message: OK
+version: 1

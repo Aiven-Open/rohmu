@@ -1,0 +1,15 @@
+{
+  "__doc__": "Not used by the setup fixture for now. Can be applied manually to the admin S3 user.",
+  "Statement": [
+    {
+      "Sid": "FullAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:*"
+      ],
+      "Resource": [
+        "*"
+      ]
+    }
+  ]
+}
