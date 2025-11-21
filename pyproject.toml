@@ -55,9 +55,12 @@ dev = [
     'typing_extensions >= 3.10, < 5; python_version<"3.12"',
     # Unpinned dependencies, latest is fine
     "botocore",
-    "pytest",
+    "boto3",
+    "ovh",
+    'pytest<9',  # Last version with support for Python 3.8 - mypy would complain about the pattern matching otherwise
     "pytest-cov",
     "pytest-mock",
+    "pytest-recording",
     "pytest-timeout",
     "pytest-asyncio",
     "rstfmt",

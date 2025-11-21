@@ -1,0 +1,35 @@
+{
+  "__doc__": "Used by the setup fixture to set up the test 'user1' S3 user.",
+  "Statement": [
+    {
+      "Sid": "BucketLocation_ExampleStatement",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketLocation"
+      ],
+      "Resource": "arn:aws:s3:::{BUCKET_NAME_HERE}"
+    },
+    {
+      "Sid": "ListServiceObjects_ExampleStatement",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+        "s3:ListBucketMultipartUploads"
+      ],
+      "Resource": "arn:aws:s3:::{BUCKET_NAME_HERE}"
+    },
+    {
+      "Sid": "RWServiceObjects_ExampleStatement",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:DeleteObject",
+        "s3:PutObject",
+        "s3:AbortMultipartUpload",
+        "s3:ListMultipartUploadParts"
+      ],
+      "Resource": "arn:aws:s3:::{BUCKET_NAME_HERE}/some-prefix-here/*"
+    }
+  ]
+}

@@ -697,7 +697,8 @@ class S3Transfer(BaseTransfer[Config]):
             if status_code == HTTPStatus.MOVED_PERMANENTLY:
                 raise InvalidConfigurationError(f"Wrong region for bucket {self.bucket_name}, check configuration")
             elif status_code == HTTPStatus.FORBIDDEN:
-                # Access denied on bucket check, most likely due to missing s3:ListBucket, assuming write permissions
+                # Most likely due to missing s3:ListBucket (can also be due to bad credentials)
+                self.log.debug("Access denied on bucket check, assuming write permissions")
                 return
             elif status_code in {HTTPStatus.BAD_REQUEST, HTTPStatus.NOT_FOUND}:
                 if not create_if_needed:
