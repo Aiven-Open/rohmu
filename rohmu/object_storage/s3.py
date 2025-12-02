@@ -538,7 +538,11 @@ class S3Transfer(BaseTransfer[Config]):
         chunks, chunk_size = self.calculate_chunks_and_chunk_size(size)
         args, sanitized_metadata, path = self._init_args_for_multipart(key, metadata, mimetype, cache_control)
         self.log.debug(
-            "Starting to upload multipart file: %r, size: %s, chunks: %d (chunk size: %d)", path, size, chunks, chunk_size
+            "Starting to upload multipart file: %r, size: %s, chunks: %d (chunk size: %d)",
+            path,
+            size,
+            chunks if size is not None else "<?>",
+            chunk_size,
         )
 
         parts: list[CompletedPartTypeDef] = []
@@ -555,7 +559,16 @@ class S3Transfer(BaseTransfer[Config]):
         while True:
             data = self._read_bytes(fp, chunk_size)
             if not data:
-                break
+                if size is not None and bytes_sent < size:
+                    raise EOFError(
+                        "Expected to read %d bytes, but reached end of file after reading %d bytes.", size, bytes_sent
+                    )
+                else:
+                    # bytes_sent == size, we're done, everything good.
+                    # bytes_sent > size: This is surprising, but we have at least uploaded all the data
+                    # we were supposed to, maybe more.
+                    # Or size is None, don't know what to expect, so just quit.
+                    break
 
             start_of_part_upload = time.monotonic()
             self.stats.operation(StorageOperation.store_file, size=len(data))
@@ -583,7 +596,7 @@ class S3Transfer(BaseTransfer[Config]):
                 self.log.info(
                     "Uploaded part %s of %s, size %s in %.2fs",
                     part_number,
-                    chunks,
+                    chunks if size is not None else "<?>",
                     len(data),
                     time.monotonic() - start_of_part_upload,
                 )

@@ -13,13 +13,17 @@ from rohmu.object_storage.base import TransferWithConcurrentUploadSupport
 from rohmu.object_storage.config import S3_MAX_NUM_PARTS_PER_UPLOAD, S3ObjectStorageConfig
 from rohmu.object_storage.s3 import S3Transfer
 from tempfile import NamedTemporaryFile
-from typing import Any, BinaryIO, Callable, Iterator, Optional, Union
+from typing import Any, BinaryIO, Callable, cast, Iterator, Optional, Union
 from unittest.mock import ANY, call, MagicMock, patch
 
 import botocore.exceptions
 import contextlib
+import logging
+import math
 import pytest
 import rohmu.object_storage.s3
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -654,3 +658,108 @@ def test_check_or_create_bucket_raise_error_if_bucket_missing_and_creation_is_di
     # something other than head_bucket to determine if the bucket exists or not
     with pytest.raises(TransferObjectStoreMissingError):
         transfer.check_or_create_bucket(create_if_needed=False)
+
+
+# Python 3.8 compatible randbytes()
+# If you actually need random data import the real randbytes().
+def randbytes(size: int) -> bytes:
+    return b"1234567890" * (math.floor(size / 10)) + (b"1" * (size % 10))
+
+
+# All other tests aggressively mock this function, so let's test it now once and for all.
+@pytest.mark.parametrize("_size", [999999, None])
+def test_multipart_upload_file_object(mocker: Any, _size: Optional[int]) -> None:
+    cache_control = "no-cache"
+    key = "test_key_123"
+    metadata = {"name1": "test_meta_data", "key_b": "rfgdswe"}
+    mimetype = "application/x-gzip"
+    progress_fn = MagicMock()
+    size = _size if _size is not None else 999999
+    test_data = randbytes(size)
+    segment_size = round((size + 1) / 10)
+    expected_chunks = round(size / segment_size) if _size is not None else "<?>"
+
+    transfer = make_mock_transfer(
+        mocker,
+        {
+            "region": "test-region",
+            "bucket_name": "test-bucket",
+            "prefix": "test-prefix",
+            "segment_size": segment_size,
+        },
+    )
+    transfer.log = MagicMock()
+    with NamedTemporaryFile() as tmpfile:
+        tmpfile.write(test_data)
+        tmpfile.flush()
+        tmpfile.seek(0)
+
+        transfer.multipart_upload_file_object(
+            cache_control=cache_control,
+            fp=cast(BinaryIO, tmpfile),
+            key=key,
+            metadata=metadata,
+            mimetype=mimetype,
+            progress_fn=progress_fn,
+            size=_size,
+        )
+
+        log.info(f"size = {_size}, {size}")
+        log.info(transfer.log.mock_calls)
+        expected = [
+            call.debug(
+                "Starting to upload multipart file: %r, size: %s, chunks: %d (chunk size: %d)",
+                "test-prefix/test_key_123",
+                _size,
+                expected_chunks,
+                segment_size,
+            ),
+            call.info("Uploaded part %s of %s, size %s in %.2fs", 1, expected_chunks, segment_size, ANY),
+            call.info("Uploaded part %s of %s, size %s in %.2fs", 2, expected_chunks, segment_size, ANY),
+            call.info("Uploaded part %s of %s, size %s in %.2fs", 3, expected_chunks, segment_size, ANY),
+            call.info("Uploaded part %s of %s, size %s in %.2fs", 4, expected_chunks, segment_size, ANY),
+            call.info("Uploaded part %s of %s, size %s in %.2fs", 5, expected_chunks, segment_size, ANY),
+            call.info("Uploaded part %s of %s, size %s in %.2fs", 6, expected_chunks, segment_size, ANY),
+            call.info("Uploaded part %s of %s, size %s in %.2fs", 7, expected_chunks, segment_size, ANY),
+            call.info("Uploaded part %s of %s, size %s in %.2fs", 8, expected_chunks, segment_size, ANY),
+            call.info("Uploaded part %s of %s, size %s in %.2fs", 9, expected_chunks, segment_size, ANY),
+            call.info("Uploaded part %s of %s, size %s in %.2fs", 10, expected_chunks, ANY, ANY),
+            call.info("Multipart upload of %r complete, size: %r, took: %.2fs", "test-prefix/test_key_123", _size, ANY),
+        ]
+        transfer.log.assert_has_calls(expected)
+
+
+def test_multipart_upload_source_file_empty(mocker: Any) -> None:
+    cache_control = "no-cache"
+    key = "test_key_123"
+    metadata = {"name1": "test_meta_data", "key_b": "rfgdswe"}
+    mimetype = "application/x-gzip"
+    progress_fn = MagicMock()
+    size = 996
+    segment_size = round((size + 1) / 10)
+
+    transfer = make_mock_transfer(
+        mocker,
+        {
+            "region": "test-region",
+            "bucket_name": "test-bucket",
+            "prefix": "test-prefix",
+            "segment_size": segment_size,
+        },
+    )
+    transfer.log = MagicMock()
+    with NamedTemporaryFile() as tmpfile:
+        tmpfile.write(b"")
+        tmpfile.flush()
+        tmpfile.seek(0)
+
+        with pytest.raises(EOFError):
+            transfer.multipart_upload_file_object(
+                cache_control=cache_control,
+                fp=cast(BinaryIO, tmpfile),
+                key=key,
+                metadata=metadata,
+                mimetype=mimetype,
+                progress_fn=progress_fn,
+                size=size,
+            )
