@@ -443,7 +443,11 @@ class S3Transfer(BaseTransfer[Config]):
             read_amount = min(read_amount, READ_BLOCK_SIZE)
             try:
                 data = streaming_body.read(amt=read_amount)
-            except (botocore.exceptions.IncompleteReadError, botocore.exceptions.ReadTimeoutError) as ex:
+            except (
+                botocore.exceptions.IncompleteReadError,
+                botocore.exceptions.ReadTimeoutError,
+                botocore.exceptions.ResponseStreamingError,
+            ) as ex:
                 raise MaybeRecoverableError("botocore.exceptions.IncompleteReadError", position=data_read) from ex
 
             fileobj.write(data)
