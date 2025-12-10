@@ -245,6 +245,10 @@ def test_get_contents_to_fileobj_raises_error_on_invalid_byte_range(infra: S3Inf
     [
         botocore.exceptions.IncompleteReadError(actual_bytes=80, expected_bytes=200),
         botocore.exceptions.ReadTimeoutError(endpoint_url="https://example.org"),
+        botocore.exceptions.ResponseStreamingError(
+            endpoint_url="https://example.org",
+            error="An error occurred while reading from response stream: ...",
+        ),
     ],
     ids=type,
 )
@@ -424,7 +428,7 @@ TEST_TRANSFER_MIN_MULTIPART_CHUNK_SIZE = [
         expected_chunk_size=mb_to_bytes(9),
     ),
     TransferMinMultipartChunkSizeTestData(
-        description="Same as above, but min_multipart_chunk_size is set to 50 MB, " "we expect only 2 chunks of 50 MB each",
+        description="Same as above, but min_multipart_chunk_size is set to 50 MB, we expect only 2 chunks of 50 MB each",
         size=mb_to_bytes(100),
         segment_size=mb_to_bytes(9),
         min_multipart_chunk_size=mb_to_bytes(50),
