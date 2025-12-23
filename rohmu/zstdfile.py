@@ -47,6 +47,7 @@ class _ZtsdFileReader(FileWrap):
             next_fp,  # type: ignore[arg-type]
             read_size=IO_BLOCK_SIZE,
             read_across_frames=True,
+            closefd=False,
         )
         super().__init__(next_fp)
 
