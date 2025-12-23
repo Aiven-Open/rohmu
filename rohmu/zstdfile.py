@@ -43,31 +43,28 @@ class _ZstdFileWriter(FileWrap):
 
 class _ZtsdFileReader(FileWrap):
     def __init__(self, next_fp: FileLike) -> None:
-        self._zstd = zstd.ZstdDecompressor().decompressobj()
+        self._stream = zstd.ZstdDecompressor().stream_reader(
+            next_fp,  # type: ignore[arg-type]
+            read_size=IO_BLOCK_SIZE,
+            read_across_frames=True,
+        )
         super().__init__(next_fp)
-        self._done = False
 
     def close(self) -> None:
         if self.closed:
             return
+        self._stream.close()
         super().close()
 
     def read(self, size: Optional[int] = -1) -> bytes:
-        # NOTE: size arg is ignored, random size output is returned
         self._check_not_closed()
-        while not self._done:
-            compressed = self.next_fp.read(IO_BLOCK_SIZE)
-            if not compressed:
-                self._done = True
-                output = self._zstd.flush() or b""
-            else:
-                output = self._zstd.decompress(compressed)
+        if size == 0:
+            return b""
 
-            if output:
-                self.offset += len(output)
-                return output
-
-        return b""
+        read_size = size if size and size > 0 else IO_BLOCK_SIZE
+        data = self._stream.read(read_size)
+        self.offset += len(data)
+        return data
 
     def readable(self) -> bool:
         return True
