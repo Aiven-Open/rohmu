@@ -25,7 +25,7 @@ and other databases.
  Features
 **********
 
--  Supported object storages: Azure, GCP, S3, Swift (OpenStack), local file storage, and SFTP.
+-  Supported object storages: Azure, GCP, S3, local file storage, and SFTP.
 -  Supported compression algorithms: Snappy_, zstd_, and lzma_.
 
 ..
