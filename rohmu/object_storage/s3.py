@@ -542,7 +542,7 @@ class S3Transfer(BaseTransfer[Config]):
         chunks, chunk_size = self.calculate_chunks_and_chunk_size(size)
         args, sanitized_metadata, path = self._init_args_for_multipart(key, metadata, mimetype, cache_control)
         self.log.debug(
-            "Starting to upload multipart file: %r, size: %s, chunks: %d (chunk size: %d)",
+            "Starting to upload multipart file: %r, size: %s, chunks: %s (chunk size: %d)",
             path,
             size,
             chunks if size is not None else "<?>",

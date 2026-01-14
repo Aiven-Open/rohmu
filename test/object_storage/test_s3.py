@@ -13,7 +13,7 @@ from rohmu.object_storage.base import TransferWithConcurrentUploadSupport
 from rohmu.object_storage.config import S3_MAX_NUM_PARTS_PER_UPLOAD, S3ObjectStorageConfig
 from rohmu.object_storage.s3 import S3Transfer
 from tempfile import NamedTemporaryFile
-from typing import Any, BinaryIO, Callable, cast, Iterator, Optional, Union
+from typing import Any, BinaryIO, Callable, Iterator, Optional, Union
 from unittest.mock import ANY, call, MagicMock, patch
 
 import botocore.exceptions
@@ -21,6 +21,7 @@ import contextlib
 import logging
 import math
 import pytest
+import re
 import rohmu.object_storage.s3
 
 log = logging.getLogger(__name__)
@@ -672,7 +673,9 @@ def randbytes(size: int) -> bytes:
 
 # All other tests aggressively mock this function, so let's test it now once and for all.
 @pytest.mark.parametrize("_size", [999999, None])
-def test_multipart_upload_file_object(mocker: Any, _size: Optional[int]) -> None:
+def test_multipart_upload_file_object(
+    mocker: Any, tmp_path: Path, caplog: pytest.LogCaptureFixture, _size: Optional[int]
+) -> None:
     cache_control = "no-cache"
     key = "test_key_123"
     metadata = {"name1": "test_meta_data", "key_b": "rfgdswe"}
@@ -681,7 +684,8 @@ def test_multipart_upload_file_object(mocker: Any, _size: Optional[int]) -> None
     size = _size if _size is not None else 999999
     test_data = randbytes(size)
     segment_size = round((size + 1) / 10)
-    expected_chunks = round(size / segment_size) if _size is not None else "<?>"
+    expected_chunks = str(round(size / segment_size)) if _size is not None else "<?>"
+    expected_chunks = re.escape(expected_chunks)
 
     transfer = make_mock_transfer(
         mocker,
@@ -692,48 +696,46 @@ def test_multipart_upload_file_object(mocker: Any, _size: Optional[int]) -> None
             "segment_size": segment_size,
         },
     )
-    transfer.log = MagicMock()
-    with NamedTemporaryFile() as tmpfile:
-        tmpfile.write(test_data)
-        tmpfile.flush()
-        tmpfile.seek(0)
+    tmpfile = tmp_path / "file_to_upload.bin"
+    tmpfile.write_bytes(test_data)
 
-        transfer.multipart_upload_file_object(
-            cache_control=cache_control,
-            fp=cast(BinaryIO, tmpfile),
-            key=key,
-            metadata=metadata,
-            mimetype=mimetype,
-            progress_fn=progress_fn,
-            size=_size,
-        )
+    log.info(f"size = {_size}, {size}")
 
-        log.info(f"size = {_size}, {size}")
-        log.info(transfer.log.mock_calls)
-        expected = [
-            call.debug(
-                "Starting to upload multipart file: %r, size: %s, chunks: %d (chunk size: %d)",
-                "test-prefix/test_key_123",
-                _size,
-                expected_chunks,
-                segment_size,
-            ),
-            call.info("Uploaded part %s of %s, size %s in %.2fs", 1, expected_chunks, segment_size, ANY),
-            call.info("Uploaded part %s of %s, size %s in %.2fs", 2, expected_chunks, segment_size, ANY),
-            call.info("Uploaded part %s of %s, size %s in %.2fs", 3, expected_chunks, segment_size, ANY),
-            call.info("Uploaded part %s of %s, size %s in %.2fs", 4, expected_chunks, segment_size, ANY),
-            call.info("Uploaded part %s of %s, size %s in %.2fs", 5, expected_chunks, segment_size, ANY),
-            call.info("Uploaded part %s of %s, size %s in %.2fs", 6, expected_chunks, segment_size, ANY),
-            call.info("Uploaded part %s of %s, size %s in %.2fs", 7, expected_chunks, segment_size, ANY),
-            call.info("Uploaded part %s of %s, size %s in %.2fs", 8, expected_chunks, segment_size, ANY),
-            call.info("Uploaded part %s of %s, size %s in %.2fs", 9, expected_chunks, segment_size, ANY),
-            call.info("Uploaded part %s of %s, size %s in %.2fs", 10, expected_chunks, ANY, ANY),
-            call.info("Multipart upload of %r complete, size: %r, took: %.2fs", "test-prefix/test_key_123", _size, ANY),
-        ]
-        transfer.log.assert_has_calls(expected)
+    with open(tmpfile, "rb") as fp:
+        with caplog.at_level(logging.DEBUG):
+            transfer.multipart_upload_file_object(
+                cache_control=cache_control,
+                fp=fp,
+                key=key,
+                metadata=metadata,
+                mimetype=mimetype,
+                progress_fn=progress_fn,
+                size=_size,
+            )
+            log_lines = [rec.message for rec in caplog.records]
+            line_matcher = pytest.LineMatcher(log_lines)
+            expected = [
+                (
+                    rf"Starting to upload multipart file: 'test-prefix/test_key_123', size: {_size},"
+                    rf" chunks: {expected_chunks} \(chunk size: 100000\)"
+                ),
+                rf"Uploaded part 1 of {expected_chunks}, size 100000 in [\d]+\.[\d]+s",
+                rf"Uploaded part 2 of {expected_chunks}, size 100000 in [\d]+\.[\d]+s",
+                rf"Uploaded part 3 of {expected_chunks}, size 100000 in [\d]+\.[\d]+s",
+                rf"Uploaded part 4 of {expected_chunks}, size 100000 in [\d]+\.[\d]+s",
+                rf"Uploaded part 5 of {expected_chunks}, size 100000 in [\d]+\.[\d]+s",
+                rf"Uploaded part 6 of {expected_chunks}, size 100000 in [\d]+\.[\d]+s",
+                rf"Uploaded part 7 of {expected_chunks}, size 100000 in [\d]+\.[\d]+s",
+                rf"Uploaded part 8 of {expected_chunks}, size 100000 in [\d]+\.[\d]+s",
+                rf"Uploaded part 9 of {expected_chunks}, size 100000 in [\d]+\.[\d]+s",
+                rf"Uploaded part 10 of {expected_chunks}, size 99999 in [\d]+\.[\d]+s",
+                rf"Multipart upload of 'test-prefix/test_key_123' complete, size: {_size}, took: [\d]+\.[\d]+s",
+            ]
+
+            line_matcher.re_match_lines(expected)
 
 
-def test_multipart_upload_source_file_empty(mocker: Any) -> None:
+def test_multipart_upload_source_file_empty(mocker: Any, tmp_path: Path) -> None:
     cache_control = "no-cache"
     key = "test_key_123"
     metadata = {"name1": "test_meta_data", "key_b": "rfgdswe"}
@@ -752,15 +754,13 @@ def test_multipart_upload_source_file_empty(mocker: Any) -> None:
         },
     )
     transfer.log = MagicMock()
-    with NamedTemporaryFile() as tmpfile:
-        tmpfile.write(b"")
-        tmpfile.flush()
-        tmpfile.seek(0)
-
+    tmpfile = tmp_path / "file_to_upload.bin"
+    tmpfile.write_bytes(b"")
+    with open(tmpfile, "rb") as fp:
         with pytest.raises(EOFError):
             transfer.multipart_upload_file_object(
                 cache_control=cache_control,
-                fp=cast(BinaryIO, tmpfile),
+                fp=fp,
                 key=key,
                 metadata=metadata,
                 mimetype=mimetype,
