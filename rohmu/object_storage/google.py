@@ -116,7 +116,9 @@ def get_credentials(
     credential_file: Optional[TextIO] = None, credentials: Optional[dict[str, Any]] = None
 ) -> GoogleCredentials:
     if credential_file:
-        return GoogleCredentials.from_stream(credential_file)
+        return GoogleCredentials.from_stream(credential_file).create_scoped(
+            ["https://www.googleapis.com/auth/cloud-platform"]
+        )
 
     if credentials and credentials["type"] == "service_account":
         return ServiceAccountCredentials_from_dict(
@@ -472,7 +474,7 @@ class GoogleTransfer(BaseTransfer[Config]):
                         if (size := item.get("size")) is not None:
                             value["size"] = int(size)
                         if (updated := item.get("updated")) is not None:
-                            value["last_modified"] = datetime.datetime.fromisoformat(updated)
+                            value["last_modified"] = datetime.datetime.strptime(updated, "%Y-%m-%dT%H:%M:%S.%f%z")
                         if (md5 := item.get("md5Hash")) is not None:
                             value["md5"] = base64_to_hex(md5)
                         yield IterKeyItem(type=KEY_TYPE_OBJECT, value=value)
