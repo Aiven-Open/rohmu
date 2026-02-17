@@ -20,8 +20,6 @@ from googleapiclient.http import (
 )
 from http.client import IncompleteRead
 from io import IOBase
-from oauth2client import GOOGLE_TOKEN_URI
-from oauth2client.client import AccessTokenCredentials, GoogleCredentials
 from rohmu.common.models import StorageOperation
 from rohmu.common.statsd import StatsClient, StatsdConfig
 from rohmu.errors import (
@@ -69,6 +67,11 @@ import codecs
 import dataclasses
 import datetime
 import errno
+import google.auth
+import google.auth.credentials
+import google.oauth2.credentials
+import google.oauth2.service_account
+import google_auth_httplib2
 
 # NOTE: this import is not needed per-se, but it's imported here first to point the
 # user to the most important possible missing dependency
@@ -82,63 +85,68 @@ import socket
 import ssl
 import time
 
-try:
-    from oauth2client.service_account import ServiceAccountCredentials
-
-    ServiceAccountCredentials_from_dict = ServiceAccountCredentials.from_json_keyfile_dict
-except ImportError:
-    from oauth2client.service_account import _ServiceAccountCredentials
-
-    def ServiceAccountCredentials_from_dict(
-        credentials: dict[str, Any], scopes: Optional[list[str]] = None
-    ) -> GoogleCredentials:
-        if scopes is None:
-            scopes = []
-        return _ServiceAccountCredentials(
-            service_account_id=credentials["client_id"],
-            service_account_email=credentials["client_email"],
-            private_key_id=credentials["private_key_id"],
-            private_key_pkcs8_text=credentials["private_key"],
-            scopes=scopes,
-        )
-
-
 if TYPE_CHECKING:
     from googleapiclient._apis.storage.v1 import StorageResource
 
 # Silence Google API client verbose spamming
 logging.getLogger("googleapiclient.discovery_cache").setLevel(logging.ERROR)
 logging.getLogger("googleapiclient").setLevel(logging.WARNING)
-logging.getLogger("oauth2client").setLevel(logging.WARNING)
+logging.getLogger("google.auth").setLevel(logging.WARNING)
+
+GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
+
+
+def _add_default_token_uri(credentials: dict[str, Any]) -> dict[str, Any]:
+    """Ensure token_uri is present in credentials dict.
+
+    The google-auth library requires token_uri for service account credentials,
+    while the old oauth2client library had a built-in default. This function
+    adds the default if missing to maintain backwards compatibility.
+    """
+    if "token_uri" not in credentials:
+        return {**credentials, "token_uri": GOOGLE_TOKEN_URI}
+    return credentials
 
 
 def get_credentials(
     credential_file: Optional[TextIO] = None, credentials: Optional[dict[str, Any]] = None
-) -> GoogleCredentials:
+) -> google.auth.credentials.Credentials:
     if credential_file:
-        return GoogleCredentials.from_stream(credential_file)
+        creds_data = json.load(credential_file)
+        if creds_data.get("type") == "service_account":
+            return google.oauth2.service_account.Credentials.from_service_account_info(
+                _add_default_token_uri(creds_data),
+                scopes=["https://www.googleapis.com/auth/cloud-platform"],
+            )
+        elif creds_data.get("type") == "authorized_user":
+            return google.oauth2.credentials.Credentials.from_authorized_user_info(
+                creds_data,
+                scopes=["https://www.googleapis.com/auth/cloud-platform"],
+            )
+        else:
+            raise ValueError(f"Unknown credential type in file: {creds_data.get('type')}")
 
     if credentials and credentials["type"] == "service_account":
-        return ServiceAccountCredentials_from_dict(
-            credentials,
+        return google.oauth2.service_account.Credentials.from_service_account_info(
+            _add_default_token_uri(credentials),
             scopes=["https://www.googleapis.com/auth/cloud-platform"],
         )
 
     if credentials and credentials["type"] == "authorized_user":
-        return GoogleCredentials(
-            access_token=None,
+        return google.oauth2.credentials.Credentials(
+            token=None,
+            refresh_token=credentials["refresh_token"],
+            token_uri=GOOGLE_TOKEN_URI,
             client_id=credentials["client_id"],
             client_secret=credentials["client_secret"],
-            refresh_token=credentials["refresh_token"],
-            token_expiry=None,
-            token_uri=GOOGLE_TOKEN_URI,
-            user_agent="pghoard",
+            scopes=["https://www.googleapis.com/auth/cloud-platform"],
         )
 
     if credentials and credentials["type"] == "access_token":
-        return AccessTokenCredentials(access_token=credentials["access_token"], user_agent="pghoard")
+        return google.oauth2.credentials.Credentials(token=credentials["access_token"])
 
-    return GoogleCredentials.get_application_default()
+    creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+    return creds
 
 
 def base64_to_hex(b64val: Union[str, bytes]) -> str:
@@ -264,12 +272,12 @@ class GoogleTransfer(BaseTransfer[Config]):
                     proxy_pass=self.proxy_info.get("pass"),
                 )
 
-            http = self.google_creds.authorize(http)
+            authorized_http = google_auth_httplib2.AuthorizedHttp(self.google_creds, http=http)
 
             try:
                 # sometimes fails: httplib2.ServerNotFoundError: Unable to find the server at www.googleapis.com
                 # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.html
-                return build("storage", "v1", http=http)
+                return build("storage", "v1", http=authorized_http)
             except (httplib2.ServerNotFoundError, socket.timeout):
                 if time.monotonic() - start_time > 600:
                     raise
