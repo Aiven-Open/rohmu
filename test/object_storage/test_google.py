@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from googleapiclient.errors import HttpError
 from googleapiclient.http import HttpRequest, MediaUploadProgress
 from io import BytesIO
-from oauth2client.client import AccessTokenCredentials
 from rohmu import InvalidConfigurationError
 from rohmu.common.models import StorageOperation
 from rohmu.errors import InvalidByteRangeError, TransferObjectStoreMissingError, TransferObjectStorePermissionError
@@ -17,6 +16,7 @@ from typing import Callable, Union
 from unittest.mock import ANY, call, MagicMock, Mock, patch
 
 import base64
+import google.oauth2.credentials
 import googleapiclient.errors
 import httplib2
 import pytest
@@ -90,6 +90,7 @@ def test_handle_missing_bucket(
 
     with ExitStack() as stack:
         stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._init_google_client"))
 
         _try_get_bucket = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._try_get_bucket"))
         if not bucket_exists:
@@ -130,6 +131,7 @@ def test_store_file_from_memory() -> None:
     with ExitStack() as stack:
         stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._init_google_client"))
         upload = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._upload"))
         transfer = GoogleTransfer(
             project_id="test-project-id",
@@ -152,6 +154,7 @@ def test_store_file_from_disk() -> None:
     with ExitStack() as stack:
         stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._init_google_client"))
         upload = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._upload"))
 
         transfer = GoogleTransfer(
@@ -178,6 +181,7 @@ def test_store_file_object() -> None:
     with ExitStack() as stack:
         stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._init_google_client"))
         upload = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._upload"))
         transfer = GoogleTransfer(
             project_id="test-project-id",
@@ -207,6 +211,7 @@ def test_upload_size_unknown_to_reporter() -> None:
     with ExitStack() as stack:
         stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._init_google_client"))
         mock_retry = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._retry_on_reset"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._object_client"))
         mock_operation = stack.enter_context(patch("rohmu.common.statsd.StatsClient.operation"))
@@ -246,6 +251,7 @@ def test_get_contents_to_fileobj_raises_error_on_invalid_byte_range() -> None:
     with ExitStack() as stack:
         stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._init_google_client"))
         transfer = GoogleTransfer(
             project_id="test-project-id",
             bucket_name="test-bucket",
@@ -333,6 +339,7 @@ def test_object_listed_when_missing_md5hash_size_and_updated() -> None:
     with ExitStack() as stack:
         stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._init_google_client"))
         mock_operation = stack.enter_context(patch("rohmu.common.statsd.StatsClient.operation"))
         transfer = GoogleTransfer(
             project_id="test-project-id",
@@ -408,7 +415,9 @@ def test_object_listed_when_missing_md5hash_size_and_updated() -> None:
 
 
 def test_error_handling() -> None:
-    with patch("rohmu.object_storage.google.get_credentials"):
+    with patch("rohmu.object_storage.google.get_credentials"), patch(
+        "rohmu.object_storage.google.GoogleTransfer._init_google_client"
+    ):
         transfer = GoogleTransfer(
             project_id="test-project-id",
             bucket_name="test-bucket",
@@ -553,6 +562,7 @@ def test_delete_keys_bulk(total_keys: int, expected_bulk_request_count: int) -> 
     with ExitStack() as stack:
         stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._init_google_client"))
         mock_retry_on_reset = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._retry_on_reset"))
         transfer = GoogleTransfer(
             project_id="test-project-id",
@@ -592,6 +602,7 @@ def test_delete_keys_callback() -> None:
     with ExitStack() as stack:
         stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._init_google_client"))
         mock_delete_key = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer.delete_key"))
 
         transfer = GoogleTransfer(
@@ -620,6 +631,7 @@ def test_delete_keys_callback_failure() -> None:
     with ExitStack() as stack:
         stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
         stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._init_google_client"))
         mock_delete_key = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer.delete_key"))
 
         transfer = GoogleTransfer(
@@ -667,7 +679,7 @@ def test_create_transfer_with_access_token_credentials(project_id: str | None, e
             notifier=notifier,
             ensure_object_store_available=ensure_object_store_available,
         )
-        assert isinstance(transfer.google_creds, AccessTokenCredentials)
+        assert isinstance(transfer.google_creds, google.oauth2.credentials.Credentials)
 
 
 def test_project_id_required_for_ensuring_object_store() -> None:
