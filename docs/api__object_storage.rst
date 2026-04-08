@@ -49,12 +49,3 @@ SFTP
 
 .. autoclass:: rohmu.object_storage.sftp.SFTPTransfer
    :members:
-
-
-Swift
-=====
-
-.. autopydantic_model:: rohmu.object_storage.config.SwiftObjectStorageConfig
-
-.. autoclass:: rohmu.object_storage.swift.SwiftTransfer
-   :members:

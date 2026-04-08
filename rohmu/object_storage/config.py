@@ -83,11 +83,6 @@ S3_DEFAULT_MULTIPART_CHUNK_SIZE: Final[int] = calculate_s3_chunk_size()
 S3_READ_BLOCK_SIZE: Final[int] = 1024 * 1024 * 1
 
 
-SWIFT_CHUNK_SIZE: Final[int] = 1024 * 1024 * 5  # 5 Mi
-SWIFT_SEGMENT_SIZE: Final[int] = 1024 * 1024 * 1024 * 3  # 3 Gi
-SWIFT_MAX_NUM_PARTS_PER_UPLOAD = 10000
-
-
 class AzureObjectStorageConfig(StorageModel):
     bucket_name: Optional[str]
     account_name: str
@@ -186,26 +181,3 @@ class SFTPObjectStorageConfig(StorageModel):
     private_key: Optional[str] = Field(None, repr=False)
     prefix: Optional[str] = None
     storage_type: Literal[StorageDriver.sftp] = StorageDriver.sftp
-
-
-class SwiftObjectStorageConfig(StorageModel):
-    user: str
-    key: str = Field(repr=False)
-    container_name: str
-    auth_url: str
-    auth_version: str = "2.0"
-    tenant_name: Optional[str] = None
-    segment_size: int = SWIFT_SEGMENT_SIZE
-    region_name: Optional[str] = None
-    user_id: Optional[str] = None
-    user_domain_id: Optional[str] = None
-    user_domain_name: Optional[str] = None
-    tenant_id: Optional[str] = None
-    project_id: Optional[str] = None
-    project_name: Optional[str] = None
-    project_domain_id: Optional[str] = None
-    project_domain_name: Optional[str] = None
-    service_type: Optional[str] = None
-    endpoint_type: Optional[str] = None
-    prefix: Optional[str] = None
-    storage_type: Literal[StorageDriver.swift] = StorageDriver.swift
