@@ -19,6 +19,7 @@ from .factory import (
     STORAGE_TYPE,
 )
 from .notifier.interface import Notifier
+from rohmu.object_storage.azure import ENDPOINT_SUFFIXES
 from rohmu.object_storage.base import BaseTransfer
 from rohmu.object_storage.config import (
     AzureObjectStorageConfig,
@@ -36,6 +37,7 @@ __all__ = [
     "AzureObjectStorageConfig",
     "BaseTransfer",
     "Config",
+    "ENDPOINT_SUFFIXES",
     "get_class_for_notifier",
     "get_class_for_storage_driver",
     "get_class_for_transfer",
