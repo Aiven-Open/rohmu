@@ -137,6 +137,7 @@ class S3Transfer(BaseTransfer[Config]):
         statsd_info: Optional[StatsdConfig] = None,
         ensure_object_store_available: bool = True,
         min_multipart_chunk_size: Optional[int] = None,
+        user_agent_extra: Optional[str] = None,
     ) -> None:
         super().__init__(
             prefix=prefix,
@@ -161,6 +162,7 @@ class S3Transfer(BaseTransfer[Config]):
         self.use_dualstack_endpoint = use_dualstack_endpoint
         self.default_multipart_chunk_size = max(segment_size, min_multipart_chunk_size or 0)
         self.encrypted = encrypted
+        self.user_agent_extra = user_agent_extra
         self.s3_client: Optional[S3Client] = None
         self.location = ""
         if not self.host or not self.port:
@@ -216,6 +218,8 @@ class S3Transfer(BaseTransfer[Config]):
                     custom_config["proxies"] = {"https": proxy_url}
                 if self.use_dualstack_endpoint is True:
                     custom_config["use_dualstack_endpoint"] = True
+                if self.user_agent_extra:
+                    custom_config["user_agent_extra"] = self.user_agent_extra
                 with self._get_session() as session:
                     self.s3_client = create_s3_client(
                         session=session,
@@ -243,6 +247,7 @@ class S3Transfer(BaseTransfer[Config]):
                         "max_attempts": 10,
                         "mode": "standard",
                     },
+                    user_agent_extra=self.user_agent_extra or "",
                     **timeouts,
                 )
                 with self._get_session() as session:

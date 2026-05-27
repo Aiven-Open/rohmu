@@ -169,6 +169,7 @@ class S3ObjectStorageConfig(StorageModel):
     use_dualstack_endpoint: Optional[bool] = True
     storage_type: Literal[StorageDriver.s3] = StorageDriver.s3
     min_multipart_chunk_size: Optional[int] = None
+    user_agent_extra: Optional[str] = None
 
     @root_validator(skip_on_failure=True)
     @classmethod
