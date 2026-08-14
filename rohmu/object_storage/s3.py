@@ -138,6 +138,7 @@ class S3Transfer(BaseTransfer[Config]):
         ensure_object_store_available: bool = True,
         min_multipart_chunk_size: Optional[int] = None,
         user_agent_extra: Optional[str] = None,
+        lowercase_metadata_keys: bool = False,
     ) -> None:
         super().__init__(
             prefix=prefix,
@@ -163,6 +164,7 @@ class S3Transfer(BaseTransfer[Config]):
         self.default_multipart_chunk_size = max(segment_size, min_multipart_chunk_size or 0)
         self.encrypted = encrypted
         self.user_agent_extra = user_agent_extra
+        self.lowercase_metadata_keys = lowercase_metadata_keys
         self.s3_client: Optional[S3Client] = None
         self.location = ""
         if not self.host or not self.port:
@@ -179,6 +181,11 @@ class S3Transfer(BaseTransfer[Config]):
 
     def _verify_object_storage_unwrapped(self) -> None:
         self.check_or_create_bucket(create_if_needed=False)
+
+    def _normalize_metadata_keys(self, metadata: Metadata) -> Metadata:
+        if self.lowercase_metadata_keys:
+            return {k.lower(): v for k, v in metadata.items()}
+        return metadata
 
     def calculate_max_unknown_file_size(self) -> int:
         return self.default_multipart_chunk_size * S3_MAX_NUM_PARTS_PER_UPLOAD
@@ -340,7 +347,7 @@ class S3Transfer(BaseTransfer[Config]):
             else:
                 raise StorageError(f"Metadata lookup failed for {key}") from ex
 
-        return response["Metadata"]
+        return self._normalize_metadata_keys(response["Metadata"])
 
     def delete_key(self, key: str, preserve_trailing_slash: bool = False) -> None:
         path = self.format_key_for_backend(
@@ -437,7 +444,8 @@ class S3Transfer(BaseTransfer[Config]):
                 raise FileNotFoundFromStorageError(path)
             else:
                 raise StorageError(f"Fetching the remote object {path} failed") from ex
-        return response["Body"], response["ContentLength"], response["Metadata"]
+        metadata = self._normalize_metadata_keys(response["Metadata"])
+        return response["Body"], response["ContentLength"], metadata
 
     def _read_object_to_fileobj(
         self, fileobj: BinaryIO, streaming_body: StreamingBody, body_length: int, cb: ProgressProportionCallbackType = None

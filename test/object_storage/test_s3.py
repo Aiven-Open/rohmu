@@ -767,3 +767,54 @@ def test_multipart_upload_source_file_empty(mocker: Any, tmp_path: Path) -> None
                 progress_fn=progress_fn,
                 size=size,
             )
+
+
+@pytest.mark.parametrize("lowercase_metadata_keys", [False, True])
+def test_get_metadata_for_key_case(mocker: Any, lowercase_metadata_keys: bool) -> None:
+    transfer = make_mock_transfer(
+        mocker,
+        {
+            "region": "test-region",
+            "bucket_name": "test-bucket",
+            "prefix": "test-prefix",
+            "lowercase_metadata_keys": lowercase_metadata_keys,
+        },
+    )
+    s3_client = transfer.get_client()
+    assert isinstance(s3_client, MagicMock)
+    s3_client.head_object.return_value = {
+        "Metadata": {"Compression-Algorithm": "lzma", "Encryption-Key-Id": "k1"},
+    }
+    metadata = transfer.get_metadata_for_key("test_key")
+    if lowercase_metadata_keys:
+        assert metadata == {"compression-algorithm": "lzma", "encryption-key-id": "k1"}
+    else:
+        assert metadata == {"Compression-Algorithm": "lzma", "Encryption-Key-Id": "k1"}
+
+
+@pytest.mark.parametrize("lowercase_metadata_keys", [False, True])
+def test_get_contents_to_fileobj_metadata_case(mocker: Any, lowercase_metadata_keys: bool) -> None:
+    transfer = make_mock_transfer(
+        mocker,
+        {
+            "region": "test-region",
+            "bucket_name": "test-bucket",
+            "prefix": "test-prefix",
+            "lowercase_metadata_keys": lowercase_metadata_keys,
+        },
+    )
+    body = MagicMock()
+    body.read.side_effect = [b"data", b""]
+    s3_client = transfer.get_client()
+    assert isinstance(s3_client, MagicMock)
+    s3_client.get_object.return_value = {
+        "Body": body,
+        "ContentLength": 4,
+        "Metadata": {"Compression-Algorithm": "lzma"},
+    }
+    buf = BytesIO()
+    metadata = transfer.get_contents_to_fileobj("test_key", buf)
+    if lowercase_metadata_keys:
+        assert metadata == {"compression-algorithm": "lzma"}
+    else:
+        assert metadata == {"Compression-Algorithm": "lzma"}

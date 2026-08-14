@@ -170,6 +170,11 @@ class S3ObjectStorageConfig(StorageModel):
     storage_type: Literal[StorageDriver.s3] = StorageDriver.s3
     min_multipart_chunk_size: Optional[int] = None
     user_agent_extra: Optional[str] = None
+    # Some S3-compatible providers return object metadata keys in
+    # Title-Case. But AWS lowercases user defined metadata keys
+    # ref: https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingMetadata.html)
+    # Enable this to normalize (lower case) keys on read so callers can look up lowercased keys.
+    lowercase_metadata_keys: bool = False
 
     @root_validator(skip_on_failure=True)
     @classmethod
