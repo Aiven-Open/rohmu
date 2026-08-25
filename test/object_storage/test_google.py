@@ -692,3 +692,28 @@ def test_project_id_required_for_ensuring_object_store() -> None:
             notifier=notifier,
             ensure_object_store_available=True,
         )
+
+
+@pytest.mark.parametrize(
+    ("direct_location", "expected_endpoint"),
+    (
+        (None, "https://storage.googleapis.com/storage/v1/"),
+        ("us-west4", "https://storage.us-west4.rep.googleapis.com/storage/v1/"),
+    ),
+)
+def test_region_endpoint(direct_location: str | None, expected_endpoint: str | None) -> None:
+    """Test that we can create a transfer with a custom region endpoint."""
+    with ExitStack() as stack:
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._verify_object_storage_unwrapped"))
+        transfer = GoogleTransfer(
+            project_id="test-project-id",
+            bucket_name="test-bucket",
+            notifier=MagicMock(),
+            direct_location=direct_location,
+        )
+        if direct_location is None:
+            assert transfer.regional_endpoint is None
+        else:
+            assert transfer.regional_endpoint == expected_endpoint
+        assert transfer.gs is not None
+        assert transfer.gs._baseUrl == expected_endpoint  # type: ignore[attr-defined]

@@ -224,6 +224,7 @@ class GoogleTransfer(BaseTransfer[Config]):
         notifier: Optional[Notifier] = None,
         statsd_info: Optional[StatsdConfig] = None,
         ensure_object_store_available: bool = True,
+        direct_location: Optional[str] = None,
     ) -> None:
         super().__init__(
             prefix=prefix,
@@ -233,6 +234,16 @@ class GoogleTransfer(BaseTransfer[Config]):
         )
         self.project_id = project_id
         self.proxy_info = proxy_info
+
+        # default is using the global storage endpoint https://storage.googleapis.com/storage/v1/, but we can override it
+        # with the regional endpoint https://storage.{direct_location}.rep.googleapis.com/storage/v1/ here.
+        # see https://docs.cloud.google.com/storage/docs/regional-endpoints
+        self.regional_endpoint: str | None
+        if direct_location is not None:
+            self.regional_endpoint = f"https://storage.{direct_location}.rep.googleapis.com/storage/v1/"
+        else:
+            self.regional_endpoint = None
+
         self.google_creds = get_credentials(credential_file=credential_file, credentials=credentials)
         self.gs: Optional[StorageResource] = self._init_google_client()
         self.gs_object_client: Optional[StorageResource.ObjectsResource] = None
@@ -275,9 +286,12 @@ class GoogleTransfer(BaseTransfer[Config]):
             authorized_http = google_auth_httplib2.AuthorizedHttp(self.google_creds, http=http)
 
             try:
+                kwargs = {"http": authorized_http}
+                if self.regional_endpoint is not None:
+                    kwargs["client_options"] = {"api_endpoint": self.regional_endpoint}
                 # sometimes fails: httplib2.ServerNotFoundError: Unable to find the server at www.googleapis.com
                 # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.html
-                return build("storage", "v1", http=authorized_http)
+                return build("storage", "v1", **kwargs)
             except (httplib2.ServerNotFoundError, socket.timeout):
                 if time.monotonic() - start_time > 600:
                     raise
