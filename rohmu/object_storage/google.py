@@ -40,6 +40,7 @@ from rohmu.object_storage.base import (
     ProgressProportionCallbackType,
 )
 from rohmu.object_storage.config import (
+    GOOGLE_DIRECT_LOCATION_PATTERN as DIRECT_LOCATION_PATTERN,
     GOOGLE_DOWNLOAD_CHUNK_SIZE as DOWNLOAD_CHUNK_SIZE,
     GOOGLE_MAX_NUM_PARTS_PER_UPLOAD as MAX_NUM_PARTS_PER_UPLOAD,
     GOOGLE_UPLOAD_CHUNK_SIZE as UPLOAD_CHUNK_SIZE,
@@ -81,6 +82,7 @@ import json
 import logging
 import os
 import random
+import re
 import socket
 import ssl
 import time
@@ -240,6 +242,8 @@ class GoogleTransfer(BaseTransfer[Config]):
         # see https://docs.cloud.google.com/storage/docs/regional-endpoints
         self.regional_endpoint: str | None
         if direct_location is not None:
+            if not re.fullmatch(DIRECT_LOCATION_PATTERN, direct_location):
+                raise InvalidConfigurationError(f"Invalid direct location {repr(direct_location)}")
             self.regional_endpoint = f"https://storage.{direct_location}.rep.googleapis.com/storage/v1/"
         else:
             self.regional_endpoint = None
@@ -286,12 +290,10 @@ class GoogleTransfer(BaseTransfer[Config]):
             authorized_http = google_auth_httplib2.AuthorizedHttp(self.google_creds, http=http)
 
             try:
-                kwargs = {"http": authorized_http}
-                if self.regional_endpoint is not None:
-                    kwargs["client_options"] = {"api_endpoint": self.regional_endpoint}
+                client_options = {"api_endpoint": self.regional_endpoint} if self.regional_endpoint else None
                 # sometimes fails: httplib2.ServerNotFoundError: Unable to find the server at www.googleapis.com
                 # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.html
-                return build("storage", "v1", **kwargs)
+                return build("storage", "v1", http=authorized_http, client_options=client_options)
             except (httplib2.ServerNotFoundError, socket.timeout):
                 if time.monotonic() - start_time > 600:
                     raise

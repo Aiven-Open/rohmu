@@ -12,6 +12,7 @@ from rohmu.common.models import ProxyInfo, StorageDriver, StorageModel
 from typing import Any, Dict, Final, Literal, Optional, TypeVar
 
 import platform
+import re
 
 StorageModelT = TypeVar("StorageModelT", bound=StorageModel)
 
@@ -58,6 +59,8 @@ AZURE_MAX_NUM_PARTS_PER_UPLOAD: Final[int] = 10000
 GOOGLE_DOWNLOAD_CHUNK_SIZE: Final[int] = 1024 * 1024 * 5 if (get_total_memory() or 0) < 2048 else 1024 * 1024 * 50
 GOOGLE_UPLOAD_CHUNK_SIZE: Final[int] = 1024 * 1024 * 5
 GOOGLE_MAX_NUM_PARTS_PER_UPLOAD: Final[int] = 10000
+# GCS region/location names as used in regional endpoint hostnames, e.g. "us-west4", "europe-west1", "nam4".
+GOOGLE_DIRECT_LOCATION_PATTERN: Final[str] = r"^[a-z0-9]+(-[a-z0-9]+)*$"
 
 LOCAL_CHUNK_SIZE: Final[int] = 1024 * 1024
 
@@ -123,6 +126,7 @@ class GoogleObjectStorageConfig(StorageModel):
     credential_file: Optional[Path] = None
     credentials: Optional[Dict[str, Any]] = Field(None, repr=False)
     proxy_info: Optional[ProxyInfo] = None
+    direct_location: Optional[str] = None
     prefix: Optional[str] = None
     storage_type: Literal[StorageDriver.google] = StorageDriver.google
 
@@ -132,6 +136,18 @@ class GoogleObjectStorageConfig(StorageModel):
         if values["project_id"] is None and values["bucket_name"] is None:
             raise ValueError("at least one of project_id, bucket_name must be set")
         return values
+
+    @validator("direct_location")
+    @classmethod
+    def valid_direct_location(cls, v: Optional[str]) -> Optional[str]:
+        # None means "use the global endpoint". Anything else is interpolated into a hostname,
+        # so reject malformed values here; "" would otherwise yield
+        # https://storage..rep.googleapis.com/storage/v1/
+        if v is None:
+            return v
+        if not re.fullmatch(GOOGLE_DIRECT_LOCATION_PATTERN, v):
+            raise ValueError(f"invalid direct_location: {v!r}, must match {GOOGLE_DIRECT_LOCATION_PATTERN}")
+        return v
 
 
 class LocalObjectStorageConfig(StorageModel):
