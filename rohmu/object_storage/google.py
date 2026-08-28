@@ -518,6 +518,15 @@ class GoogleTransfer(BaseTransfer[Config]):
             self.notifier.object_deleted(key)
 
     def delete_keys(self, keys: Iterable[str], preserve_trailing_slash: bool = False) -> None:
+        if self.regional_endpoint is not None:
+            # Regional endpoints don't support the JSON API batch endpoint
+            # (https://docs.cloud.google.com/storage/docs/regional-endpoints#json-api-batch), so fall back to
+            # deleting keys one by one instead of batching the requests.
+            self.log.debug("Deleting keys one by one, regional endpoint does not support batching")
+            for key in keys:
+                self.delete_key(key, preserve_trailing_slash=preserve_trailing_slash)
+            return
+
         retry_deletion_keys: list[str] = []
 
         def _delete_keys_callback(key: str, response: HttpRequest, exception: HttpError | None) -> None:
