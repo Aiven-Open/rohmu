@@ -40,6 +40,7 @@ from rohmu.object_storage.base import (
     ProgressProportionCallbackType,
 )
 from rohmu.object_storage.config import (
+    GOOGLE_DIRECT_LOCATION_PATTERN as DIRECT_LOCATION_PATTERN,
     GOOGLE_DOWNLOAD_CHUNK_SIZE as DOWNLOAD_CHUNK_SIZE,
     GOOGLE_MAX_NUM_PARTS_PER_UPLOAD as MAX_NUM_PARTS_PER_UPLOAD,
     GOOGLE_UPLOAD_CHUNK_SIZE as UPLOAD_CHUNK_SIZE,
@@ -81,6 +82,7 @@ import json
 import logging
 import os
 import random
+import re
 import socket
 import ssl
 import time
@@ -224,6 +226,7 @@ class GoogleTransfer(BaseTransfer[Config]):
         notifier: Optional[Notifier] = None,
         statsd_info: Optional[StatsdConfig] = None,
         ensure_object_store_available: bool = True,
+        direct_location: Optional[str] = None,
     ) -> None:
         super().__init__(
             prefix=prefix,
@@ -233,6 +236,18 @@ class GoogleTransfer(BaseTransfer[Config]):
         )
         self.project_id = project_id
         self.proxy_info = proxy_info
+
+        # default is using the global storage endpoint https://storage.googleapis.com/storage/v1/, but we can override it
+        # with the regional endpoint https://storage.{direct_location}.rep.googleapis.com/storage/v1/ here.
+        # see https://docs.cloud.google.com/storage/docs/regional-endpoints
+        self.regional_endpoint: str | None
+        if direct_location is not None:
+            if not re.fullmatch(DIRECT_LOCATION_PATTERN, direct_location):
+                raise InvalidConfigurationError(f"Invalid direct location {repr(direct_location)}")
+            self.regional_endpoint = f"https://storage.{direct_location}.rep.googleapis.com/storage/v1/"
+        else:
+            self.regional_endpoint = None
+
         self.google_creds = get_credentials(credential_file=credential_file, credentials=credentials)
         self.gs: Optional[StorageResource] = self._init_google_client()
         self.gs_object_client: Optional[StorageResource.ObjectsResource] = None
@@ -275,9 +290,10 @@ class GoogleTransfer(BaseTransfer[Config]):
             authorized_http = google_auth_httplib2.AuthorizedHttp(self.google_creds, http=http)
 
             try:
+                client_options = {"api_endpoint": self.regional_endpoint} if self.regional_endpoint else None
                 # sometimes fails: httplib2.ServerNotFoundError: Unable to find the server at www.googleapis.com
                 # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.html
-                return build("storage", "v1", http=authorized_http)
+                return build("storage", "v1", http=authorized_http, client_options=client_options)
             except (httplib2.ServerNotFoundError, socket.timeout):
                 if time.monotonic() - start_time > 600:
                     raise

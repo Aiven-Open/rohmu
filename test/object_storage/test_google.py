@@ -6,10 +6,13 @@ from datetime import datetime, timezone
 from googleapiclient.errors import HttpError
 from googleapiclient.http import HttpRequest, MediaUploadProgress
 from io import BytesIO
+from pydantic.v1 import ValidationError
 from rohmu import InvalidConfigurationError
 from rohmu.common.models import StorageOperation
 from rohmu.errors import InvalidByteRangeError, TransferObjectStoreMissingError, TransferObjectStorePermissionError
+from rohmu.factory import get_transfer_model
 from rohmu.object_storage.base import IterKeyItem
+from rohmu.object_storage.config import GoogleObjectStorageConfig
 from rohmu.object_storage.google import GoogleTransfer, MediaIoBaseDownloadWithByteRange, Reporter
 from tempfile import NamedTemporaryFile
 from typing import Callable, Union
@@ -691,4 +694,111 @@ def test_project_id_required_for_ensuring_object_store() -> None:
             credentials={"type": "access_token", "access_token": "google-cloud-access-token"},
             notifier=notifier,
             ensure_object_store_available=True,
+        )
+
+
+@pytest.mark.parametrize(
+    ("direct_location", "expected_endpoint"),
+    (
+        (None, "https://storage.googleapis.com/storage/v1/"),
+        ("us-west4", "https://storage.us-west4.rep.googleapis.com/storage/v1/"),
+    ),
+)
+def test_region_endpoint(direct_location: str | None, expected_endpoint: str) -> None:
+    """Test that we can create a transfer with a custom region endpoint."""
+    with ExitStack() as stack:
+        # the credentials need a real universe domain, otherwise googleapiclient refuses to build any request
+        stack.enter_context(
+            patch("rohmu.object_storage.google.get_credentials", return_value=MagicMock(universe_domain="googleapis.com"))
+        )
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._verify_object_storage_unwrapped"))
+        transfer = GoogleTransfer(
+            project_id="test-project-id",
+            bucket_name="test-bucket",
+            notifier=MagicMock(),
+            direct_location=direct_location,
+        )
+        if direct_location is None:
+            assert transfer.regional_endpoint is None
+        else:
+            assert transfer.regional_endpoint == expected_endpoint
+        assert transfer.gs is not None
+        request = transfer.gs.objects().get(bucket="test-bucket", object="test-key")
+        assert request.uri.startswith(expected_endpoint)
+
+
+@pytest.mark.parametrize("direct_location", (None, "us-west4", "europe-west1", "us1"))
+def test_direct_location_accepted(direct_location: str | None) -> None:
+    """A region name made of lowercase alphanumeric dash-separated parts is accepted, as is no region at all."""
+    with ExitStack() as stack:
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._init_google_client"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._verify_object_storage_unwrapped"))
+        transfer = GoogleTransfer(
+            project_id="test-project-id",
+            bucket_name="test-bucket",
+            notifier=MagicMock(),
+            direct_location=direct_location,
+        )
+        if direct_location is None:
+            assert transfer.regional_endpoint is None
+        else:
+            assert transfer.regional_endpoint == f"https://storage.{direct_location}.rep.googleapis.com/storage/v1/"
+
+
+@pytest.mark.parametrize("direct_location", ("", "US_West4", "not_a_region", "-us-west4", "us-west4-", "us-west4\n"))
+def test_direct_location_rejected(direct_location: str) -> None:
+    """Anything that is not a lowercase dash-separated region name is rejected before the client is built."""
+    with ExitStack() as stack:
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
+        init_google_client = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._init_google_client"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._verify_object_storage_unwrapped"))
+        with pytest.raises(InvalidConfigurationError):
+            GoogleTransfer(
+                project_id="test-project-id",
+                bucket_name="test-bucket",
+                notifier=MagicMock(),
+                direct_location=direct_location,
+            )
+        init_google_client.assert_not_called()
+
+
+def test_direct_location_from_config_dict() -> None:
+    """A direct_location in a storage config dict must reach the transfer instead of being dropped.
+
+    StorageModel does not actually forbid extra keys, so before direct_location was modelled it was
+    silently discarded rather than rejected. Assert on the dict that BaseTransfer.from_model splats
+    into __init__, since that is where the key went missing.
+    """
+    model = get_transfer_model(
+        {
+            "storage_type": "google",
+            "project_id": "test-project-id",
+            "bucket_name": "test-bucket",
+            "direct_location": "us-west4",
+        }
+    )
+    assert isinstance(model, GoogleObjectStorageConfig)
+    assert model.direct_location == "us-west4"
+    assert model.dict(by_alias=True, exclude={"storage_type"})["direct_location"] == "us-west4"
+
+    with ExitStack() as stack:
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._init_google_client"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._verify_object_storage_unwrapped"))
+        transfer = GoogleTransfer.from_model(model, MagicMock())
+        assert transfer.regional_endpoint == "https://storage.us-west4.rep.googleapis.com/storage/v1/"
+
+
+@pytest.mark.parametrize("direct_location", ("", "US_West4", "not_a_region", "us-west4\n"))
+def test_direct_location_rejected_by_config(direct_location: str) -> None:
+    """The config layer rejects a malformed direct_location with pydantic's error, not InvalidConfigurationError."""
+    with pytest.raises(ValidationError):
+        get_transfer_model(
+            {
+                "storage_type": "google",
+                "project_id": "test-project-id",
+                "bucket_name": "test-bucket",
+                "direct_location": direct_location,
+            }
         )
