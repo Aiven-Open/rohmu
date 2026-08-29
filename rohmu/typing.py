@@ -83,3 +83,7 @@ class Compressor(Protocol):
 
 class Decompressor(Protocol):
     def decompress(self, data: bytes) -> bytes: ...
+
+
+class SinkDecompressor(Protocol):
+    def decompress(self, data: memoryview) -> None: ...

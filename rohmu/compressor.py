@@ -5,10 +5,11 @@
 from .errors import InvalidConfigurationError
 from .filewrap import Sink, Stream
 from .snappyfile import SnappyFile
-from .typing import BinaryData, Compressor, Decompressor, FileLike, HasRead, HasWrite
+from .typing import BinaryData, Compressor, FileLike, HasRead, HasWrite, SinkDecompressor
 from .zstdfile import open as zstd_open
 from typing import cast, IO
 
+import io
 import lzma
 
 try:
@@ -20,6 +21,10 @@ try:
     import zstandard as zstd
 except ImportError:
     zstd = None  # type: ignore
+
+
+OUTPUT_CHUNK_SIZE = 128 * 1024
+SNAPPY_INPUT_SLICE_SIZE = 256 * 1024
 
 
 def CompressionFile(dst_fp: FileLike, algorithm: str, level: int = 0, threads: int = 0) -> FileLike:
@@ -78,25 +83,99 @@ def DecompressionFile(src_fp: FileLike, algorithm: str) -> FileLike:
     return src_fp
 
 
-class DecompressSink(Sink):
-    def __init__(self, next_sink: HasWrite, compression_algorithm: str):
-        super().__init__(next_sink)
-        self.decompressor = self._create_decompressor(compression_algorithm)
+class SnappySinkDecompressor:
+    def __init__(self, next_sink: HasWrite) -> None:
+        self._sink = Sink(next_sink)
+        self._decompressor = snappy.StreamDecompressor()
 
-    def _create_decompressor(self, alg: str) -> Decompressor:
+    def decompress(self, data: memoryview) -> None:
+        for offset in range(0, len(data), SNAPPY_INPUT_SLICE_SIZE):
+            output = self._decompressor.decompress(bytes(data[offset : offset + SNAPPY_INPUT_SLICE_SIZE]))
+            if output:
+                self._sink.write(output)
+
+
+class LzmaSinkDecompressor:
+    def __init__(self, next_sink: HasWrite) -> None:
+        self._sink = Sink(next_sink)
+        self._decompressor = lzma.LZMADecompressor()
+
+    def decompress(self, data: memoryview) -> None:
+        output = self._decompressor.decompress(
+            data,
+            max_length=OUTPUT_CHUNK_SIZE,
+        )
+
+        # Drain buffered output until the decoder needs more input
+        # or reaches EOF.
+        while True:
+            if output:
+                self._sink.write(output)
+
+            if self._decompressor.needs_input or self._decompressor.eof:
+                return
+
+            output = self._decompressor.decompress(
+                b"",
+                max_length=OUTPUT_CHUNK_SIZE,
+            )
+
+
+class ZstdOutputSink(io.RawIOBase):
+    def __init__(self, next_sink: HasWrite) -> None:
+        super().__init__()
+        self._sink = Sink(next_sink)
+
+    def write(self, data: BinaryData) -> int:  # type: ignore[override]
+        return self._sink.write(data)
+
+    def writable(self) -> bool:
+        return True
+
+
+class ZstdSinkDecompressor:
+    def __init__(self, next_sink: HasWrite) -> None:
+        self._output_sink = ZstdOutputSink(next_sink)
+
+        self._decompression_writer = zstd.ZstdDecompressor().stream_writer(
+            cast(IO[bytes], self._output_sink),
+            closefd=False,
+            write_size=OUTPUT_CHUNK_SIZE,
+        )
+
+    def decompress(self, data: memoryview) -> None:
+        self._decompression_writer.write(data)
+
+
+class DecompressSink(Sink):
+    def __init__(
+        self,
+        next_sink: HasWrite,
+        compression_algorithm: str,
+    ) -> None:
+        super().__init__(next_sink)
+
+        self.decompressor: SinkDecompressor = self._create_decompressor(compression_algorithm)
+
+    def _create_decompressor(
+        self,
+        alg: str,
+    ) -> SinkDecompressor:
         if alg == "snappy":
-            return snappy.StreamDecompressor()
-        elif alg == "lzma":
-            return lzma.LZMADecompressor()
-        elif alg == "zstd":
-            return zstd.ZstdDecompressor().decompressobj()
-        raise InvalidConfigurationError(f"invalid compression algorithm: {repr(alg)}")
+            return SnappySinkDecompressor(self.next_sink)
+
+        if alg == "lzma":
+            return LzmaSinkDecompressor(self.next_sink)
+
+        if alg == "zstd":
+            return ZstdSinkDecompressor(self.next_sink)
+
+        raise InvalidConfigurationError(f"invalid compression algorithm: {alg!r}")
 
     def write(self, data: BinaryData) -> int:
-        data = bytes(data) if not isinstance(data, bytes) else data
-        written = len(data)
-        if not data:
-            return written
-        data = self.decompressor.decompress(data)
-        self._write_to_next_sink(data)
-        return written
+        view = memoryview(data)
+
+        if view:
+            self.decompressor.decompress(view)
+
+        return len(view)
