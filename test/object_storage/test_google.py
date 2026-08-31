@@ -581,6 +581,34 @@ def test_delete_keys_bulk(total_keys: int, expected_bulk_request_count: int) -> 
         assert mock_retry_on_reset.call_count == expected_bulk_request_count
 
 
+@pytest.mark.parametrize("total_keys", (0, 1, 2, 101))
+def test_delete_keys_regional_endpoint_skips_batching(total_keys: int) -> None:
+    """Regional endpoints don't support the JSON API batch endpoint, so delete_keys must fall back
+    to deleting keys one by one instead of using new_batch_http_request()."""
+    notifier = MagicMock()
+    test_keys = _generate_keys(total_keys)
+    with ExitStack() as stack:
+        stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
+        stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._create_object_store_if_needed_unwrapped"))
+        mock_init_client = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._init_google_client"))
+        mock_retry_on_reset = stack.enter_context(patch("rohmu.object_storage.google.GoogleTransfer._retry_on_reset"))
+        transfer = GoogleTransfer(
+            project_id="test-project-id",
+            bucket_name="test-bucket",
+            notifier=notifier,
+            direct_location="us-west4",
+        )
+        mock_client = stack.enter_context(patch.object(transfer, "_object_client"))
+        mock_request = _mock_request([], resumable=None)
+        mock_client.return_value.__enter__.return_value.delete.return_value = mock_request
+
+        transfer.delete_keys(keys=test_keys)
+
+        # one delete_key call (and thus one _retry_on_reset call) per key, no batching
+        assert mock_retry_on_reset.call_count == total_keys
+        mock_init_client.return_value.new_batch_http_request.assert_not_called()
+
+
 class BatchRequestProcessor:
     def __init__(self, callback: Callable[[str, HttpRequest | None, HttpError | None], None]) -> None:
         self.callback = callback
