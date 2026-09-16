@@ -34,6 +34,7 @@ from rohmu.object_storage.base import (
 from rohmu.object_storage.config import (  # noqa: F401
     calculate_s3_chunk_size as calculate_chunk_size,
     S3_DEFAULT_MULTIPART_CHUNK_SIZE as MULTIPART_CHUNK_SIZE,
+    S3_MAX_COPY_SIZE_BYTES,
     S3_MAX_NUM_PARTS_PER_UPLOAD,
     S3_MAX_PART_SIZE_BYTES,
     S3_READ_BLOCK_SIZE as READ_BLOCK_SIZE,
@@ -56,7 +57,7 @@ import time
 
 if TYPE_CHECKING:
     from mypy_boto3_s3 import S3Client
-    from mypy_boto3_s3.type_defs import CompletedPartTypeDef
+    from mypy_boto3_s3.type_defs import CompletedPartTypeDef, CopySourceTypeDef, HeadObjectOutputTypeDef
 
 
 # botocore typing stubs are incomplete. We either have to write all the stubs we need
@@ -311,19 +312,28 @@ class S3Transfer(BaseTransfer[Config]):
         metadata: Optional[Metadata] = None,
         timeout: float = 15.0,
     ) -> None:
-        source_path = (
-            source_bucket.bucket_name + "/" + source_bucket.format_key_for_backend(source_key, remove_slash_prefix=True)
-        )
+        source_path = source_bucket.format_key_for_backend(source_key, remove_slash_prefix=True)
         destination_path = self.format_key_for_backend(destination_key, remove_slash_prefix=True)
         self.stats.operation(StorageOperation.copy_file)
         try:
-            self.get_client().copy_object(
-                Bucket=self.bucket_name,
-                CopySource=source_path,
-                Key=destination_path,
-                Metadata=metadata or {},
-                MetadataDirective="COPY" if metadata is None else "REPLACE",
-            )
+            source_bucket.stats.operation(StorageOperation.head_request)
+            source_object = source_bucket.get_client().head_object(Bucket=source_bucket.bucket_name, Key=source_path)
+            if source_object["ContentLength"] > S3_MAX_COPY_SIZE_BYTES:
+                self._multipart_copy_file(
+                    source_bucket=source_bucket,
+                    source_path=source_path,
+                    destination_key=destination_key,
+                    source_object=source_object,
+                    metadata=metadata,
+                )
+            else:
+                self.get_client().copy_object(
+                    Bucket=self.bucket_name,
+                    CopySource={"Bucket": source_bucket.bucket_name, "Key": source_path},
+                    Key=destination_path,
+                    Metadata=metadata or {},
+                    MetadataDirective="COPY" if metadata is None else "REPLACE",
+                )
             self.notifier.object_copied(key=destination_key, size=None, metadata=metadata)
         except botocore.exceptions.ClientError as ex:
             status_code = ex.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
@@ -331,6 +341,68 @@ class S3Transfer(BaseTransfer[Config]):
                 raise FileNotFoundFromStorageError(source_key)
             else:
                 raise StorageError(f"Copying {source_key!r} to {destination_key!r} failed: {ex!r}") from ex
+
+    def _multipart_copy_file(
+        self,
+        *,
+        source_bucket: Self,
+        source_path: str,
+        destination_key: str,
+        source_object: HeadObjectOutputTypeDef,
+        metadata: Optional[Metadata],
+    ) -> None:
+        args, _, destination_path = self._init_args_for_multipart(
+            destination_key, source_object.get("Metadata", {}) if metadata is None else metadata, None, None
+        )
+        if metadata is None:
+            for header, value in source_object.items():
+                if header in (
+                    "CacheControl",
+                    "ContentDisposition",
+                    "ContentEncoding",
+                    "ContentLanguage",
+                    "ContentType",
+                    "Expires",
+                ):
+                    args[header] = value
+
+        copy_source: CopySourceTypeDef = {"Bucket": source_bucket.bucket_name, "Key": source_path}
+        if source_object.get("VersionId"):
+            copy_source["VersionId"] = source_object["VersionId"]
+
+        client = self.get_client()
+        self.stats.operation(StorageOperation.create_multipart_upload)
+        upload_id = client.create_multipart_upload(**args)["UploadId"]
+        parts: list[CompletedPartTypeDef] = []
+        size = source_object["ContentLength"]
+        try:
+            for part_number, start in enumerate(range(0, size, S3_MAX_COPY_SIZE_BYTES), start=1):
+                end = min(start + S3_MAX_COPY_SIZE_BYTES, size) - 1
+                self.stats.operation(StorageOperation.copy_file, size=end - start + 1)
+                response = client.upload_part_copy(
+                    Bucket=self.bucket_name,
+                    Key=destination_path,
+                    CopySource=copy_source,
+                    CopySourceIfMatch=source_object["ETag"],
+                    CopySourceRange=f"bytes={start}-{end}",
+                    UploadId=upload_id,
+                    PartNumber=part_number,
+                )
+                parts.append({"ETag": response["CopyPartResult"]["ETag"], "PartNumber": part_number})
+            self.stats.operation(StorageOperation.multipart_complete)
+            client.complete_multipart_upload(
+                Bucket=self.bucket_name,
+                Key=destination_path,
+                UploadId=upload_id,
+                MultipartUpload={"Parts": parts},
+            )
+        except Exception:
+            self.stats.operation(StorageOperation.multipart_aborted)
+            try:
+                client.abort_multipart_upload(Bucket=self.bucket_name, Key=destination_path, UploadId=upload_id)
+            except Exception:
+                self.log.exception("Failed to abort multipart copy of %r", destination_path)
+            raise
 
     def get_metadata_for_key(self, key: str) -> Metadata:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
