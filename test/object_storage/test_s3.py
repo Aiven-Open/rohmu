@@ -8,10 +8,11 @@ from io import BytesIO
 from pathlib import Path
 from pydantic.v1 import ValidationError
 from rohmu.common.models import StorageOperation
-from rohmu.errors import InvalidByteRangeError, StorageError, TransferObjectStoreMissingError
+from rohmu.errors import FileNotFoundFromStorageError, InvalidByteRangeError, StorageError, TransferObjectStoreMissingError
 from rohmu.object_storage.base import TransferWithConcurrentUploadSupport
 from rohmu.object_storage.config import S3_MAX_NUM_PARTS_PER_UPLOAD, S3ObjectStorageConfig
 from rohmu.object_storage.s3 import S3Transfer
+from rohmu.typing import Metadata
 from tempfile import NamedTemporaryFile
 from typing import Any, BinaryIO, Callable, Iterator, Optional, Union
 from unittest.mock import ANY, call, MagicMock, patch
@@ -84,6 +85,203 @@ def test_close(infra: S3Infra) -> None:
     infra.transfer.close()
     assert infra.transfer.s3_client is None
     infra.s3_client.close.assert_called_once()
+
+
+@pytest.mark.parametrize("size", [0, 5 * 1024**3 - 1, 5 * 1024**3])
+@pytest.mark.parametrize("metadata", [None, {}, {"replacement": "metadata"}])
+def test_copy_file_small(infra: S3Infra, size: int, metadata: Optional[Metadata]) -> None:
+    infra.s3_client.head_object.return_value = {"ContentLength": size}
+
+    infra.transfer.copy_file(source_key="source", destination_key="destination", metadata=metadata)
+
+    infra.s3_client.copy_object.assert_called_once_with(
+        Bucket="test-bucket",
+        CopySource={"Bucket": "test-bucket", "Key": "test-prefix/source"},
+        Key="test-prefix/destination",
+        Metadata=metadata or {},
+        MetadataDirective="COPY" if metadata is None else "REPLACE",
+    )
+    infra.s3_client.create_multipart_upload.assert_not_called()
+    infra.s3_client.get_object_tagging.assert_not_called()
+    infra.notifier.object_copied.assert_called_once_with(key="destination", size=None, metadata=metadata)
+
+
+@pytest.mark.parametrize("last_part_size", [1, 5 * 1024**3])
+@pytest.mark.parametrize("metadata", [None, {}, {"replacement": "metadata"}])
+def test_copy_file_large(infra: S3Infra, last_part_size: int, metadata: Optional[Metadata]) -> None:
+    part_size = 5 * 1024**3
+    headers = {
+        "ContentType": "application/octet-stream",
+        "CacheControl": "max-age=3600",
+        "ContentDisposition": "attachment",
+        "ContentEncoding": "gzip",
+        "ContentLanguage": "en",
+        "Expires": datetime(2030, 1, 1),
+    }
+    infra.s3_client.head_object.return_value = {
+        "ContentLength": part_size + last_part_size,
+        "Metadata": {"source": "metadata"},
+        "ETag": "source-etag",
+        **headers,
+    }
+    infra.s3_client.create_multipart_upload.return_value = {"UploadId": "copy-upload"}
+    infra.s3_client.upload_part_copy.side_effect = [
+        {"CopyPartResult": {"ETag": "first-part"}},
+        {"CopyPartResult": {"ETag": "last-part"}},
+    ]
+
+    infra.transfer.copy_file(source_key="source", destination_key="destination", metadata=metadata)
+
+    infra.s3_client.head_object.assert_called_once_with(Bucket="test-bucket", Key="test-prefix/source")
+    infra.s3_client.copy_object.assert_not_called()
+    expected_args: dict[str, Any] = {}
+    if metadata is None:
+        expected_args.update(headers, Metadata={"source": "metadata"})
+    elif metadata:
+        expected_args["Metadata"] = metadata
+    infra.s3_client.create_multipart_upload.assert_called_once_with(
+        Bucket="test-bucket",
+        Key="test-prefix/destination",
+        **expected_args,
+    )
+    assert infra.s3_client.upload_part_copy.call_args_list == [
+        call(
+            Bucket="test-bucket",
+            Key="test-prefix/destination",
+            CopySource={"Bucket": "test-bucket", "Key": "test-prefix/source"},
+            CopySourceIfMatch="source-etag",
+            CopySourceRange=f"bytes={start}-{end}",
+            UploadId="copy-upload",
+            PartNumber=part_number,
+        )
+        for part_number, (start, end) in enumerate(
+            [(0, part_size - 1), (part_size, part_size + last_part_size - 1)], start=1
+        )
+    ]
+    infra.s3_client.complete_multipart_upload.assert_called_once_with(
+        Bucket="test-bucket",
+        Key="test-prefix/destination",
+        UploadId="copy-upload",
+        MultipartUpload={"Parts": [{"ETag": "first-part", "PartNumber": 1}, {"ETag": "last-part", "PartNumber": 2}]},
+    )
+    infra.s3_client.abort_multipart_upload.assert_not_called()
+    infra.notifier.object_copied.assert_called_once_with(key="destination", size=None, metadata=metadata)
+    infra.notifier.object_created.assert_not_called()
+    infra.s3_client.get_object.assert_not_called()
+    infra.s3_client.get_object_tagging.assert_not_called()
+    infra.s3_client.put_object_tagging.assert_not_called()
+
+
+def test_copy_files_from_large(infra: S3Infra) -> None:
+    source = S3Transfer(
+        region="test-region", bucket_name="source-bucket", prefix="source-prefix", ensure_object_store_available=False
+    )
+    source_client = MagicMock()
+    source.s3_client = source_client
+    source_client.head_object.return_value = {
+        "ContentLength": 5 * 1024**3 + 1,
+        "Metadata": {"source": "metadata"},
+        "ETag": "source-etag",
+        "VersionId": "source-version",
+    }
+    infra.s3_client.create_multipart_upload.return_value = {"UploadId": "copy-upload"}
+    infra.s3_client.upload_part_copy.return_value = {"CopyPartResult": {"ETag": "part-etag"}}
+    infra.transfer.encrypted = True
+    progress_fn = MagicMock()
+
+    infra.transfer.copy_files_from(source=source, keys=["key with spaces/+?#"], progress_fn=progress_fn)
+
+    source_client.head_object.assert_called_once_with(Bucket="source-bucket", Key="source-prefix/key with spaces/+?#")
+    copy_source = {"Bucket": "source-bucket", "Key": "source-prefix/key with spaces/+?#", "VersionId": "source-version"}
+    source_client.get_object_tagging.assert_not_called()
+    infra.s3_client.head_object.assert_not_called()
+    infra.s3_client.get_object_tagging.assert_not_called()
+    infra.s3_client.put_object_tagging.assert_not_called()
+    infra.s3_client.create_multipart_upload.assert_called_once_with(
+        Bucket="test-bucket",
+        Key="test-prefix/key with spaces/+?#",
+        Metadata={"source": "metadata"},
+        ServerSideEncryption="AES256",
+    )
+    assert infra.s3_client.upload_part_copy.call_count == 2
+    for part_call in infra.s3_client.upload_part_copy.call_args_list:
+        assert part_call.kwargs["CopySource"] == copy_source
+        assert part_call.kwargs["CopySourceIfMatch"] == "source-etag"
+        assert part_call.kwargs["Key"] == "test-prefix/key with spaces/+?#"
+    infra.notifier.object_copied.assert_called_once_with(key="key with spaces/+?#", size=None, metadata=None)
+    progress_fn.assert_called_once_with(1, 1)
+
+
+@pytest.mark.parametrize(
+    "operation,status_code",
+    [
+        ("head_object", 404),
+        ("head_object", 403),
+        ("create_multipart_upload", 500),
+        ("upload_part_copy", 404),
+        ("upload_part_copy", 412),
+        ("upload_part_copy", 500),
+        ("complete_multipart_upload", 500),
+    ],
+)
+@pytest.mark.parametrize("abort_fails", [False, True])
+def test_copy_file_failure(infra: S3Infra, operation: str, status_code: int, abort_fails: bool) -> None:
+    infra.s3_client.head_object.return_value = {
+        "ContentLength": 5 * 1024**3 + 1,
+        "Metadata": {},
+        "ETag": "source-etag",
+    }
+    infra.s3_client.create_multipart_upload.return_value = {"UploadId": "copy-upload"}
+    infra.s3_client.upload_part_copy.return_value = {"CopyPartResult": {"ETag": "part-etag"}}
+    error = botocore.exceptions.ClientError(
+        {
+            "Error": {"Code": str(status_code), "Message": "copy failed"},
+            "ResponseMetadata": {
+                "HTTPStatusCode": status_code,
+                "RequestId": "request-id",
+                "HostId": "host-id",
+                "HTTPHeaders": {},
+                "RetryAttempts": 0,
+            },
+        },
+        operation,
+    )
+    getattr(infra.s3_client, operation).side_effect = error
+    if abort_fails:
+        infra.s3_client.abort_multipart_upload.side_effect = RuntimeError("abort failed")
+
+    expected_error = FileNotFoundFromStorageError if status_code == 404 else StorageError
+    with pytest.raises(expected_error) as exc_info:
+        infra.transfer.copy_file(source_key="source", destination_key="destination")
+
+    if status_code != 404:
+        assert exc_info.value.__cause__ is error
+    if operation in ("upload_part_copy", "complete_multipart_upload"):
+        infra.s3_client.abort_multipart_upload.assert_called_once_with(
+            Bucket="test-bucket", Key="test-prefix/destination", UploadId="copy-upload"
+        )
+    else:
+        infra.s3_client.abort_multipart_upload.assert_not_called()
+    if operation != "complete_multipart_upload":
+        infra.s3_client.complete_multipart_upload.assert_not_called()
+    infra.notifier.object_copied.assert_not_called()
+
+
+def test_copy_file_connection_failure(infra: S3Infra) -> None:
+    infra.s3_client.head_object.return_value = {"ContentLength": 5 * 1024**3 + 1, "ETag": "source-etag"}
+    infra.s3_client.create_multipart_upload.return_value = {"UploadId": "copy-upload"}
+    error = botocore.exceptions.EndpointConnectionError(endpoint_url="https://s3.example.com")
+    infra.s3_client.upload_part_copy.side_effect = error
+
+    with pytest.raises(botocore.exceptions.EndpointConnectionError) as exc_info:
+        infra.transfer.copy_file(source_key="source", destination_key="destination")
+
+    assert exc_info.value is error
+    infra.s3_client.abort_multipart_upload.assert_called_once_with(
+        Bucket="test-bucket", Key="test-prefix/destination", UploadId="copy-upload"
+    )
+    infra.s3_client.complete_multipart_upload.assert_not_called()
+    infra.notifier.object_copied.assert_not_called()
 
 
 def test_store_file_from_disk(infra: S3Infra) -> None:
