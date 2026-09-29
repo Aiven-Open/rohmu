@@ -1,9 +1,58 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from io import BytesIO, UnsupportedOperation
-from rohmu.util import BinaryStreamsConcatenation, file_object_is_empty, get_total_size_from_content_range, ProgressStream
+from rohmu.util import (
+    BinaryStreamsConcatenation,
+    file_object_is_empty,
+    get_total_size_from_content_range,
+    parallel_map,
+    ProgressStream,
+)
 
 import pytest
+import threading
+import time
+
+
+def test_parallel_map_preserves_order() -> None:
+    def slow_square(value: int) -> int:
+        time.sleep(0.001 * (10 - value))
+        return value * value
+
+    assert list(parallel_map(slow_square, range(10), max_workers=4)) == [value * value for value in range(10)]
+
+
+def test_parallel_map_runs_concurrently() -> None:
+    barrier = threading.Barrier(3, timeout=5)
+    # Raises BrokenBarrierError if the calls run sequentially
+    list(parallel_map(lambda _: barrier.wait(), range(3), max_workers=3))
+
+
+def test_parallel_map_reads_input_lazily() -> None:
+    consumed = []
+
+    def source() -> Iterator[int]:
+        for value in range(100):
+            consumed.append(value)
+            yield value
+
+    results = parallel_map(lambda value: value, source(), max_workers=2)
+    assert next(results) == 0
+    results.close()
+    assert len(consumed) == 4
+
+
+def test_parallel_map_raises_in_order() -> None:
+    def fail_on_three(value: int) -> int:
+        if value == 3:
+            raise ValueError(value)
+        return value
+
+    results = parallel_map(fail_on_three, range(10), max_workers=2)
+    assert [next(results) for _ in range(3)] == [0, 1, 2]
+    with pytest.raises(ValueError):
+        next(results)
 
 
 @pytest.mark.parametrize(

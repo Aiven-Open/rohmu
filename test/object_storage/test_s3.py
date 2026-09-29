@@ -126,10 +126,9 @@ def test_copy_file_large(infra: S3Infra, last_part_size: int, metadata: Metadata
         **headers,
     }
     infra.s3_client.create_multipart_upload.return_value = {"UploadId": "copy-upload"}
-    infra.s3_client.upload_part_copy.side_effect = [
-        {"CopyPartResult": {"ETag": "first-part"}},
-        {"CopyPartResult": {"ETag": "last-part"}},
-    ]
+    infra.s3_client.upload_part_copy.side_effect = lambda **kwargs: {
+        "CopyPartResult": {"ETag": ["first-part", "last-part"][kwargs["PartNumber"] - 1]}
+    }
 
     infra.transfer.copy_file(source_key="source", destination_key="destination", metadata=metadata)
 
@@ -145,7 +144,7 @@ def test_copy_file_large(infra: S3Infra, last_part_size: int, metadata: Metadata
         Key="test-prefix/destination",
         **expected_args,
     )
-    assert infra.s3_client.upload_part_copy.call_args_list == [
+    assert sorted(infra.s3_client.upload_part_copy.call_args_list, key=lambda c: c.kwargs["PartNumber"]) == [
         call(
             Bucket="test-bucket",
             Key="test-prefix/destination",
@@ -391,6 +390,78 @@ def test_store_empty_file_object(infra: S3Infra, has_content_length: bool) -> No
 
 def test_operations_reporting(infra: S3Infra) -> None:
     infra.operation.assert_called_once_with(StorageOperation.head_request)
+
+
+@pytest.mark.parametrize("with_metadata", [True, False])
+def test_iter_key(infra: S3Infra, with_metadata: bool) -> None:
+    last_modified = datetime(2024, 1, 1)
+    infra.s3_client.list_objects_v2.side_effect = [
+        {
+            "Contents": [
+                {"Key": f"test-prefix/dir/{name}", "LastModified": last_modified, "ETag": f'"{name}"', "Size": 1}
+                for name in ["a", "gone", "b"]
+            ],
+            "CommonPrefixes": [{"Prefix": "test-prefix/dir/sub/"}],
+            "NextContinuationToken": "token",
+        },
+        {
+            "Contents": [{"Key": "test-prefix/dir/c", "LastModified": last_modified, "ETag": '"c"', "Size": 1}],
+        },
+    ]
+
+    def head_object(Bucket: str, Key: str) -> dict[str, Any]:
+        if Key.endswith("/gone"):
+            raise botocore.exceptions.ClientError(
+                {
+                    "Error": {"Code": "404", "Message": "Not Found"},
+                    "ResponseMetadata": {
+                        "HTTPStatusCode": 404,
+                        "RequestId": "request-id",
+                        "HostId": "host-id",
+                        "HTTPHeaders": {},
+                        "RetryAttempts": 0,
+                    },
+                },
+                "HeadObject",
+            )
+        return {"Metadata": {"Key": Key}}
+
+    infra.s3_client.head_object.side_effect = head_object
+
+    items = list(infra.transfer.iter_key("dir", with_metadata=with_metadata))
+
+    names = ["a", "b"] if with_metadata else ["a", "gone", "b"]
+    assert [(item.type, item.value) for item in items] == [
+        *(
+            (
+                "object",
+                {
+                    "last_modified": last_modified,
+                    "md5": name,
+                    "metadata": {"key": f"test-prefix/dir/{name}"} if with_metadata else None,
+                    "name": f"dir/{name}",
+                    "size": 1,
+                },
+            )
+            for name in names
+        ),
+        ("prefix", "dir/sub"),
+        (
+            "object",
+            {
+                "last_modified": last_modified,
+                "md5": "c",
+                "metadata": {"key": "test-prefix/dir/c"} if with_metadata else None,
+                "name": "dir/c",
+                "size": 1,
+            },
+        ),
+    ]
+    assert infra.s3_client.list_objects_v2.call_args_list == [
+        call(Bucket="test-bucket", Prefix="test-prefix/dir/", Delimiter="/"),
+        call(Bucket="test-bucket", Prefix="test-prefix/dir/", Delimiter="/", ContinuationToken="token"),
+    ]
+    assert infra.s3_client.head_object.call_count == (4 if with_metadata else 0)
 
 
 @pytest.mark.parametrize("preserve_trailing_slash", [True, False, None])

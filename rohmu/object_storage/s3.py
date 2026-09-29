@@ -43,7 +43,7 @@ from rohmu.object_storage.config import (  # noqa: F401
     S3ObjectStorageConfig as Config,
 )
 from rohmu.typing import Metadata
-from rohmu.util import batched, ProgressStream
+from rohmu.util import batched, parallel_map, ProgressStream
 from threading import RLock
 from typing import Any, BinaryIO, cast, TYPE_CHECKING
 from typing_extensions import Self
@@ -59,6 +59,9 @@ import time
 if TYPE_CHECKING:
     from mypy_boto3_s3 import S3Client
     from mypy_boto3_s3.type_defs import CompletedPartTypeDef, CopySourceTypeDef, HeadObjectOutputTypeDef
+
+# Matches botocore's default max_pool_connections, so concurrent requests don't exhaust the connection pool
+S3_MAX_CONCURRENT_REQUESTS = 10
 
 
 # botocore typing stubs are incomplete. We either have to write all the stubs we need
@@ -372,22 +375,26 @@ class S3Transfer(BaseTransfer[Config]):
         client = self.get_client()
         self.stats.operation(StorageOperation.create_multipart_upload)
         upload_id = client.create_multipart_upload(**args)["UploadId"]
-        parts: list[CompletedPartTypeDef] = []
         size = source_object["ContentLength"]
+
+        def copy_part(part: tuple[int, int]) -> CompletedPartTypeDef:
+            part_number, start = part
+            end = min(start + S3_MAX_COPY_SIZE_BYTES, size) - 1
+            self.stats.operation(StorageOperation.copy_file, size=end - start + 1)
+            response = client.upload_part_copy(
+                Bucket=self.bucket_name,
+                Key=destination_path,
+                CopySource=copy_source,
+                CopySourceIfMatch=source_object["ETag"],
+                CopySourceRange=f"bytes={start}-{end}",
+                UploadId=upload_id,
+                PartNumber=part_number,
+            )
+            return {"ETag": response["CopyPartResult"]["ETag"], "PartNumber": part_number}
+
         try:
-            for part_number, start in enumerate(range(0, size, S3_MAX_COPY_SIZE_BYTES), start=1):
-                end = min(start + S3_MAX_COPY_SIZE_BYTES, size) - 1
-                self.stats.operation(StorageOperation.copy_file, size=end - start + 1)
-                response = client.upload_part_copy(
-                    Bucket=self.bucket_name,
-                    Key=destination_path,
-                    CopySource=copy_source,
-                    CopySourceIfMatch=source_object["ETag"],
-                    CopySourceRange=f"bytes={start}-{end}",
-                    UploadId=upload_id,
-                    PartNumber=part_number,
-                )
-                parts.append({"ETag": response["CopyPartResult"]["ETag"], "PartNumber": part_number})
+            part_starts = enumerate(range(0, size, S3_MAX_COPY_SIZE_BYTES), start=1)
+            parts = list(parallel_map(copy_part, part_starts, max_workers=S3_MAX_CONCURRENT_REQUESTS))
             self.stats.operation(StorageOperation.multipart_complete)
             client.complete_multipart_upload(
                 Bucket=self.bucket_name,
@@ -455,6 +462,29 @@ class S3Transfer(BaseTransfer[Config]):
     ) -> Iterator[IterKeyItem]:
         path = self.format_key_for_backend(key, remove_slash_prefix=True, trailing_slash=not include_key)
         self.log.debug("Listing path %r", path)
+        entries = self._iter_listing(path, deep=deep)
+        if not with_metadata:
+            for _, item in entries:
+                yield item
+            return
+        # Listing doesn't return user metadata, so each object needs a HEAD request
+        for maybe_item in parallel_map(self._add_metadata, entries, max_workers=S3_MAX_CONCURRENT_REQUESTS):
+            if maybe_item is not None:
+                yield maybe_item
+
+    def _add_metadata(self, entry: tuple[str | None, IterKeyItem]) -> IterKeyItem | None:
+        backend_key, item = entry
+        if backend_key is None:
+            return item
+        try:
+            metadata = {k.lower(): v for k, v in self._metadata_for_key(backend_key).items()}
+        except FileNotFoundFromStorageError:
+            return None
+        assert isinstance(item.value, dict)
+        return item._replace(value={**item.value, "metadata": metadata})
+
+    def _iter_listing(self, path: str, *, deep: bool) -> Iterator[tuple[str | None, IterKeyItem]]:
+        """Yields (backend key, item) for objects and (None, item) for prefixes, without metadata"""
         continuation_token = None
         while True:
             args: dict[str, Any] = {
@@ -469,29 +499,28 @@ class S3Transfer(BaseTransfer[Config]):
             response = self.get_client().list_objects_v2(**args)
 
             for item in response.get("Contents", []):
-                if with_metadata:
-                    try:
-                        metadata = {k.lower(): v for k, v in self._metadata_for_key(item["Key"]).items()}
-                    except FileNotFoundFromStorageError:
-                        continue
-                else:
-                    metadata = None
                 name = self.format_key_from_backend(item["Key"])
-                yield IterKeyItem(
-                    type=KEY_TYPE_OBJECT,
-                    value={
-                        "last_modified": item["LastModified"],
-                        "md5": item["ETag"].strip('"'),
-                        "metadata": metadata,
-                        "name": name,
-                        "size": item["Size"],
-                    },
+                yield (
+                    item["Key"],
+                    IterKeyItem(
+                        type=KEY_TYPE_OBJECT,
+                        value={
+                            "last_modified": item["LastModified"],
+                            "md5": item["ETag"].strip('"'),
+                            "metadata": None,
+                            "name": name,
+                            "size": item["Size"],
+                        },
+                    ),
                 )
 
             for common_prefix in response.get("CommonPrefixes", []):
-                yield IterKeyItem(
-                    type=KEY_TYPE_PREFIX,
-                    value=self.format_key_from_backend(common_prefix["Prefix"]).rstrip("/"),
+                yield (
+                    None,
+                    IterKeyItem(
+                        type=KEY_TYPE_PREFIX,
+                        value=self.format_key_from_backend(common_prefix["Prefix"]).rstrip("/"),
+                    ),
                 )
 
             if "NextContinuationToken" in response:
