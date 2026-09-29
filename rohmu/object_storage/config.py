@@ -71,6 +71,8 @@ S3_MIN_PART_SIZE_MB: Final[int] = 5
 S3_MAX_PART_SIZE_MB: Final[int] = 524
 S3_MIN_PART_SIZE_BYTES: Final[int] = S3_MIN_PART_SIZE_MB * 1024 * 1024
 S3_MAX_PART_SIZE_BYTES: Final[int] = S3_MAX_PART_SIZE_MB * 1024 * 1024
+# Above the AWS CLI default of 10; adaptive retries back off if a shared bucket gets throttled
+S3_DEFAULT_MAX_CONCURRENT_REQUESTS: Final[int] = 20
 
 
 def calculate_s3_chunk_size() -> int:
@@ -192,6 +194,8 @@ class S3ObjectStorageConfig(StorageModel):
     # ref: https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingMetadata.html)
     # Enable this to normalize (lower case) keys on read so callers can look up lowercased keys.
     lowercase_metadata_keys: bool = False
+    # Upper bound on concurrent requests per transfer (listing HEADs, key and part copies); also the connection pool size
+    max_concurrent_requests: int = Field(default=S3_DEFAULT_MAX_CONCURRENT_REQUESTS, ge=1)
 
     @root_validator(skip_on_failure=True)
     @classmethod

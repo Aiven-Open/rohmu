@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from botocore.response import StreamingBody
-from collections.abc import Iterable, Iterator
+from collections.abc import Collection, Iterable, Iterator
 from functools import partial
 from http import HTTPStatus
 from pathlib import Path
@@ -30,10 +30,12 @@ from rohmu.object_storage.base import (
     IterKeyItem,
     KEY_TYPE_OBJECT,
     KEY_TYPE_PREFIX,
+    ObjectTransferProgressCallback,
     ProgressProportionCallbackType,
 )
 from rohmu.object_storage.config import (  # noqa: F401
     calculate_s3_chunk_size as calculate_chunk_size,
+    S3_DEFAULT_MAX_CONCURRENT_REQUESTS,
     S3_DEFAULT_MULTIPART_CHUNK_SIZE as MULTIPART_CHUNK_SIZE,
     S3_MAX_COPY_SIZE_BYTES,
     S3_MAX_NUM_PARTS_PER_UPLOAD,
@@ -59,9 +61,6 @@ import time
 if TYPE_CHECKING:
     from mypy_boto3_s3 import S3Client
     from mypy_boto3_s3.type_defs import CompletedPartTypeDef, CopySourceTypeDef, HeadObjectOutputTypeDef
-
-# Matches botocore's default max_pool_connections, so concurrent requests don't exhaust the connection pool
-S3_MAX_CONCURRENT_REQUESTS = 10
 
 
 # botocore typing stubs are incomplete. We either have to write all the stubs we need
@@ -144,6 +143,7 @@ class S3Transfer(BaseTransfer[Config]):
         min_multipart_chunk_size: int | None = None,
         user_agent_extra: str | None = None,
         lowercase_metadata_keys: bool = False,
+        max_concurrent_requests: int = S3_DEFAULT_MAX_CONCURRENT_REQUESTS,
     ) -> None:
         super().__init__(
             prefix=prefix,
@@ -170,6 +170,9 @@ class S3Transfer(BaseTransfer[Config]):
         self.encrypted = encrypted
         self.user_agent_extra = user_agent_extra
         self.lowercase_metadata_keys = lowercase_metadata_keys
+        if max_concurrent_requests < 1:
+            raise ValueError("max_concurrent_requests must be at least 1")
+        self.max_concurrent_requests = max_concurrent_requests
         self.s3_client: S3Client | None = None
         self.location = ""
         if not self.host or not self.port:
@@ -224,7 +227,11 @@ class S3Transfer(BaseTransfer[Config]):
             if self.read_timeout:
                 timeouts["read_timeout"] = self.read_timeout
             if not self.host or not self.port:
-                custom_config: dict[str, Any] = {**timeouts}
+                custom_config: dict[str, Any] = {
+                    **timeouts,
+                    "max_pool_connections": self.max_concurrent_requests,
+                    "retries": {"max_attempts": 10, "mode": "adaptive"},
+                }
                 if self.proxy_info:
                     proxy_url = get_proxy_url(self.proxy_info)
                     custom_config["proxies"] = {"https": proxy_url}
@@ -255,11 +262,10 @@ class S3Transfer(BaseTransfer[Config]):
                     s3={"addressing_style": S3AddressingStyle(self.addressing_style).value},
                     signature_version=signature_version,
                     proxies=proxies,
-                    retries={
-                        "max_attempts": 10,
-                        "mode": "standard",
-                    },
+                    # Adaptive mode also rate-limits the client after throttling, which matters in shared buckets
+                    retries={"max_attempts": 10, "mode": "adaptive"},
                     user_agent_extra=self.user_agent_extra or "",
+                    max_pool_connections=self.max_concurrent_requests,
                     **timeouts,
                 )
                 with self._get_session() as session:
@@ -305,6 +311,31 @@ class S3Transfer(BaseTransfer[Config]):
             source_bucket=self, source_key=source_key, destination_key=destination_key, metadata=metadata
         )
 
+    def copy_files_from(
+        self,
+        *,
+        source: BaseTransfer[Any],
+        keys: Collection[str],
+        progress_fn: ObjectTransferProgressCallback | None = None,
+    ) -> None:
+        if not isinstance(source, self.__class__):
+            super().copy_files_from(source=source, keys=keys, progress_fn=progress_fn)
+            return
+        # Clients are thread-safe, but lazily creating them from several workers would race
+        self.get_client()
+        source.get_client()
+        total_files = len(keys)
+        key_workers = max(1, min(self.max_concurrent_requests, total_files))
+        # Separate pools per level avoid deadlock; splitting the budget keeps total requests within the pool
+        part_workers = max(1, self.max_concurrent_requests // key_workers)
+
+        def copy_key(key: str) -> None:
+            self._copy_file_from_bucket(source_bucket=source, source_key=key, destination_key=key, part_workers=part_workers)
+
+        for files_completed, _ in enumerate(parallel_map(copy_key, keys, max_workers=key_workers), start=1):
+            if progress_fn is not None:
+                progress_fn(files_completed, total_files)
+
     def _copy_file_from_bucket(
         self,
         *,
@@ -313,6 +344,7 @@ class S3Transfer(BaseTransfer[Config]):
         destination_key: str,
         metadata: Metadata | None = None,
         timeout: float = 15.0,
+        part_workers: int | None = None,
     ) -> None:
         source_path = source_bucket.format_key_for_backend(source_key, remove_slash_prefix=True)
         destination_path = self.format_key_for_backend(destination_key, remove_slash_prefix=True)
@@ -327,6 +359,7 @@ class S3Transfer(BaseTransfer[Config]):
                     destination_key=destination_key,
                     source_object=source_object,
                     metadata=metadata,
+                    part_workers=part_workers or self.max_concurrent_requests,
                 )
             else:
                 self.get_client().copy_object(
@@ -352,6 +385,7 @@ class S3Transfer(BaseTransfer[Config]):
         destination_key: str,
         source_object: HeadObjectOutputTypeDef,
         metadata: Metadata | None,
+        part_workers: int,
     ) -> None:
         args, _, destination_path = self._init_args_for_multipart(
             destination_key, source_object.get("Metadata", {}) if metadata is None else metadata, None, None
@@ -394,7 +428,7 @@ class S3Transfer(BaseTransfer[Config]):
 
         try:
             part_starts = enumerate(range(0, size, S3_MAX_COPY_SIZE_BYTES), start=1)
-            parts = list(parallel_map(copy_part, part_starts, max_workers=S3_MAX_CONCURRENT_REQUESTS))
+            parts = list(parallel_map(copy_part, part_starts, max_workers=part_workers))
             self.stats.operation(StorageOperation.multipart_complete)
             client.complete_multipart_upload(
                 Bucket=self.bucket_name,
@@ -468,7 +502,7 @@ class S3Transfer(BaseTransfer[Config]):
                 yield item
             return
         # Listing doesn't return user metadata, so each object needs a HEAD request
-        for maybe_item in parallel_map(self._add_metadata, entries, max_workers=S3_MAX_CONCURRENT_REQUESTS):
+        for maybe_item in parallel_map(self._add_metadata, entries, max_workers=self.max_concurrent_requests):
             if maybe_item is not None:
                 yield maybe_item
 

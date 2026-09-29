@@ -25,6 +25,7 @@ import math
 import pytest
 import re
 import rohmu.object_storage.s3
+import threading
 
 log = logging.getLogger(__name__)
 
@@ -210,6 +211,45 @@ def test_copy_files_from_large(infra: S3Infra) -> None:
         assert part_call.kwargs["Key"] == "test-prefix/key with spaces/+?#"
     infra.notifier.object_copied.assert_called_once_with(key="key with spaces/+?#", size=None, metadata=None)
     progress_fn.assert_called_once_with(1, 1)
+
+
+def test_copy_files_from_copies_keys_concurrently(infra: S3Infra) -> None:
+    source = S3Transfer(
+        region="test-region", bucket_name="source-bucket", prefix="source-prefix", ensure_object_store_available=False
+    )
+    source.s3_client = MagicMock()
+    source.s3_client.head_object.return_value = {"ContentLength": 1}
+    keys = [f"key{index}" for index in range(3)]
+    # Raises BrokenBarrierError if the keys are copied sequentially
+    barrier = threading.Barrier(len(keys), timeout=5)
+    infra.s3_client.copy_object.side_effect = lambda **_: barrier.wait()
+    progress_fn = MagicMock()
+
+    infra.transfer.copy_files_from(source=source, keys=keys, progress_fn=progress_fn)
+
+    assert sorted(c.kwargs["Key"] for c in infra.s3_client.copy_object.call_args_list) == [
+        f"test-prefix/{key}" for key in keys
+    ]
+    assert progress_fn.call_args_list == [call(1, 3), call(2, 3), call(3, 3)]
+
+
+@pytest.mark.parametrize(
+    ("max_concurrent_requests", "key_count", "expected_part_workers"),
+    [(10, 1, 10), (10, 2, 5), (10, 3, 3), (10, 10, 1), (10, 50, 1), (32, 4, 8), (1, 1, 1)],
+)
+def test_copy_files_from_splits_concurrency(
+    infra: S3Infra, max_concurrent_requests: int, key_count: int, expected_part_workers: int
+) -> None:
+    infra.transfer.max_concurrent_requests = max_concurrent_requests
+    source = S3Transfer(
+        region="test-region", bucket_name="source-bucket", prefix="source-prefix", ensure_object_store_available=False
+    )
+    source.s3_client = MagicMock()
+    with patch.object(S3Transfer, "_copy_file_from_bucket") as copy_file_from_bucket:
+        infra.transfer.copy_files_from(source=source, keys=[f"key{index}" for index in range(key_count)])
+
+    assert copy_file_from_bucket.call_count == key_count
+    assert {c.kwargs["part_workers"] for c in copy_file_from_bucket.call_args_list} == {expected_part_workers}
 
 
 @pytest.mark.parametrize(
@@ -672,6 +712,30 @@ def test_cert_path(is_verify_tls: bool, cert_path: Path | None, expected: str | 
         )
         mock.assert_called_once()
         assert mock.call_args[1]["verify"] == expected
+
+
+@pytest.mark.parametrize("host,port", [(None, None), ("host", 1000)])
+def test_max_concurrent_requests_sets_connection_pool_size(host: str | None, port: int | None) -> None:
+    with patch.object(rohmu.object_storage.s3, "create_s3_client") as mock:
+        transfer = S3Transfer(
+            region="test-region", bucket_name="test-bucket", host=host, port=port, max_concurrent_requests=32
+        )
+        assert transfer.max_concurrent_requests == 32
+        assert mock.call_args.kwargs["config"].max_pool_connections == 32
+        assert mock.call_args.kwargs["config"].retries == {"max_attempts": 10, "mode": "adaptive"}
+
+
+def test_max_concurrent_requests_must_be_positive() -> None:
+    with pytest.raises(ValidationError):
+        S3ObjectStorageConfig(
+            region="test-region",
+            bucket_name="test-bucket",
+            aws_secret_access_key=None,
+            aws_session_token=None,
+            max_concurrent_requests=0,
+        )
+    with pytest.raises(ValueError):
+        S3Transfer(region="test-region", bucket_name="test-bucket", max_concurrent_requests=0)
 
 
 def mb_to_bytes(size: int) -> int:
