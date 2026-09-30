@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from botocore.response import StreamingBody
+from collections.abc import Iterable, Iterator
 from functools import partial
 from http import HTTPStatus
 from pathlib import Path
@@ -44,7 +45,7 @@ from rohmu.object_storage.config import (  # noqa: F401
 from rohmu.typing import Metadata
 from rohmu.util import batched, ProgressStream
 from threading import RLock
-from typing import Any, BinaryIO, cast, Iterable, Iterator, Optional, Tuple, TYPE_CHECKING, Union
+from typing import Any, BinaryIO, cast, TYPE_CHECKING
 from typing_extensions import Self
 
 import botocore.client
@@ -66,12 +67,12 @@ def create_s3_client(
     *,
     session: botocore.session.Session,
     config: botocore.config.Config,
-    aws_access_key_id: Optional[str],
-    aws_secret_access_key: Optional[str],
-    aws_session_token: Optional[str],
+    aws_access_key_id: str | None,
+    aws_secret_access_key: str | None,
+    aws_session_token: str | None,
     region_name: str,
-    verify: Optional[Union[bool, str]] = None,
-    endpoint_url: Optional[str] = None,
+    verify: bool | str | None = None,
+    endpoint_url: str | None = None,
 ) -> S3Client:
     s3_client = session.create_client(
         "s3",
@@ -90,7 +91,7 @@ def create_s3_client(
         return s3_client
 
 
-def get_proxy_url(proxy_info: dict[str, Union[str, int]]) -> str:
+def get_proxy_url(proxy_info: dict[str, str | int]) -> str:
     username = proxy_info.get("user")
     password = proxy_info.get("pass")
     if username and password:
@@ -118,27 +119,27 @@ class S3Transfer(BaseTransfer[Config]):
         self,
         region: str,
         bucket_name: str,
-        aws_access_key_id: Optional[str] = None,
-        aws_secret_access_key: Optional[str] = None,
-        prefix: Optional[str] = None,
-        host: Optional[str] = None,
-        port: Optional[int] = None,
+        aws_access_key_id: str | None = None,
+        aws_secret_access_key: str | None = None,
+        prefix: str | None = None,
+        host: str | None = None,
+        port: int | None = None,
         addressing_style: S3AddressingStyle = S3AddressingStyle.path,
         is_secure: bool = False,
         is_verify_tls: bool = False,
-        cert_path: Optional[Path] = None,
+        cert_path: Path | None = None,
         segment_size: int = MULTIPART_CHUNK_SIZE,
         encrypted: bool = False,
-        proxy_info: Optional[dict[str, Union[str, int]]] = None,
-        connect_timeout: Optional[float] = None,
-        read_timeout: Optional[float] = None,
-        notifier: Optional[Notifier] = None,
-        aws_session_token: Optional[str] = None,
-        use_dualstack_endpoint: Optional[bool] = True,
-        statsd_info: Optional[StatsdConfig] = None,
+        proxy_info: dict[str, str | int] | None = None,
+        connect_timeout: float | None = None,
+        read_timeout: float | None = None,
+        notifier: Notifier | None = None,
+        aws_session_token: str | None = None,
+        use_dualstack_endpoint: bool | None = True,
+        statsd_info: StatsdConfig | None = None,
         ensure_object_store_available: bool = True,
-        min_multipart_chunk_size: Optional[int] = None,
-        user_agent_extra: Optional[str] = None,
+        min_multipart_chunk_size: int | None = None,
+        user_agent_extra: str | None = None,
         lowercase_metadata_keys: bool = False,
     ) -> None:
         super().__init__(
@@ -166,7 +167,7 @@ class S3Transfer(BaseTransfer[Config]):
         self.encrypted = encrypted
         self.user_agent_extra = user_agent_extra
         self.lowercase_metadata_keys = lowercase_metadata_keys
-        self.s3_client: Optional[S3Client] = None
+        self.s3_client: S3Client | None = None
         self.location = ""
         if not self.host or not self.port:
             if self.region and self.region != "us-east-1":
@@ -244,7 +245,7 @@ class S3Transfer(BaseTransfer[Config]):
                     signature_version = "s3v4"
                 else:
                     signature_version = "s3"
-                proxies: Optional[dict[str, str]] = None
+                proxies: dict[str, str] | None = None
                 if self.proxy_info:
                     proxies = {"https": get_proxy_url(self.proxy_info)}
                 boto_config = botocore.client.Config(
@@ -296,9 +297,7 @@ class S3Transfer(BaseTransfer[Config]):
                 cls._botocore_session = botocore.session.get_session()
             yield cls._botocore_session
 
-    def copy_file(
-        self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **_kwargs: Any
-    ) -> None:
+    def copy_file(self, *, source_key: str, destination_key: str, metadata: Metadata | None = None, **_kwargs: Any) -> None:
         self._copy_file_from_bucket(
             source_bucket=self, source_key=source_key, destination_key=destination_key, metadata=metadata
         )
@@ -309,7 +308,7 @@ class S3Transfer(BaseTransfer[Config]):
         source_bucket: Self,
         source_key: str,
         destination_key: str,
-        metadata: Optional[Metadata] = None,
+        metadata: Metadata | None = None,
         timeout: float = 15.0,
     ) -> None:
         source_path = source_bucket.format_key_for_backend(source_key, remove_slash_prefix=True)
@@ -349,7 +348,7 @@ class S3Transfer(BaseTransfer[Config]):
         source_path: str,
         destination_key: str,
         source_object: HeadObjectOutputTypeDef,
-        metadata: Optional[Metadata],
+        metadata: Metadata | None,
     ) -> None:
         args, _, destination_path = self._init_args_for_multipart(
             destination_key, source_object.get("Metadata", {}) if metadata is None else metadata, None, None
@@ -500,7 +499,7 @@ class S3Transfer(BaseTransfer[Config]):
             else:
                 break
 
-    def _get_object_stream(self, key: str, byte_range: Optional[tuple[int, int]]) -> tuple[StreamingBody, int, Metadata]:
+    def _get_object_stream(self, key: str, byte_range: tuple[int, int] | None) -> tuple[StreamingBody, int, Metadata]:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
         kwargs: dict[str, Any] = {}
         if byte_range:
@@ -548,7 +547,7 @@ class S3Transfer(BaseTransfer[Config]):
         key: str,
         fileobj_to_store_to: BinaryIO,
         *,
-        byte_range: Optional[Tuple[int, int]] = None,
+        byte_range: tuple[int, int] | None = None,
         progress_callback: ProgressProportionCallbackType = None,
     ) -> Metadata:
         self._validate_byte_range(byte_range)
@@ -581,7 +580,7 @@ class S3Transfer(BaseTransfer[Config]):
             else:
                 raise StorageError(f"File size lookup failed for {path}") from ex
 
-    def calculate_chunks_and_chunk_size(self, size: Optional[int]) -> tuple[int, int]:
+    def calculate_chunks_and_chunk_size(self, size: int | None) -> tuple[int, int]:
         """Calculate the number of chunks and chunk size for multipart upload.
 
         If sizes provided self.default_multipart_chunk_size wil be used as first attempt,
@@ -613,13 +612,13 @@ class S3Transfer(BaseTransfer[Config]):
     def multipart_upload_file_object(
         self,
         *,
-        cache_control: Optional[str],
+        cache_control: str | None,
         fp: BinaryIO,
         key: str,
-        metadata: Optional[Metadata],
-        mimetype: Optional[str],
+        metadata: Metadata | None,
+        mimetype: str | None,
         progress_fn: ProgressProportionCallbackType = None,
-        size: Optional[int] = None,
+        size: int | None = None,
     ) -> None:
         start_of_multipart_upload = time.monotonic()
         bytes_sent = 0
@@ -732,11 +731,11 @@ class S3Transfer(BaseTransfer[Config]):
         self,
         key: str,
         memstring: bytes,
-        metadata: Optional[Metadata] = None,
+        metadata: Metadata | None = None,
         *,
-        cache_control: Optional[str] = None,
-        mimetype: Optional[str] = None,
-        multipart: Optional[bool] = None,
+        cache_control: str | None = None,
+        mimetype: str | None = None,
+        multipart: bool | None = None,
         progress_fn: ProgressProportionCallbackType = None,
     ) -> None:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
@@ -764,11 +763,11 @@ class S3Transfer(BaseTransfer[Config]):
         self,
         key: str,
         fd: BinaryIO,
-        metadata: Optional[Metadata] = None,
+        metadata: Metadata | None = None,
         *,
-        cache_control: Optional[str] = None,
-        mimetype: Optional[str] = None,
-        multipart: Optional[bool] = None,
+        cache_control: str | None = None,
+        mimetype: str | None = None,
+        multipart: bool | None = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
     ) -> None:
         if not self._should_multipart(
@@ -834,9 +833,9 @@ class S3Transfer(BaseTransfer[Config]):
     def create_concurrent_upload(
         self,
         key: str,
-        metadata: Optional[Metadata] = None,
-        mimetype: Optional[str] = None,
-        cache_control: Optional[str] = None,
+        metadata: Metadata | None = None,
+        mimetype: str | None = None,
+        cache_control: str | None = None,
     ) -> ConcurrentUpload:
         args, metadata, path = self._init_args_for_multipart(key, metadata, mimetype, cache_control)
 
@@ -911,8 +910,8 @@ class S3Transfer(BaseTransfer[Config]):
             ) from ex
 
     def _init_args_for_multipart(
-        self, key: str, metadata: Optional[Metadata], mimetype: Optional[str], cache_control: Optional[str]
-    ) -> tuple[dict[str, Any], Optional[dict[str, str]], str]:
+        self, key: str, metadata: Metadata | None, mimetype: str | None, cache_control: str | None
+    ) -> tuple[dict[str, Any], dict[str, str] | None, str]:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
         args: dict[str, Any] = {
             "Bucket": self.bucket_name,
@@ -930,7 +929,7 @@ class S3Transfer(BaseTransfer[Config]):
         return args, metadata, path
 
     @classmethod
-    def _read_bytes(cls, stream: BinaryIO, length: int) -> Optional[bytes]:
+    def _read_bytes(cls, stream: BinaryIO, length: int) -> bytes | None:
         bytes_remaining = length
         read_results = []
         while bytes_remaining > 0:

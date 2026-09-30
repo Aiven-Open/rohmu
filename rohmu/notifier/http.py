@@ -8,7 +8,6 @@ from enum import Enum, unique
 from logging import getLogger
 from queue import Empty, Queue
 from requests.exceptions import RequestException
-from typing import Optional
 
 import json
 import requests
@@ -90,7 +89,7 @@ def initialize_background_thread(
     queue: Queue[HTTPNotifyJob],
     stop_event: threading.Event,
     stop_event_check_timeout: float = _CHECK_STOP_EVENT_TIMEOUT,
-    session: Optional[requests.Session] = None,
+    session: requests.Session | None = None,
 ) -> threading.Thread:
     thread_session = session or _get_requests_session()
     thread_args = (thread_session, queue, stop_event, stop_event_check_timeout)
@@ -111,7 +110,7 @@ class BackgroundHTTPNotifier(Notifier):
         self,
         url: str,
         stop_event_check_timeout: float = _CHECK_STOP_EVENT_TIMEOUT,
-        session: Optional[requests.Session] = None,
+        session: requests.Session | None = None,
     ) -> None:
         self._url = url
         self._queue: Queue[HTTPNotifyJob] = Queue()
@@ -132,7 +131,7 @@ class BackgroundHTTPNotifier(Notifier):
         self._stop_event.set()
         self._thread.join(_THREAD_JOIN_TIMEOUT)
 
-    def object_created(self, key: str, size: Optional[int], metadata: Optional[dict[str, str]]) -> None:
+    def object_created(self, key: str, size: int | None, metadata: dict[str, str] | None) -> None:
         self._queue.put(
             HTTPNotifyJob(
                 self._url,

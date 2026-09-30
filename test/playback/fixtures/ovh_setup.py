@@ -1,7 +1,7 @@
 from _pytest.fixtures import SubRequest
+from collections.abc import Generator
 from pathlib import Path
 from rohmu import factory
-from typing import Dict, Generator, Optional
 
 import boto3
 import dataclasses
@@ -46,7 +46,7 @@ class OVHS3Config:
 def _reconcile_with_stored_param(
     param: str,
     request: SubRequest,
-    stored_cassette_parameters: Dict[str, str],
+    stored_cassette_parameters: dict[str, str],
     record_mode: str,
 ) -> str:
     stored_value = stored_cassette_parameters.get(param)
@@ -118,7 +118,7 @@ def fixture_ovh_s3_user1_credentials(request: SubRequest, record_mode: str, disa
 
 
 @pytest.fixture(name="ovh_s3_config", scope="module")
-def fixture_ovh_s3_config(request: SubRequest, stored_cassette_parameters: Dict[str, str], record_mode: str) -> OVHS3Config:
+def fixture_ovh_s3_config(request: SubRequest, stored_cassette_parameters: dict[str, str], record_mode: str) -> OVHS3Config:
     region = _reconcile_with_stored_param(
         param="--ovh-s3-region",
         request=request,
@@ -134,7 +134,7 @@ def fixture_ovh_s3_config(request: SubRequest, stored_cassette_parameters: Dict[
 @pytest.fixture(name="ovh_s3_bucket_which_exists", scope="module")
 def fixture_ovh_s3_bucket_which_exists(
     request: SubRequest,
-    stored_cassette_parameters: Dict[str, str],
+    stored_cassette_parameters: dict[str, str],
     record_mode: str,
 ) -> str:
     name = _reconcile_with_stored_param(
@@ -165,7 +165,7 @@ def fixture_ovh_s3_module_setup_bucket(
     ovh_s3_bucket_which_exists: str,
     record_mode: str,
     disable_recording: bool,
-) -> Generator[Optional[str], None, None]:
+) -> Generator[str | None, None, None]:
     if not _is_setup_enabled(request, record_mode, disable_recording):
         yield None
         return
@@ -217,7 +217,7 @@ def fixture_ovh_s3_module_setup_user1(
     ovh_s3_bucket_which_exists: str,
     record_mode: str,
     disable_recording: bool,
-) -> Generator[Optional[str], None, None]:
+) -> Generator[str | None, None, None]:
     if not _is_setup_enabled(request, record_mode, disable_recording):
         yield None
         return

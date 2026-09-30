@@ -8,7 +8,7 @@ This could be broader, but at least minimal functionality is tested here.
 from __future__ import annotations
 
 from rohmu.common import statsd
-from typing import Any, Union
+from typing import Any
 
 import asyncio
 import pytest
@@ -19,7 +19,7 @@ class _Protocol(asyncio.DatagramProtocol):
     def __init__(self, queue: asyncio.Queue[bytes]):
         self.received_queue = queue
 
-    def datagram_received(self, data: bytes, addr: tuple[Union[str, Any], int]) -> None:
+    def datagram_received(self, data: bytes, addr: tuple[str | Any, int]) -> None:
         self.received_queue.put_nowait(data)
 
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import TracebackType
-from typing import Any, Dict, Optional, Protocol, Type, TYPE_CHECKING, Union
+from typing import Any, Protocol, TYPE_CHECKING, Union
 
 try:
     # Remove when dropping support for Python 3.7
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
     import ctypes
 
-Metadata = Dict[str, Any]
+Metadata = dict[str, Any]
 
 AnyPath = Union[str, bytes, "PathLike[str]", "PathLike[bytes]"]
 
@@ -57,7 +57,7 @@ class FileLike(Protocol):
     def __enter__(self) -> FileLike: ...
 
     def __exit__(
-        self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[TracebackType]
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
     ) -> None: ...
 
     def read(self, n: int = -1, /) -> bytes: ...

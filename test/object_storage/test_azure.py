@@ -8,7 +8,7 @@ from rohmu.errors import FileNotFoundFromStorageError, InvalidByteRangeError, St
 from rohmu.object_storage.azure import AzureTransfer
 from rohmu.object_storage.config import AzureObjectStorageConfig
 from tempfile import NamedTemporaryFile
-from typing import Any, Optional, Union
+from typing import Any
 from unittest.mock import call, MagicMock, Mock, patch
 
 import azure.storage.blob
@@ -240,7 +240,7 @@ def test_valid_azure_cloud_endpoint() -> None:
         ),
     ],
 )
-def test_conn_string(host: Optional[str], port: Optional[int], is_secured: bool, expected: str) -> None:
+def test_conn_string(host: str | None, port: int | None, is_secured: bool, expected: str) -> None:
     get_blob_client_mock = MagicMock()
     blob_client = MagicMock(get_blob_client=get_blob_client_mock)
     service_client = MagicMock(from_connection_string=MagicMock(return_value=blob_client))
@@ -304,7 +304,7 @@ def test_create_container_str(mocker: MockerFixture) -> None:
 def test_delete_key(
     mock_get_blob_client: MagicMock,
     key: str,
-    preserve_trailing_slash: Union[bool, None],
+    preserve_trailing_slash: bool | None,
     expected_key: str,
 ) -> None:
     notifier = MagicMock()
@@ -330,7 +330,7 @@ def test_delete_key(
 
 
 @pytest.mark.parametrize("preserve_trailing_slash", [True, False, None])
-def test_delete_keys_trailing_slash(mock_get_blob_client: MagicMock, preserve_trailing_slash: Union[bool, None]) -> None:
+def test_delete_keys_trailing_slash(mock_get_blob_client: MagicMock, preserve_trailing_slash: bool | None) -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
         stack.enter_context(patch("rohmu.object_storage.azure.AzureTransfer._create_object_store_if_needed_unwrapped"))
@@ -496,7 +496,7 @@ def test_delete_keys_batching(total_keys: int, expected_batch_count: int) -> Non
             notifier=notifier,
         )
 
-        test_keys = [f"test_key_{i+1}" for i in range(total_keys)]
+        test_keys = [f"test_key_{i + 1}" for i in range(total_keys)]
         transfer.delete_keys(keys=test_keys)
 
         # Verify correct number of batch calls

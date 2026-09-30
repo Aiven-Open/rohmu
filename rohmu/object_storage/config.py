@@ -9,7 +9,7 @@ from enum import Enum, unique
 from pathlib import Path
 from pydantic.v1 import Field, root_validator, validator
 from rohmu.common.models import ProxyInfo, StorageDriver, StorageModel
-from typing import Any, Dict, Final, Literal, Optional, TypeVar
+from typing import Any, Final, Literal, TypeVar
 
 import platform
 import re
@@ -17,7 +17,7 @@ import re
 StorageModelT = TypeVar("StorageModelT", bound=StorageModel)
 
 
-def get_total_memory() -> Optional[int]:
+def get_total_memory() -> int | None:
     """Return total system memory in mebibytes (or None if parsing meminfo fails)
 
     Used for transfer block and chunk sizes calculation."""
@@ -93,21 +93,21 @@ SWIFT_MAX_NUM_PARTS_PER_UPLOAD = 10000
 
 
 class AzureObjectStorageConfig(StorageModel):
-    bucket_name: Optional[str]
+    bucket_name: str | None
     account_name: str
-    account_key: Optional[str] = Field(None, repr=False)
-    sas_token: Optional[str] = Field(None, repr=False)
-    prefix: Optional[str] = None
+    account_key: str | None = Field(None, repr=False)
+    sas_token: str | None = Field(None, repr=False)
+    prefix: str | None = None
     is_secure: bool = True
-    host: Optional[str] = None
-    port: Optional[int] = None
-    azure_cloud: Optional[str] = None
-    proxy_info: Optional[ProxyInfo] = None
+    host: str | None = None
+    port: int | None = None
+    azure_cloud: str | None = None
+    proxy_info: ProxyInfo | None = None
     storage_type: Literal[StorageDriver.azure] = StorageDriver.azure
 
     @root_validator
     @classmethod
-    def host_and_port_must_be_set_together(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+    def host_and_port_must_be_set_together(cls, values: dict[str, Any]) -> dict[str, Any]:
         if (values["host"] is None) != (values["port"] is None):
             raise ValueError("host and port must be set together")
         return values
@@ -121,26 +121,26 @@ class AzureObjectStorageConfig(StorageModel):
 
 
 class GoogleObjectStorageConfig(StorageModel):
-    project_id: Optional[str]
-    bucket_name: Optional[str]
+    project_id: str | None
+    bucket_name: str | None
     # Don't use pydantic FilePath, that class checks the file exists at the wrong time
-    credential_file: Optional[Path] = None
-    credentials: Optional[Dict[str, Any]] = Field(None, repr=False)
-    proxy_info: Optional[ProxyInfo] = None
-    direct_location: Optional[str] = None
-    prefix: Optional[str] = None
+    credential_file: Path | None = None
+    credentials: dict[str, Any] | None = Field(None, repr=False)
+    proxy_info: ProxyInfo | None = None
+    direct_location: str | None = None
+    prefix: str | None = None
     storage_type: Literal[StorageDriver.google] = StorageDriver.google
 
     @root_validator
     @classmethod
-    def project_id_or_bucket_name_must_be_given(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+    def project_id_or_bucket_name_must_be_given(cls, values: dict[str, Any]) -> dict[str, Any]:
         if values["project_id"] is None and values["bucket_name"] is None:
             raise ValueError("at least one of project_id, bucket_name must be set")
         return values
 
     @validator("direct_location")
     @classmethod
-    def valid_direct_location(cls, v: Optional[str]) -> Optional[str]:
+    def valid_direct_location(cls, v: str | None) -> str | None:
         # None means "use the global endpoint". Anything else is interpolated into a hostname,
         # so reject malformed values here; "" would otherwise yield
         # https://storage..rep.googleapis.com/storage/v1/
@@ -154,7 +154,7 @@ class GoogleObjectStorageConfig(StorageModel):
 class LocalObjectStorageConfig(StorageModel):
     # Don't use pydantic DirectoryPath, that class checks the dir exists at the wrong time
     directory: Path
-    prefix: Optional[str] = None
+    prefix: str | None = None
     storage_type: Literal[StorageDriver.local] = StorageDriver.local
 
 
@@ -167,26 +167,26 @@ class S3AddressingStyle(Enum):
 
 class S3ObjectStorageConfig(StorageModel):
     region: str
-    bucket_name: Optional[str]
-    aws_access_key_id: Optional[str] = None
-    aws_secret_access_key: Optional[str] = Field(None, repr=False)
-    prefix: Optional[str] = None
-    host: Optional[str] = None
-    port: Optional[str] = None
+    bucket_name: str | None
+    aws_access_key_id: str | None = None
+    aws_secret_access_key: str | None = Field(None, repr=False)
+    prefix: str | None = None
+    host: str | None = None
+    port: str | None = None
     addressing_style: S3AddressingStyle = S3AddressingStyle.path
     is_secure: bool = False
     is_verify_tls: bool = False
-    cert_path: Optional[Path] = None
+    cert_path: Path | None = None
     segment_size: int = S3_DEFAULT_MULTIPART_CHUNK_SIZE
     encrypted: bool = False
-    proxy_info: Optional[ProxyInfo] = None
-    connect_timeout: Optional[str] = None
-    read_timeout: Optional[str] = None
-    aws_session_token: Optional[str] = Field(None, repr=False)
-    use_dualstack_endpoint: Optional[bool] = True
+    proxy_info: ProxyInfo | None = None
+    connect_timeout: str | None = None
+    read_timeout: str | None = None
+    aws_session_token: str | None = Field(None, repr=False)
+    use_dualstack_endpoint: bool | None = True
     storage_type: Literal[StorageDriver.s3] = StorageDriver.s3
-    min_multipart_chunk_size: Optional[int] = None
-    user_agent_extra: Optional[str] = None
+    min_multipart_chunk_size: int | None = None
+    user_agent_extra: str | None = None
     # Some S3-compatible providers return object metadata keys in
     # Title-Case. But AWS lowercases user defined metadata keys
     # ref: https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingMetadata.html)
@@ -195,7 +195,7 @@ class S3ObjectStorageConfig(StorageModel):
 
     @root_validator(skip_on_failure=True)
     @classmethod
-    def validate_is_verify_tls_and_cert_path(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+    def validate_is_verify_tls_and_cert_path(cls, values: dict[str, Any]) -> dict[str, Any]:
         if not values["is_verify_tls"] and values["cert_path"] is not None:
             raise ValueError("cert_path is set but is_verify_tls is False")
         return values
@@ -205,9 +205,9 @@ class SFTPObjectStorageConfig(StorageModel):
     server: str
     port: int
     username: str
-    password: Optional[str] = Field(None, repr=False)
-    private_key: Optional[str] = Field(None, repr=False)
-    prefix: Optional[str] = None
+    password: str | None = Field(None, repr=False)
+    private_key: str | None = Field(None, repr=False)
+    prefix: str | None = None
     storage_type: Literal[StorageDriver.sftp] = StorageDriver.sftp
 
 
@@ -217,18 +217,18 @@ class SwiftObjectStorageConfig(StorageModel):
     container_name: str
     auth_url: str
     auth_version: str = "2.0"
-    tenant_name: Optional[str] = None
+    tenant_name: str | None = None
     segment_size: int = SWIFT_SEGMENT_SIZE
-    region_name: Optional[str] = None
-    user_id: Optional[str] = None
-    user_domain_id: Optional[str] = None
-    user_domain_name: Optional[str] = None
-    tenant_id: Optional[str] = None
-    project_id: Optional[str] = None
-    project_name: Optional[str] = None
-    project_domain_id: Optional[str] = None
-    project_domain_name: Optional[str] = None
-    service_type: Optional[str] = None
-    endpoint_type: Optional[str] = None
-    prefix: Optional[str] = None
+    region_name: str | None = None
+    user_id: str | None = None
+    user_domain_id: str | None = None
+    user_domain_name: str | None = None
+    tenant_id: str | None = None
+    project_id: str | None = None
+    project_name: str | None = None
+    project_domain_id: str | None = None
+    project_domain_name: str | None = None
+    service_type: str | None = None
+    endpoint_type: str | None = None
+    prefix: str | None = None
     storage_type: Literal[StorageDriver.swift] = StorageDriver.swift

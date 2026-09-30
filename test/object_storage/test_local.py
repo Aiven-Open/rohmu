@@ -7,7 +7,6 @@ from rohmu.errors import Error, FileNotFoundFromStorageError, InvalidByteRangeEr
 from rohmu.object_storage.base import KEY_TYPE_OBJECT
 from rohmu.object_storage.local import LocalTransfer
 from tempfile import NamedTemporaryFile, TemporaryDirectory
-from typing import Union
 from unittest.mock import MagicMock
 
 import glob
@@ -322,7 +321,7 @@ def test_upload_files_concurrently_can_be_aborted() -> None:
         ("2/", None, "test-prefix/2"),
     ],
 )
-def test_delete_key(key: str, preserve_trailing_slash: Union[bool, None], expected_key: str) -> None:
+def test_delete_key(key: str, preserve_trailing_slash: bool | None, expected_key: str) -> None:
     with TemporaryDirectory() as destdir:
         notifier = MagicMock()
         transfer = LocalTransfer(
@@ -350,7 +349,7 @@ def test_delete_key(key: str, preserve_trailing_slash: Union[bool, None], expect
 
 
 @pytest.mark.parametrize("preserve_trailing_slash", [True, False, None])
-def test_delete_keys(preserve_trailing_slash: Union[bool, None]) -> None:
+def test_delete_keys(preserve_trailing_slash: bool | None) -> None:
     with TemporaryDirectory() as destdir:
         notifier = MagicMock()
         transfer = LocalTransfer(

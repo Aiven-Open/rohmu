@@ -1,6 +1,7 @@
 # Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import closing, contextmanager
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -13,17 +14,19 @@ from rohmu.notifier.http import (
     Operation,
 )
 from types import TracebackType
-from typing import Any, Iterator, List, Tuple, Type
+from typing import Any
 
 import json
 import requests
 import threading
 import time
 
+_LOOPBACK = "127.0.0.1"
+
 
 class _TestSession:
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self.post_called: List[Tuple[Any, ...]] = []
+        self.post_called: list[tuple[Any, ...]] = []
 
     def post(self, *args: Any, **kwargs: Any) -> None:
         self.post_called.append((args, kwargs))
@@ -33,7 +36,7 @@ class _TestSession:
 
     def __exit__(
         self,
-        type: Type[BaseException],
+        type: type[BaseException],
         value: BaseException,
         traceback: TracebackType,
     ) -> None:
@@ -66,8 +69,8 @@ def _make_notifier(url: str) -> Iterator[BackgroundHTTPNotifier]:
 
 
 @contextmanager
-def _create_local_server() -> Iterator[Tuple[HTTPServer, List[Any]]]:
-    post_called: List[Any] = []
+def _create_local_server() -> Iterator[tuple[HTTPServer, list[Any]]]:
+    post_called: list[Any] = []
 
     class _TestServerRequestHandler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:
@@ -77,7 +80,7 @@ def _create_local_server() -> Iterator[Tuple[HTTPServer, List[Any]]]:
             self.send_response(200)
             self.end_headers()
 
-    server = HTTPServer(("", 0), _TestServerRequestHandler)
+    server = HTTPServer((_LOOPBACK, 0), _TestServerRequestHandler)
 
     try:
         yield server, post_called
@@ -88,14 +91,15 @@ def _create_local_server() -> Iterator[Tuple[HTTPServer, List[Any]]]:
 @contextmanager
 def _create_server_and_configured_notifier(
     path: str,
-) -> Iterator[Tuple[BackgroundHTTPNotifier, HTTPServer, List[Any]]]:
+) -> Iterator[tuple[BackgroundHTTPNotifier, HTTPServer, list[Any]]]:
     """Creates a server and a notifier configured to communicated with that server.
 
     Note: The server does not run in the background and should be driven by the
     test with calls to `handle_request`.
     """
     with _create_local_server() as (server, post_called):
-        url = f"http://{server.server_name}:{server.server_port}{path}"
+        # server_name is the machine's FQDN, which doesn't resolve on every host (e.g. macOS .local names)
+        url = f"http://{_LOOPBACK}:{server.server_port}{path}"
 
         with _make_notifier(url=url) as notifier:
             yield notifier, server, post_called

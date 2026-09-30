@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Generator, Iterable, Sequence
 from pathlib import Path
 from rohmu.delta.common import (
     BackupPath,
@@ -17,7 +18,7 @@ from rohmu.delta.common import (
     SnapshotState,
 )
 from rohmu.typing import StrOrPathLike
-from typing import Any, Callable, Generator, Iterable, List, Optional, Sequence, Set, Tuple, Union
+from typing import Any
 
 import base64
 import logging
@@ -54,7 +55,7 @@ class Snapshotter:
         src: StrOrPathLike,
         dst: StrOrPathLike,
         globs: list[str],
-        src_iterate_func: Optional[Callable[[], Iterable[Union[BackupPath, str, Path]]]] = None,
+        src_iterate_func: Callable[[], Iterable[BackupPath | str | Path]] | None = None,
         parallel: int = 1,
         min_delta_file_size: int = 0,
     ) -> None:
@@ -64,13 +65,13 @@ class Snapshotter:
         self.globs = globs
         self.src_iterate_func = src_iterate_func
         self.relative_path_to_snapshotfile: dict[Path, SnapshotFile] = {}
-        self.hexdigest_to_snapshotfiles: dict[str, List[SnapshotFile]] = {}
+        self.hexdigest_to_snapshotfiles: dict[str, list[SnapshotFile]] = {}
         self.parallel = parallel
         self.lock = threading.Lock()
-        self.empty_dirs: List[Path] = []
+        self.empty_dirs: list[Path] = []
         self.min_delta_file_size = min_delta_file_size
 
-    def _list_files(self, basepath: Path) -> List[Path]:
+    def _list_files(self, basepath: Path) -> list[Path]:
         result_files = set()
         for glob in self.globs:
             for path in basepath.glob(glob):
@@ -81,7 +82,7 @@ class Snapshotter:
 
         return sorted(result_files)
 
-    def _list_dirs_and_files(self, basepath: Path) -> Tuple[List[Path], List[Path]]:
+    def _list_dirs_and_files(self, basepath: Path) -> tuple[list[Path], list[Path]]:
         files = self._list_files(basepath)
         dirs = {p.parent for p in files}
         return sorted(dirs), files
@@ -112,7 +113,7 @@ class Snapshotter:
         )
 
     def _gen_snapshot_hashes(
-        self, relative_paths: Sequence[Path], reuse_old_snapshotfiles: bool, required_paths: Optional[Set[Path]] = None
+        self, relative_paths: Sequence[Path], reuse_old_snapshotfiles: bool, required_paths: set[Path] | None = None
     ) -> Generator[SnapshotFile, None, None]:
         same = 0
         lost = 0
@@ -149,7 +150,7 @@ class Snapshotter:
                     continue
             yield snapshotfile
 
-    def get_snapshot_hashes(self) -> List[SnapshotHash]:
+    def get_snapshot_hashes(self) -> list[SnapshotHash]:
         assert self.lock.locked()
         return [
             SnapshotHash(hexdigest=dig, size=sf[0].file_size) for dig, sf in self.hexdigest_to_snapshotfiles.items() if sf
@@ -184,8 +185,8 @@ class Snapshotter:
         *,
         src_files: Sequence[Path],
         dst_files: Sequence[Path],
-        progress: Optional[Progress] = None,
-        progress_callback: Optional[Callable[[ProgressStep, ProgressMetrics], None]] = None,
+        progress: Progress | None = None,
+        progress_callback: Callable[[ProgressStep, ProgressMetrics], None] | None = None,
     ) -> int:
         if progress is None:
             progress = Progress()
@@ -235,9 +236,9 @@ class Snapshotter:
     def snapshot(
         self,
         *,
-        progress: Optional[Progress] = None,
+        progress: Progress | None = None,
         reuse_old_snapshotfiles: bool = True,
-        progress_callback: Optional[Callable[[ProgressStep, ProgressMetrics], None]] = None,
+        progress_callback: Callable[[ProgressStep, ProgressMetrics], None] | None = None,
     ) -> int:
         assert self.lock.locked()
 
@@ -245,7 +246,7 @@ class Snapshotter:
             progress = Progress()
         progress.start(3)
 
-        required_paths: Set[Path] = set()
+        required_paths: set[Path] = set()
 
         if self.src_iterate_func:
             src_dirs_set = set()

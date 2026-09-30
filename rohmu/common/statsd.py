@@ -14,9 +14,9 @@ This is combination of:
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from rohmu.common.strenum import StrEnum
-from typing import AsyncIterator, Dict, Iterator, Optional, Union
 
 import pydantic.v1 as pyd
 import socket
@@ -28,7 +28,7 @@ class MessageFormat(StrEnum):
     telegraf = "telegraf"
 
 
-Tags = Dict[str, Union[int, str, None]]
+Tags = dict[str, int | str | None]
 
 
 class StatsdConfig(pyd.BaseModel):
@@ -36,7 +36,7 @@ class StatsdConfig(pyd.BaseModel):
     port: int = 8125
     message_format: MessageFormat = MessageFormat.telegraf
     tags: Tags = {}
-    operation_map: Dict[str, str] = {}
+    operation_map: dict[str, str] = {}
 
     class Config:
         use_enum_values = True
@@ -47,7 +47,7 @@ class StatsdConfig(pyd.BaseModel):
 class StatsClient:
     _enabled = True
 
-    def __init__(self, config: Optional[StatsdConfig]):
+    def __init__(self, config: StatsdConfig | None):
         self._operation_map = {}
         if not config:
             self._enabled = False
@@ -61,12 +61,12 @@ class StatsClient:
         self._operation_map = config.operation_map
 
     @asynccontextmanager
-    async def async_timing_manager(self, metric: str, tags: Optional[Tags] = None) -> AsyncIterator[None]:
+    async def async_timing_manager(self, metric: str, tags: Tags | None = None) -> AsyncIterator[None]:
         with self.timing_manager(metric, tags=tags):
             yield
 
     @contextmanager
-    def timing_manager(self, metric: str, tags: Optional[Tags] = None) -> Iterator[None]:
+    def timing_manager(self, metric: str, tags: Tags | None = None) -> Iterator[None]:
         start_time = time.monotonic()
         tags = (tags or {}).copy()
         try:
@@ -78,16 +78,16 @@ class StatsClient:
         tags["success"] = "1"
         self.timing(metric, time.monotonic() - start_time, tags=tags)
 
-    def gauge(self, metric: str, value: Union[int, float], *, tags: Optional[Tags] = None) -> None:
+    def gauge(self, metric: str, value: int | float, *, tags: Tags | None = None) -> None:
         self._send(metric, b"g", value, tags)
 
-    def increase(self, metric: str, *, inc_value: int = 1, tags: Optional[Tags] = None) -> None:
+    def increase(self, metric: str, *, inc_value: int = 1, tags: Tags | None = None) -> None:
         self._send(metric, b"c", inc_value, tags)
 
-    def timing(self, metric: str, value: Union[int, float], *, tags: Optional[Tags] = None) -> None:
+    def timing(self, metric: str, value: int | float, *, tags: Tags | None = None) -> None:
         self._send(metric, b"ms", value, tags)
 
-    def unexpected_exception(self, ex: BaseException, where: str, *, tags: Optional[Tags] = None) -> None:
+    def unexpected_exception(self, ex: BaseException, where: str, *, tags: Tags | None = None) -> None:
         all_tags: Tags = {
             "exception": ex.__class__.__name__,
             "where": where,
@@ -95,13 +95,13 @@ class StatsClient:
         all_tags.update(tags or {})
         self.increase("exception", tags=all_tags)
 
-    def operation(self, operation: str, *, count: int = 1, size: Union[int, None] = None) -> None:
+    def operation(self, operation: str, *, count: int = 1, size: int | None = None) -> None:
         tags: Tags = {"operation": self._operation_map.get(str(operation), str(operation))}
         self.increase("rohmu_operation_count", tags=tags, inc_value=count)
         if size is not None:
             self.increase("rohmu_operation_size", tags=tags, inc_value=size)
 
-    def _send(self, metric: str, metric_type: bytes, value: Union[int, float], tags: Optional[Tags]) -> None:
+    def _send(self, metric: str, metric_type: bytes, value: int | float, tags: Tags | None) -> None:
         if not self._enabled:
             # stats sending is disabled
             return

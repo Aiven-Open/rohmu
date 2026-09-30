@@ -3,6 +3,7 @@
 # See LICENSE for details
 """Rohmu - sftp object store interface"""
 
+from collections.abc import Iterator
 from io import BytesIO
 from rohmu.common.statsd import StatsdConfig
 from rohmu.errors import Error, FileNotFoundFromStorageError, InvalidConfigurationError
@@ -18,7 +19,7 @@ from rohmu.object_storage.base import (
 from rohmu.object_storage.config import SFTPObjectStorageConfig as Config
 from rohmu.typing import Metadata
 from stat import S_ISDIR
-from typing import Any, BinaryIO, cast, Iterator, Optional, Tuple
+from typing import Any, BinaryIO, cast
 
 import datetime
 import json
@@ -36,11 +37,11 @@ class SFTPTransfer(BaseTransfer[Config]):
         server: str,
         port: int,
         username: str,
-        password: Optional[str] = None,
-        private_key: Optional[str] = None,
-        prefix: Optional[str] = None,
-        notifier: Optional[Notifier] = None,
-        statsd_info: Optional[StatsdConfig] = None,
+        password: str | None = None,
+        private_key: str | None = None,
+        prefix: str | None = None,
+        notifier: Notifier | None = None,
+        statsd_info: StatsdConfig | None = None,
         ensure_object_store_available: bool = True,
     ) -> None:
         super().__init__(
@@ -92,7 +93,7 @@ class SFTPTransfer(BaseTransfer[Config]):
         key: str,
         fileobj_to_store_to: BinaryIO,
         *,
-        byte_range: Optional[Tuple[int, int]] = None,
+        byte_range: tuple[int, int] | None = None,
         progress_callback: ProgressProportionCallbackType = None,
     ) -> Metadata:
         if byte_range:
@@ -205,9 +206,7 @@ class SFTPTransfer(BaseTransfer[Config]):
                     )
 
     # can't support remote copy, only remote rename
-    def copy_file(
-        self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **_kwargs: Any
-    ) -> None:
+    def copy_file(self, *, source_key: str, destination_key: str, metadata: Metadata | None = None, **_kwargs: Any) -> None:
         raise NotImplementedError
 
     def delete_key(self, key: str, preserve_trailing_slash: bool = False) -> None:
@@ -227,11 +226,11 @@ class SFTPTransfer(BaseTransfer[Config]):
         self,
         key: str,
         fd: BinaryIO,
-        metadata: Optional[Metadata] = None,
+        metadata: Metadata | None = None,
         *,
-        cache_control: Optional[str] = None,
-        mimetype: Optional[str] = None,
-        multipart: Optional[bool] = None,
+        cache_control: str | None = None,
+        mimetype: str | None = None,
+        multipart: bool | None = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
     ) -> None:
         bytes_written = self._put_object(
@@ -246,7 +245,7 @@ class SFTPTransfer(BaseTransfer[Config]):
         key: str,
         fd: BinaryIO,
         *,
-        metadata: Optional[Metadata] = None,
+        metadata: Metadata | None = None,
         upload_progress_fn: ProgressProportionCallbackType = None,
     ) -> int:
         target_path = self.format_key_for_backend(key.strip("/"))
@@ -268,7 +267,7 @@ class SFTPTransfer(BaseTransfer[Config]):
         self._save_metadata(target_path, metadata)
         return total_bytes_written
 
-    def _save_metadata(self, target_path: str, metadata: Optional[Metadata]) -> None:
+    def _save_metadata(self, target_path: str, metadata: Metadata | None) -> None:
         metadata_path = target_path + ".metadata"
         self.log.debug("Save metadata: %r", metadata_path)
 
@@ -287,7 +286,7 @@ class SFTPTransfer(BaseTransfer[Config]):
         if len(dir_) == 1 and not dir_.startswith("/"):
             dirs_.append(dir_)  # For a remote path like y/x.txt
 
-        while len(dirs_):
+        while dirs_:
             dir_ = dirs_.pop()
             try:
                 self.client.stat(dir_)

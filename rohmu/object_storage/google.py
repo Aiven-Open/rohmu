@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sized
+from collections.abc import Callable, Iterable, Iterator, Sized
 from contextlib import contextmanager
 from googleapiclient.discovery import build
 from googleapiclient.errors import BatchError, HttpError
@@ -51,16 +51,10 @@ from rohmu.util import batched, get_total_size_from_content_range
 from typing import (
     Any,
     BinaryIO,
-    Callable,
     cast,
-    Iterable,
-    Iterator,
-    Optional,
     TextIO,
-    Tuple,
     TYPE_CHECKING,
     TypeVar,
-    Union,
 )
 from typing_extensions import Protocol, Self
 
@@ -111,7 +105,7 @@ def _add_default_token_uri(credentials: dict[str, Any]) -> dict[str, Any]:
 
 
 def get_credentials(
-    credential_file: Optional[TextIO] = None, credentials: Optional[dict[str, Any]] = None
+    credential_file: TextIO | None = None, credentials: dict[str, Any] | None = None
 ) -> google.auth.credentials.Credentials:
     if credential_file:
         creds_data = json.load(credential_file)
@@ -151,7 +145,7 @@ def get_credentials(
     return creds
 
 
-def base64_to_hex(b64val: Union[str, bytes]) -> str:
+def base64_to_hex(b64val: str | bytes) -> str:
     if isinstance(b64val, str):
         b64val = b64val.encode("ascii")
     rawval = codecs.decode(b64val, "base64")
@@ -179,7 +173,7 @@ class Reporter:
     """
 
     operation: StorageOperation
-    size: Optional[int] = None
+    size: int | None = None
     progress_prev: int = 0
 
     def report(self, stats: StatsClient) -> None:
@@ -199,7 +193,7 @@ class Reporter:
         else:
             stats.operation(operation=self.operation)
 
-    def report_status(self, stats: StatsClient, status: Union[MediaUploadProgress, MediaDownloadProgress]) -> None:
+    def report_status(self, stats: StatsClient, status: MediaUploadProgress | MediaDownloadProgress) -> None:
         stats.operation(operation=self.operation, size=status.resumable_progress - self.progress_prev)
         self.progress_prev = status.resumable_progress
 
@@ -219,14 +213,14 @@ class GoogleTransfer(BaseTransfer[Config]):
         self,
         project_id: str | None,
         bucket_name: str,
-        credential_file: Optional[TextIO] = None,
-        credentials: Optional[dict[str, Any]] = None,
-        prefix: Optional[str] = None,
-        proxy_info: Optional[dict[str, Union[str, int]]] = None,
-        notifier: Optional[Notifier] = None,
-        statsd_info: Optional[StatsdConfig] = None,
+        credential_file: TextIO | None = None,
+        credentials: dict[str, Any] | None = None,
+        prefix: str | None = None,
+        proxy_info: dict[str, str | int] | None = None,
+        notifier: Notifier | None = None,
+        statsd_info: StatsdConfig | None = None,
         ensure_object_store_available: bool = True,
-        direct_location: Optional[str] = None,
+        direct_location: str | None = None,
     ) -> None:
         super().__init__(
             prefix=prefix,
@@ -249,9 +243,9 @@ class GoogleTransfer(BaseTransfer[Config]):
             self.regional_endpoint = None
 
         self.google_creds = get_credentials(credential_file=credential_file, credentials=credentials)
-        self.gs: Optional[StorageResource] = self._init_google_client()
-        self.gs_object_client: Optional[StorageResource.ObjectsResource] = None
-        self.gs_bucket_client: Optional[StorageResource.BucketsResource] = None
+        self.gs: StorageResource | None = self._init_google_client()
+        self.gs_object_client: StorageResource.ObjectsResource | None = None
+        self.gs_bucket_client: StorageResource.BucketsResource | None = None
         self.bucket_name = bucket_name
         if ensure_object_store_available:
             self._create_object_store_if_needed_unwrapped()
@@ -294,7 +288,7 @@ class GoogleTransfer(BaseTransfer[Config]):
                 # sometimes fails: httplib2.ServerNotFoundError: Unable to find the server at www.googleapis.com
                 # https://googleapis.github.io/google-api-python-client/docs/dyn/storage_v1.html
                 return build("storage", "v1", http=authorized_http, client_options=client_options)
-            except (httplib2.ServerNotFoundError, socket.timeout):
+            except (httplib2.ServerNotFoundError, TimeoutError):
                 if time.monotonic() - start_time > 600:
                     raise
 
@@ -303,7 +297,7 @@ class GoogleTransfer(BaseTransfer[Config]):
             delay = delay * 2
 
     @contextmanager
-    def _object_client(self, *, not_found: Optional[str] = None) -> Iterator[Any]:
+    def _object_client(self, *, not_found: str | None = None) -> Iterator[Any]:
         """(Re-)initialize object client if required, handle 404 errors gracefully and reset the client on
         server errors.  Server errors have been shown to be caused by invalid state in the client and do not
         seem to be resolved without resetting."""
@@ -350,17 +344,17 @@ class GoogleTransfer(BaseTransfer[Config]):
                 HttpError,
                 BatchError,
                 ssl.SSLEOFError,
-                socket.timeout,
+                TimeoutError,
                 OSError,
                 socket.gaierror,
                 httplib2.ServerNotFoundError,
             ) as ex:
-                # Note that socket.timeout and ssl.SSLEOFError inherit from OSError
+                # Note that TimeoutError and ssl.SSLEOFError inherit from OSError
                 # and the order of handling the errors here needs to be correct
                 if not retries:
                     raise
                 elif isinstance(
-                    ex, (IncompleteRead, socket.timeout, ssl.SSLEOFError, BrokenPipeError, httplib2.ServerNotFoundError)
+                    ex, (IncompleteRead, TimeoutError, ssl.SSLEOFError, BrokenPipeError, httplib2.ServerNotFoundError)
                 ):
                     pass  # just retry with the same sleep amount
                 elif isinstance(ex, HttpError):
@@ -390,9 +384,7 @@ class GoogleTransfer(BaseTransfer[Config]):
             retries -= 1
             time.sleep(retry_wait)
 
-    def copy_file(
-        self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **_kwargs: Any
-    ) -> None:
+    def copy_file(self, *, source_key: str, destination_key: str, metadata: Metadata | None = None, **_kwargs: Any) -> None:
         self._copy_file_from_bucket(
             source_bucket=self, source_key=source_key, destination_key=destination_key, metadata=metadata
         )
@@ -403,7 +395,7 @@ class GoogleTransfer(BaseTransfer[Config]):
         source_bucket: Self,
         source_key: str,
         destination_key: str,
-        metadata: Optional[Metadata] = None,
+        metadata: Metadata | None = None,
         timeout: float = 15.0,
     ) -> None:
         source_object = source_bucket.format_key_for_backend(source_key)
@@ -447,7 +439,7 @@ class GoogleTransfer(BaseTransfer[Config]):
         return obj.get("metadata", {}), int(obj["size"])
 
     def _unpaginate(
-        self, domain: Any, initial_op: Callable[[Any], Optional[HttpRequest]], *, on_properties: Iterable[str]
+        self, domain: Any, initial_op: Callable[[Any], HttpRequest | None], *, on_properties: Iterable[str]
     ) -> Iterator[tuple[str, Any]]:
         """Iterate thru the request pages until all items have been processed"""
         request = initial_op(domain)
@@ -567,7 +559,7 @@ class GoogleTransfer(BaseTransfer[Config]):
         key: str,
         fileobj_to_store_to: BinaryIO,
         *,
-        byte_range: Optional[Tuple[int, int]] = None,
+        byte_range: tuple[int, int] | None = None,
         progress_callback: ProgressProportionCallbackType = None,
     ) -> Metadata:
         path = self.format_key_for_backend(key)
@@ -633,8 +625,8 @@ class GoogleTransfer(BaseTransfer[Config]):
         upload: MediaUpload,
         key: str,
         metadata: Metadata,
-        extra_props: Optional[dict[str, Any]],
-        cache_control: Optional[str],
+        extra_props: dict[str, Any] | None,
+        cache_control: str | None,
         reporter: Reporter,
         upload_progress_fn: IncrementalProgressCallbackType = None,
     ) -> dict[str, str]:
@@ -678,13 +670,13 @@ class GoogleTransfer(BaseTransfer[Config]):
         self,
         key: str,
         filepath: AnyPath,
-        metadata: Optional[Metadata] = None,
+        metadata: Metadata | None = None,
         *,
-        cache_control: Optional[str] = None,
-        mimetype: Optional[str] = None,
-        multipart: Optional[bool] = None,
+        cache_control: str | None = None,
+        mimetype: str | None = None,
+        multipart: bool | None = None,
         progress_fn: ProgressProportionCallbackType = None,
-        extra_props: Optional[dict[str, Any]] = None,
+        extra_props: dict[str, Any] | None = None,
     ) -> None:
         # TODO: extra_props seems to be used only to set cacheControl in pghoard tests.
         #
@@ -710,13 +702,13 @@ class GoogleTransfer(BaseTransfer[Config]):
         self,
         key: str,
         fd: BinaryIO,
-        metadata: Optional[Metadata] = None,
+        metadata: Metadata | None = None,
         *,
-        cache_control: Optional[str] = None,
-        mimetype: Optional[str] = None,
-        multipart: Optional[bool] = None,
+        cache_control: str | None = None,
+        mimetype: str | None = None,
+        multipart: bool | None = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
-        extra_props: Optional[dict[str, Any]] = None,
+        extra_props: dict[str, Any] | None = None,
     ) -> None:
         mimetype = mimetype or "application/octet-stream"
         sanitized_metadata = self.sanitize_metadata(metadata)
@@ -837,7 +829,7 @@ class MediaStreamUpload(MediaUpload):
         self._fd = fd
         self._mime_type = mime_type
         self._name = name
-        self._position: Optional[int] = None
+        self._position: int | None = None
 
     def chunksize(self) -> int:  # type: ignore[override]
         return self._chunk_size
@@ -845,7 +837,7 @@ class MediaStreamUpload(MediaUpload):
     def mimetype(self) -> str:
         return self._mime_type
 
-    def size(self) -> Optional[int]:  # type: ignore[override]
+    def size(self) -> int | None:  # type: ignore[override]
         self.peek()
         if len(self._next_chunk) < self.peeksize:
             # The total file size should be returned if we have hit the final chunk.
@@ -907,7 +899,7 @@ class MediaStreamUpload(MediaUpload):
     def stream(self) -> BinaryIO:  # type: ignore[override]
         raise NotImplementedError
 
-    def _read_bytes(self, length: int, *, initial_data: Optional[bytes] = None) -> bytes:
+    def _read_bytes(self, length: int, *, initial_data: bytes | None = None) -> bytes:
         bytes_remaining = length
         read_results = []
         if initial_data:
@@ -994,7 +986,7 @@ class MediaIoBaseDownloadWithByteRange:
         headers["range"] = f"bytes={chunk_start}-{chunk_end}"
         resp, content = self._http.request(self._uri, "GET", headers=headers)
 
-        total_size: Optional[int] = None
+        total_size: int | None = None
         if resp.status in (200, 206):
             if "content-location" in resp and resp["content-location"] != self._uri:
                 self._uri = resp["content-location"]

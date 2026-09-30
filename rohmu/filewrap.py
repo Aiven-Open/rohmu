@@ -4,7 +4,7 @@
 
 from .errors import UninitializedError
 from .typing import BinaryData, FileLike, HasRead, HasWrite
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import io
 import time
@@ -13,7 +13,7 @@ import time
 class FileWrap(io.BufferedIOBase):
     def __init__(self, next_fp: FileLike) -> None:
         super().__init__()
-        self._next_fp: Optional[FileLike] = next_fp
+        self._next_fp: FileLike | None = next_fp
         self.offset = 0
         self.state = "OPEN"
 
@@ -61,7 +61,7 @@ class FileWrap(io.BufferedIOBase):
         self._check_not_closed()
         return False
 
-    def read(self, size: Optional[int] = -1) -> bytes:
+    def read(self, size: int | None = -1) -> bytes:
         """Read up to size decrypted bytes"""
         self._check_not_closed()
         raise io.UnsupportedOperation("Read not supported")
@@ -75,7 +75,7 @@ class FileWrap(io.BufferedIOBase):
         self._check_not_closed()
         raise io.UnsupportedOperation("Seek not supported")
 
-    def truncate(self, size: Optional[int] = None) -> int:
+    def truncate(self, size: int | None = None) -> int:
         self._check_not_closed()
         raise io.UnsupportedOperation("Truncate not supported")
 

@@ -4,10 +4,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator, Iterable
 from io import BytesIO, UnsupportedOperation
 from itertools import islice
 from rohmu.typing import HasFileno
-from typing import BinaryIO, Generator, Iterable, Optional, Tuple, TypeVar, Union
+from typing import BinaryIO, TypeVar
 from typing_extensions import Buffer
 
 import fcntl
@@ -19,7 +20,7 @@ import types
 LOG = logging.getLogger(__name__)
 
 
-def increase_pipe_capacity(*pipes: Union[int, HasFileno]) -> None:
+def increase_pipe_capacity(*pipes: int | HasFileno) -> None:
     if platform.system() != "Linux":
         return
     try:
@@ -70,7 +71,7 @@ def file_object_is_empty(fd: BinaryIO) -> bool:
 T = TypeVar("T")
 
 
-def batched(iterable: Iterable[T], n: int) -> Generator[Tuple[T, ...], None, None]:
+def batched(iterable: Iterable[T], n: int) -> Generator[tuple[T, ...], None, None]:
     "Batch data into tuples of length n. The last batch may be shorter."
     # batched('ABCDEFG', 3) --> ABC DEF G
     # NOTE: can replace with itertools version once on python 3.12
@@ -83,7 +84,7 @@ def batched(iterable: Iterable[T], n: int) -> Generator[Tuple[T, ...], None, Non
         batch = tuple(islice(it, n))
 
 
-def get_total_size_from_content_range(content_range: str) -> Optional[int]:
+def get_total_size_from_content_range(content_range: str) -> int | None:
     length = content_range.rsplit("/", 1)[1]
     # RFC 9110 section 14.4 specifies that the * can be returned when the total length is unknown
     return int(length) if length != "*" else None
@@ -96,7 +97,7 @@ class BinaryStreamsConcatenation:
 
     def __init__(self, files: Iterable[BinaryIO]) -> None:
         self._iter_files = iter(files)
-        self._current_file: Optional[BinaryIO] = None
+        self._current_file: BinaryIO | None = None
 
     def _read_chunk(self, size: int = -1) -> bytes:
         if self._current_file is None:
@@ -184,9 +185,9 @@ class ProgressStream(BinaryIO):
 
     def __exit__(
         self,
-        exc_type: Optional[type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[types.TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: types.TracebackType | None,
     ) -> None:
         return self.raw_stream.__exit__(exc_type, exc_val, exc_tb)
 
@@ -212,13 +213,13 @@ class ProgressStream(BinaryIO):
         self.bytes_read = 0
         return result
 
-    def truncate(self, size: Optional[int] = None) -> int:
+    def truncate(self, size: int | None = None) -> int:
         raise UnsupportedOperation("truncate")
 
-    def write(self, s: Union[bytes, Buffer]) -> int:
+    def write(self, s: bytes | Buffer) -> int:
         raise UnsupportedOperation("write")
 
-    def writelines(self, __lines: Union[Iterable[bytes], Iterable[Buffer]]) -> None:
+    def writelines(self, __lines: Iterable[bytes] | Iterable[Buffer]) -> None:
         raise UnsupportedOperation("writelines")
 
     def fileno(self) -> int:

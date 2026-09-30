@@ -1,6 +1,7 @@
 # Copyright (c) 2022 Aiven, Helsinki, Finland. https://aiven.io/
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import ExitStack
 from datetime import datetime, timezone
 from googleapiclient.errors import HttpError
@@ -15,7 +16,6 @@ from rohmu.object_storage.base import IterKeyItem
 from rohmu.object_storage.config import GoogleObjectStorageConfig
 from rohmu.object_storage.google import GoogleTransfer, MediaIoBaseDownloadWithByteRange, Reporter
 from tempfile import NamedTemporaryFile
-from typing import Callable, Union
 from unittest.mock import ANY, call, MagicMock, Mock, patch
 
 import base64
@@ -206,7 +206,7 @@ def test_store_file_object() -> None:
 
 
 def _generate_keys(total: int, prefix: str = "test_key_") -> list[str]:
-    return [f"{prefix}{i+1}" for i in range(total)]
+    return [f"{prefix}{i + 1}" for i in range(total)]
 
 
 def test_upload_size_unknown_to_reporter() -> None:
@@ -418,8 +418,9 @@ def test_object_listed_when_missing_md5hash_size_and_updated() -> None:
 
 
 def test_error_handling() -> None:
-    with patch("rohmu.object_storage.google.get_credentials"), patch(
-        "rohmu.object_storage.google.GoogleTransfer._init_google_client"
+    with (
+        patch("rohmu.object_storage.google.get_credentials"),
+        patch("rohmu.object_storage.google.GoogleTransfer._init_google_client"),
     ):
         transfer = GoogleTransfer(
             project_id="test-project-id",
@@ -484,7 +485,7 @@ def test_error_handling() -> None:
         ("2/", None, "test-prefix/2"),
     ],
 )
-def test_delete_key(key: str, preserve_trailing_slash: Union[bool, None], expected_key: str) -> None:
+def test_delete_key(key: str, preserve_trailing_slash: bool | None, expected_key: str) -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
         stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))
@@ -514,7 +515,7 @@ def test_delete_key(key: str, preserve_trailing_slash: Union[bool, None], expect
 
 
 @pytest.mark.parametrize("preserve_trailing_slash", [True, False, None])
-def test_delete_keys_trailing_slash(preserve_trailing_slash: Union[bool, None]) -> None:
+def test_delete_keys_trailing_slash(preserve_trailing_slash: bool | None) -> None:
     notifier = MagicMock()
     with ExitStack() as stack:
         stack.enter_context(patch("rohmu.object_storage.google.get_credentials"))

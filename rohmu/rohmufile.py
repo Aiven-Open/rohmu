@@ -10,11 +10,12 @@ from .encryptor import DecryptorFile, DecryptSink, EncryptorFile
 from .errors import InvalidConfigurationError
 from .filewrap import ThrottleSink
 from .typing import FileLike, HasRead, HasWrite, Metadata
+from collections.abc import Callable
 from contextlib import suppress
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
 from inspect import signature
 from rohmu.object_storage.base import IncrementalProgressCallbackType
-from typing import Any, Callable, Optional, Union
+from typing import Any
 
 import time
 
@@ -28,8 +29,8 @@ def _obj_name(input_obj: Any) -> str:
 
 
 def _get_encryption_key_data(
-    metadata: Optional[Metadata], key_lookup: Optional[Callable[[str], Optional[str | bytes | RSAPrivateKey]]]
-) -> Optional[str | bytes | RSAPrivateKey]:
+    metadata: Metadata | None, key_lookup: Callable[[str], str | bytes | RSAPrivateKey | None] | None
+) -> str | bytes | RSAPrivateKey | None:
     if not metadata or not metadata.get("encryption-key-id"):
         return None
 
@@ -47,8 +48,8 @@ def _get_encryption_key_data(
 def file_reader(
     *,
     fileobj: FileLike,
-    metadata: Optional[Metadata] = None,
-    key_lookup: Optional[Callable[[str], Optional[str | bytes | RSAPrivateKey]]] = None,
+    metadata: Metadata | None = None,
+    key_lookup: Callable[[str], str | bytes | RSAPrivateKey | None] | None = None,
 ) -> FileLike:
     if not metadata:
         return fileobj
@@ -68,8 +69,8 @@ def create_sink_pipeline(
     *,
     output: HasWrite,
     file_size: int = 0,
-    metadata: Optional[Metadata] = None,
-    key_lookup: Optional[Callable[[str], Optional[str | bytes | RSAPrivateKey]]] = None,
+    metadata: Metadata | None = None,
+    key_lookup: Callable[[str], str | bytes | RSAPrivateKey | None] | None = None,
     throttle_time: float = 0.001,
 ) -> HasWrite:
     if throttle_time:
@@ -101,9 +102,9 @@ def read_file(
     input_obj: FileLike,
     output_obj: FileLike,
     metadata: Metadata,
-    key_lookup: Optional[Callable[[str], Optional[str]]],
+    key_lookup: Callable[[str], str | None] | None,
     progress_callback: IncrementalProgressCallbackType = None,
-    log_func: Optional[Callable[..., None]] = None,
+    log_func: Callable[..., None] | None = None,
 ) -> tuple[int, int]:
     start_time = time.monotonic()
     progress_callback = _callback_wrapper(progress_callback)
@@ -141,10 +142,10 @@ def read_file(
 def file_writer(
     *,
     fileobj: FileLike,
-    compression_algorithm: Optional[str] = None,
+    compression_algorithm: str | None = None,
     compression_level: int = 0,
     compression_threads: int = 0,
-    rsa_public_key: Union[None, str, bytes, RSAPublicKey] = None,
+    rsa_public_key: None | str | bytes | RSAPublicKey = None,
 ) -> FileLike:
     if rsa_public_key:
         fileobj = EncryptorFile(fileobj, rsa_public_key)
@@ -160,13 +161,13 @@ def write_file(
     input_obj: HasRead,
     output_obj: FileLike,
     progress_callback: IncrementalProgressCallbackType = None,
-    compression_algorithm: Optional[str] = None,
+    compression_algorithm: str | None = None,
     compression_level: int = 0,
     compression_threads: int = 0,
-    rsa_public_key: Union[None, str, bytes, RSAPublicKey] = None,
-    log_func: Optional[Callable[..., None]] = None,
-    header_func: Optional[Callable[[bytes], None]] = None,
-    data_callback: Optional[Callable[[bytes], None]] = None,
+    rsa_public_key: None | str | bytes | RSAPublicKey = None,
+    log_func: Callable[..., None] | None = None,
+    header_func: Callable[[bytes], None] | None = None,
+    data_callback: Callable[[bytes], None] | None = None,
 ) -> tuple[int, int]:
     start_time = time.monotonic()
     progress_callback = _callback_wrapper(progress_callback)

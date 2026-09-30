@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from rohmu.delta.common import Progress
 from rohmu.delta.snapshot import Snapshotter
 from rohmu.object_storage.local import LocalTransfer
-from typing import Any, Callable, Union
+from typing import Any
 
 import pytest
 
@@ -15,7 +16,7 @@ def local_transfer(tmp_path: Path) -> LocalTransfer:
 
 
 class SnapshotterWithDefaults(Snapshotter):
-    def create_samples(self, samples: dict[Union[str, Path], str]) -> None:
+    def create_samples(self, samples: dict[str | Path, str]) -> None:
         for file_name, body in samples.items():
             (self.src / file_name).write_text(body)
         progress = Progress()

@@ -5,7 +5,6 @@
 from .common.constants import IO_BLOCK_SIZE
 from .filewrap import FileWrap
 from .typing import BinaryData, FileLike
-from typing import Optional
 
 import io
 
@@ -57,7 +56,7 @@ class _ZtsdFileReader(FileWrap):
         self._stream.close()
         super().close()
 
-    def read(self, size: Optional[int] = -1) -> bytes:
+    def read(self, size: int | None = -1) -> bytes:
         self._check_not_closed()
         if size == 0:
             return b""

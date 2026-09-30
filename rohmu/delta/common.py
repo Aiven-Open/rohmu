@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -11,7 +12,7 @@ from pydantic.v1 import BaseModel, Field
 from rohmu.dates import now
 from rohmu.typing import AnyPath, HasRead
 from types import TracebackType
-from typing import Any, Callable, Iterable, List, Optional, Sequence, Type, TypedDict, TypeVar
+from typing import Any, TypedDict, TypeVar
 
 import functools
 import hashlib
@@ -53,7 +54,7 @@ def hash_hexdigest_readable(f: HasRead, *, read_buffer: int = 1_000_000) -> str:
     return h.hexdigest()
 
 
-def increase_worth_reporting(value: int, new_value: Optional[int] = None, *, total: Optional[int] = None) -> bool:
+def increase_worth_reporting(value: int, new_value: int | None = None, *, total: int | None = None) -> bool:
     """Make reporting sparser and sparser as values grow larger
     - report every 1.1**N or so
     - if we know total, report every percent
@@ -119,7 +120,7 @@ class SizeLimitedFile:
         return self
 
     def __exit__(
-        self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[TracebackType]
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
     ) -> None:
         self._f.close()
 
@@ -166,7 +167,7 @@ class SnapshotFile(DeltaModel):
     stored_file_size: int
     mtime_ns: int
     hexdigest: str = ""
-    content_b64: Optional[str] = None
+    content_b64: str | None = None
     # Indicator if a file should be part of a chunk/bundle - useful for the files which are small to be treated as
     # separate delta hash files, but not small enough to be embedded into a manifest file, so better to group them
     # together when e.g. uploading to the object storage
@@ -188,25 +189,25 @@ class SnapshotFile(DeltaModel):
 
 
 class SnapshotState(DeltaModel):
-    root_globs: List[str]
-    files: List[SnapshotFile]
-    empty_dirs: List[Path]
+    root_globs: list[str]
+    files: list[SnapshotFile]
+    empty_dirs: list[Path]
 
 
 class SnapshotResult(DeltaModel):
     # when was the operation started ( / done )
     start: datetime = Field(default_factory=now)
-    end: Optional[datetime]
+    end: datetime | None
     #
     # should be passed opaquely to restore
-    state: Optional[SnapshotState]
+    state: SnapshotState | None
     #
     # Summary data for manifest use
     files: int = 0
     total_size: int = 0
 
     # populated only if state is available
-    hashes: Optional[List[SnapshotHash]]
+    hashes: list[SnapshotHash] | None
 
 
 class SnapshotUploadResult(DeltaModel):
@@ -314,7 +315,7 @@ Result = TypeVar("Result")
 
 
 def parallel_map_to(
-    *, fun: Callable[[Item], Result], iterable: Iterable[Item], result_callback: Callable[..., bool], n: Optional[int] = None
+    *, fun: Callable[[Item], Result], iterable: Iterable[Item], result_callback: Callable[..., bool], n: int | None = None
 ) -> bool:
     iterable_as_list = list(iterable)
     with Pool(n) as p:

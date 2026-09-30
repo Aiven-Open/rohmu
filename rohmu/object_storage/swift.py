@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import suppress
 from rohmu.common.statsd import StatsdConfig
 from rohmu.dates import parse_timestamp
@@ -30,7 +31,7 @@ from rohmu.object_storage.config import (
 )
 from rohmu.typing import Metadata
 from swiftclient import client, exceptions
-from typing import Any, BinaryIO, Iterator, Optional, Tuple
+from typing import Any, BinaryIO
 
 import logging
 import os
@@ -69,22 +70,22 @@ class SwiftTransfer(BaseTransfer[Config]):
         container_name: str,
         auth_url: str,
         auth_version: str = "2.0",
-        tenant_name: Optional[str] = None,
-        prefix: Optional[str] = None,
+        tenant_name: str | None = None,
+        prefix: str | None = None,
         segment_size: int = SEGMENT_SIZE,
-        region_name: Optional[str] = None,
-        user_id: Optional[str] = None,
-        user_domain_id: Optional[str] = None,
-        user_domain_name: Optional[str] = None,
-        tenant_id: Optional[str] = None,
-        project_id: Optional[str] = None,
-        project_name: Optional[str] = None,
-        project_domain_id: Optional[str] = None,
-        project_domain_name: Optional[str] = None,
-        service_type: Optional[str] = None,
-        endpoint_type: Optional[str] = None,
-        notifier: Optional[Notifier] = None,
-        statsd_info: Optional[StatsdConfig] = None,
+        region_name: str | None = None,
+        user_id: str | None = None,
+        user_domain_id: str | None = None,
+        user_domain_name: str | None = None,
+        tenant_id: str | None = None,
+        project_id: str | None = None,
+        project_name: str | None = None,
+        project_domain_id: str | None = None,
+        project_domain_name: str | None = None,
+        service_type: str | None = None,
+        endpoint_type: str | None = None,
+        notifier: Notifier | None = None,
+        statsd_info: StatsdConfig | None = None,
         ensure_object_store_available: bool = True,
     ) -> None:
         prefix = prefix.lstrip("/") if prefix else ""
@@ -249,7 +250,7 @@ class SwiftTransfer(BaseTransfer[Config]):
         key: str,
         fileobj_to_store_to: BinaryIO,
         *,
-        byte_range: Optional[Tuple[int, int]] = None,
+        byte_range: tuple[int, int] | None = None,
         progress_callback: ProgressProportionCallbackType = None,
     ) -> Metadata:
         if byte_range:
@@ -306,9 +307,7 @@ class SwiftTransfer(BaseTransfer[Config]):
             raise
         return container_name
 
-    def copy_file(
-        self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **_kwargs: Any
-    ) -> None:
+    def copy_file(self, *, source_key: str, destination_key: str, metadata: Metadata | None = None, **_kwargs: Any) -> None:
         source_key = self.format_key_for_backend(source_key)
         destination_key = "/".join((self.container_name, self.format_key_for_backend(destination_key)))
         sanitized_metadata = self.sanitize_metadata(metadata)
@@ -322,11 +321,11 @@ class SwiftTransfer(BaseTransfer[Config]):
         self,
         key: str,
         fd: BinaryIO,
-        metadata: Optional[Metadata] = None,
+        metadata: Metadata | None = None,
         *,
-        cache_control: Optional[str] = None,
-        mimetype: Optional[str] = None,
-        multipart: Optional[bool] = None,
+        cache_control: str | None = None,
+        mimetype: str | None = None,
+        multipart: bool | None = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
     ) -> None:
         metadata = metadata or {}
@@ -350,12 +349,12 @@ class SwiftTransfer(BaseTransfer[Config]):
         self,
         key: str,
         fp: BinaryIO,
-        cache_control: Optional[str] = None,
-        metadata: Optional[Metadata] = None,
-        mimetype: Optional[str] = None,
+        cache_control: str | None = None,
+        metadata: Metadata | None = None,
+        mimetype: str | None = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
-        multipart: Optional[bool] = None,
-        content_length: Optional[int] = None,
+        multipart: bool | None = None,
+        content_length: int | None = None,
     ) -> None:
         if cache_control is not None:
             raise NotImplementedError("SwiftTransfer: cache_control support not implemented")

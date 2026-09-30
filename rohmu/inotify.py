@@ -4,12 +4,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from contextlib import suppress
 from ctypes import c_char_p, c_int, c_uint32
 from queue import Queue
 from rohmu.typing import AnyPath
 from threading import Thread
-from typing import Iterable, Iterator, Optional
 
 import ctypes
 import logging
@@ -79,7 +79,7 @@ class InotifyWatcher(Thread):
         self.timeout = 1.0
         self.log.debug("InotifyWatcher initialized")
 
-    def add_watch(self, path: str, events: Optional[Iterable[str]] = None) -> None:
+    def add_watch(self, path: str, events: Iterable[str] | None = None) -> None:
         mask = 0
         events = events or event_types.keys()
         for key in events:

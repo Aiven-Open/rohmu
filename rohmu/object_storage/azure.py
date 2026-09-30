@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from azure.core.exceptions import HttpResponseError, IncompleteReadError, ResourceExistsError
 from azure.storage.blob import BlobServiceClient, ContentSettings
-from collections.abc import Iterable, Sized
+from collections.abc import Iterable, Iterator, Sized
 from rohmu.common.statsd import StatsdConfig
 from rohmu.errors import (
     FileNotFoundFromStorageError,
@@ -36,7 +36,7 @@ from rohmu.object_storage.config import (  # noqa: F401
 )
 from rohmu.typing import Metadata
 from rohmu.util import batched
-from typing import Any, BinaryIO, Iterator, Optional, Tuple, Union
+from typing import Any, BinaryIO
 from typing_extensions import Self
 
 import azure.common
@@ -62,16 +62,16 @@ class AzureTransfer(BaseTransfer[Config]):
         self,
         bucket_name: str,
         account_name: str,
-        account_key: Optional[str] = None,
-        sas_token: Optional[str] = None,
-        prefix: Optional[str] = None,
+        account_key: str | None = None,
+        sas_token: str | None = None,
+        prefix: str | None = None,
         is_secure: bool = True,
-        host: Optional[str] = None,
-        port: Optional[int] = None,
-        azure_cloud: Optional[str] = None,
-        proxy_info: Optional[dict[str, Union[str, int]]] = None,
-        notifier: Optional[Notifier] = None,
-        statsd_info: Optional[StatsdConfig] = None,
+        host: str | None = None,
+        port: int | None = None,
+        azure_cloud: str | None = None,
+        proxy_info: dict[str, str | int] | None = None,
+        notifier: Notifier | None = None,
+        statsd_info: StatsdConfig | None = None,
         ensure_object_store_available: bool = True,
     ) -> None:
         prefix = prefix.lstrip("/") if prefix else ""
@@ -111,7 +111,7 @@ class AzureTransfer(BaseTransfer[Config]):
             else:
                 schema = "http"
             self._config["proxies"] = {"https": f"{schema}://{auth}{proxy_host}:{proxy_port}"}
-        self._blob_service_client: Optional[BlobServiceClient] = None
+        self._blob_service_client: BlobServiceClient | None = None
         if ensure_object_store_available:
             self._create_object_store_if_needed_unwrapped()
         self.log.debug("AzureTransfer initialized, %r", self.container_name)
@@ -160,10 +160,10 @@ class AzureTransfer(BaseTransfer[Config]):
     @staticmethod
     def conn_string(
         account_name: str,
-        account_key: Optional[str],
-        azure_cloud: Optional[str],
-        host: Optional[str],
-        port: Optional[int],
+        account_key: str | None,
+        azure_cloud: str | None,
+        host: str | None,
+        port: int | None,
         is_secure: bool,
     ) -> str:
         protocol = "https" if is_secure else "http"
@@ -179,9 +179,7 @@ class AzureTransfer(BaseTransfer[Config]):
             conn.append(f"BlobEndpoint={protocol}://{host}:{port}/{account_name}")
         return ";".join(conn)
 
-    def copy_file(
-        self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **kwargs: Any
-    ) -> None:
+    def copy_file(self, *, source_key: str, destination_key: str, metadata: Metadata | None = None, **kwargs: Any) -> None:
         timeout = kwargs.get("timeout") or 15
         self._copy_file_from_bucket(
             source_bucket=self, source_key=source_key, destination_key=destination_key, metadata=metadata, timeout=timeout
@@ -193,7 +191,7 @@ class AzureTransfer(BaseTransfer[Config]):
         source_bucket: Self,
         source_key: str,
         destination_key: str,
-        metadata: Optional[Metadata] = None,
+        metadata: Metadata | None = None,
         timeout: int = 15,
     ) -> None:
         source_path = source_bucket.format_key_for_backend(source_key, remove_slash_prefix=True, trailing_slash=False)
@@ -359,7 +357,7 @@ class AzureTransfer(BaseTransfer[Config]):
         self,
         key: str,
         fileobj: BinaryIO,
-        byte_range: Optional[tuple[int, int]],
+        byte_range: tuple[int, int] | None,
         progress_callback: ProgressProportionCallbackType,
     ) -> None:
         """Streams contents of given key to given fileobj. Data is read sequentially in chunks
@@ -404,7 +402,7 @@ class AzureTransfer(BaseTransfer[Config]):
         key: str,
         fileobj_to_store_to: BinaryIO,
         *,
-        byte_range: Optional[Tuple[int, int]] = None,
+        byte_range: tuple[int, int] | None = None,
         progress_callback: ProgressProportionCallbackType = None,
     ) -> Metadata:
         path = self.format_key_for_backend(key, remove_slash_prefix=True)
@@ -434,11 +432,11 @@ class AzureTransfer(BaseTransfer[Config]):
         self,
         key: str,
         fd: BinaryIO,
-        metadata: Optional[Metadata] = None,
+        metadata: Metadata | None = None,
         *,
-        cache_control: Optional[str] = None,
-        mimetype: Optional[str] = None,
-        multipart: Optional[bool] = None,
+        cache_control: str | None = None,
+        mimetype: str | None = None,
+        multipart: bool | None = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
     ) -> None:
         if cache_control is not None:

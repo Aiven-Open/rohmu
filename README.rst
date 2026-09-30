@@ -38,7 +38,7 @@ and other databases.
  Requirements
 **************
 
-Rohmu requires Python >= 3.8. For Python library dependencies, refer to setup.cfg_.
+Rohmu requires Python >= 3.10. For Python library dependencies, refer to setup.cfg_.
 
 ..
    end-include-requirements
@@ -196,4 +196,4 @@ Copyright (C) 2023 Aiven Ltd and contributors to the Rohmu project.
    :alt: PyPI version
    :target: https://pypi.org/project/rohmu/
 
-.. |Python versions badge| image:: https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11-blue
+.. |Python versions badge| image:: https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue

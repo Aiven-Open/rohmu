@@ -2,8 +2,6 @@
 # See LICENSE for details
 """Rohmu - exception classes"""
 
-from typing import Optional
-
 
 class Error(Exception):
     """Generic exception"""
@@ -44,7 +42,7 @@ class MissingLibraryError(Exception):
 class MaybeRecoverableError(Error):
     """An error that may be recoverable"""
 
-    def __init__(self, message: str, position: Optional[int] = None) -> None:
+    def __init__(self, message: str, position: int | None = None) -> None:
         self.position = position
         super().__init__(message)
 

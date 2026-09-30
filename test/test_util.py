@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from io import BytesIO, UnsupportedOperation
 from rohmu.util import BinaryStreamsConcatenation, file_object_is_empty, get_total_size_from_content_range, ProgressStream
-from typing import Optional
 
 import pytest
 
@@ -16,7 +15,7 @@ import pytest
         ("0-100/1", 1),
     ],
 )
-def test_get_total_size_from_content_range(content_range: str, result: Optional[int]) -> None:
+def test_get_total_size_from_content_range(content_range: str, result: int | None) -> None:
     assert get_total_size_from_content_range(content_range) == result
 
 
