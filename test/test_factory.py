@@ -71,10 +71,15 @@ def test_get_transfer_s3(
     assert mock_check_or_create.called
 
 
-@pytest.mark.parametrize("storage_type", ["s3", "local", "azure", "google", "swift", "s3"])
+@pytest.mark.parametrize("storage_type", ["s3", "local", "azure", "google", "s3"])
 @patch.dict(sys.modules, {"swiftclient": MagicMock(), "azure.common": MagicMock()})
 def test_config_model_defined(storage_type: str) -> None:
     assert get_class_for_transfer({"storage_type": storage_type}).config_model
+
+
+def test_swift_is_removed() -> None:
+    with pytest.raises(NotImplementedError):
+        get_class_for_transfer({"storage_type": "swift"})
 
 
 @patch("rohmu.object_storage.s3.create_s3_client")

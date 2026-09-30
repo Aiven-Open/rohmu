@@ -38,9 +38,7 @@ def get_class_for_storage_driver(storage_driver: StorageDriver) -> Type[BaseTran
 
         return S3Transfer
     elif storage_driver == StorageDriver.swift:
-        from rohmu.object_storage.swift import SwiftTransfer
-
-        return SwiftTransfer
+        raise NotImplementedError()
 
     raise InvalidConfigurationError(f"unsupported storage type {storage_driver.value!r}")
 

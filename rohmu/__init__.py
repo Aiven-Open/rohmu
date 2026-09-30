@@ -29,7 +29,6 @@ from rohmu.object_storage.config import (
     S3ObjectStorageConfig,
     SFTPObjectStorageConfig,
     StorageDriver,
-    SwiftObjectStorageConfig,
 )
 
 __all__ = [
@@ -56,5 +55,4 @@ __all__ = [
     "STORAGE_TYPE",
     "StorageDriver",
     "StorageModel",
-    "SwiftObjectStorageConfig",
 ]

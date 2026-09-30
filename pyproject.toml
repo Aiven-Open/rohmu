@@ -38,7 +38,6 @@ dependencies = [
     "pydantic >= 1.10.17",
     "python-dateutil",
     "python-snappy",
-    "python-swiftclient",
     "requests",
     "typing_extensions; python_version<'3.12'",
     "zstandard",
