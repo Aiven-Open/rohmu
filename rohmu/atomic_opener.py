@@ -1,12 +1,7 @@
-from contextlib import contextmanager
+from collections.abc import Callable, Generator
+from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
-from typing import BinaryIO, Callable, cast, ContextManager, Generator, Optional, overload, TextIO, Union
-from typing_extensions import TypeAlias
-
-try:
-    from typing import Literal
-except ImportError:
-    from typing_extensions import Literal  # type: ignore[assignment]
+from typing import BinaryIO, cast, Literal, overload, TextIO, TypeAlias
 
 import errno
 import os
@@ -29,29 +24,29 @@ def _fd_close_quietly(fd: int) -> None:
 def atomic_opener(
     final_path: Path,
     mode: WriteBinary,
-    encoding: Optional[str] = None,
+    encoding: str | None = None,
     _fd_spy: Callable[[int], None] = lambda unused: None,
     _after_link_hook: Callable[[], None] = lambda: None,
-) -> ContextManager[BinaryIO]: ...
+) -> AbstractContextManager[BinaryIO]: ...
 
 
 @overload
 def atomic_opener(
     final_path: Path,
     mode: Write,
-    encoding: Optional[str] = None,
+    encoding: str | None = None,
     _fd_spy: Callable[[int], None] = lambda unused: None,
     _after_link_hook: Callable[[], None] = lambda: None,
-) -> ContextManager[TextIO]: ...
+) -> AbstractContextManager[TextIO]: ...
 
 
 def atomic_opener(
     final_path: Path,
     mode: str,
-    encoding: Optional[str] = None,
+    encoding: str | None = None,
     _fd_spy: Callable[[int], None] = lambda unused: None,
     _after_link_hook: Callable[[], None] = lambda: None,
-) -> ContextManager[Union[TextIO, BinaryIO]]:
+) -> AbstractContextManager[TextIO | BinaryIO]:
     return _atomic_opener(final_path, mode, encoding, _fd_spy, _after_link_hook)
 
 
@@ -59,10 +54,10 @@ def atomic_opener(
 def _atomic_opener(
     final_path: Path,
     mode: str,
-    encoding: Optional[str] = None,
+    encoding: str | None = None,
     _fd_spy: Callable[[int], None] = lambda unused: None,
     _after_link_hook: Callable[[], None] = lambda: None,
-) -> Generator[Union[TextIO, BinaryIO], None, None]:
+) -> Generator[TextIO | BinaryIO, None, None]:
     """
     Creates a file object for writing which will only appear on the filesystem if the context manager succeeds.
 

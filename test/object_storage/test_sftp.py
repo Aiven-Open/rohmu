@@ -4,7 +4,7 @@ from io import BytesIO
 from rohmu.errors import Error
 from rohmu.object_storage.sftp import SFTPTransfer
 from tempfile import NamedTemporaryFile
-from typing import Any, Union
+from typing import Any
 from unittest.mock import call, MagicMock, patch
 
 import pytest
@@ -89,7 +89,7 @@ def test_store_file_object() -> None:
         ("2/", None, "test-prefix/2"),
     ],
 )
-def test_delete_key(key: str, preserve_trailing_slash: Union[bool, None], expected_key: str) -> None:
+def test_delete_key(key: str, preserve_trailing_slash: bool | None, expected_key: str) -> None:
     notifier = MagicMock()
     with patch("paramiko.Transport") as _, patch("paramiko.SFTPClient") as sftp_client:
         client = MagicMock()
@@ -121,7 +121,7 @@ def test_delete_key(key: str, preserve_trailing_slash: Union[bool, None], expect
 
 
 @pytest.mark.parametrize("preserve_trailing_slash", [True, False, None])
-def test_delete_keys(preserve_trailing_slash: Union[bool, None]) -> None:
+def test_delete_keys(preserve_trailing_slash: bool | None) -> None:
     notifier = MagicMock()
     with patch("paramiko.Transport") as _, patch("paramiko.SFTPClient") as sftp_client:
         client = MagicMock()

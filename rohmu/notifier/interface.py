@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Optional
 
 
 class Notifier(ABC):
     """This interface allows external code to be notified about object changes."""
 
     @abstractmethod
-    def object_created(self, key: str, size: Optional[int], metadata: Optional[dict[str, str]]) -> None:
+    def object_created(self, key: str, size: int | None, metadata: dict[str, str] | None) -> None:
         """Called when an object is created."""
 
     @abstractmethod
@@ -31,7 +30,7 @@ class Notifier(ABC):
         called instead.
         """
 
-    def object_copied(self, key: str, size: Optional[int], metadata: Optional[dict[str, str]]) -> None:
+    def object_copied(self, key: str, size: int | None, metadata: dict[str, str] | None) -> None:
         """Called when an object is copied."""
         self.object_created(key=key, size=size, metadata=metadata)
 

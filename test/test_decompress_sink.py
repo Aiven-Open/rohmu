@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from rohmu.compressor import (
     CompressionFile,
     DecompressSink,
@@ -8,7 +9,6 @@ from rohmu.compressor import (
 )
 from rohmu.encryptor import SymmetricDecryptSink, SymmetricEncryptor
 from rohmu.typing import BinaryData
-from typing import Iterable
 
 import hashlib
 import io

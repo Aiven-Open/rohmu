@@ -1,6 +1,7 @@
 from _pytest.fixtures import SubRequest
+from collections.abc import Generator
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Union
+from typing import Any
 from vcr import VCR
 from vcr.request import Request
 
@@ -109,7 +110,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 @pytest.hookimpl(trylast=True)
-def pytest_report_header(config: pytest.Config) -> List[str]:
+def pytest_report_header(config: pytest.Config) -> list[str]:
     """Useful headers at the beginning of the pytest session, to be able to diagnose issues."""
     options = []
     for cred in ("admin", "user1"):
@@ -160,7 +161,7 @@ def stored_cassette_parameters(
     request: SubRequest,
     vcr_cassette_dir: str,
     record_mode: str,
-) -> Generator[Dict[str, str], None, None]:
+) -> Generator[dict[str, str], None, None]:
     """Store the important test parameters used during recording to make the assertions correct and still configurable.
 
     For now, we store one file per module. This means entire modules have to be re-recorded together. It is simpler to
@@ -207,7 +208,7 @@ def _prefer_string_headers_over_bytes(request: Request) -> Request:
 
 def _redact_boto3_authorization_header(
     key: str,
-    value: Union[str, bytes],
+    value: str | bytes,
     request: Request,
     *,
     admin_access_key_id: str,
@@ -221,7 +222,7 @@ def _redact_boto3_authorization_header(
 
 
 @pytest.fixture(scope="module")
-def vcr_config(request: SubRequest, stored_cassette_parameters: Dict[str, str]) -> Dict[str, Any]:
+def vcr_config(request: SubRequest, stored_cassette_parameters: dict[str, str]) -> dict[str, Any]:
     """Common VCR configuration for all tests.
 
     We redact sensitive credentials that would show up in the botocore requests.

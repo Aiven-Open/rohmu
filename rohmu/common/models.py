@@ -1,7 +1,6 @@
 # Copyright (c) 2023 Aiven, Helsinki, Finland. https://aiven.io/
 from rohmu.common.statsd import StatsdConfig
 from rohmu.common.strenum import StrEnum
-from typing import Optional
 
 import enum
 import pydantic.v1 as pyd
@@ -66,8 +65,8 @@ class ProxyInfo(RohmuModel):
     host: str
     port: int
     type: ProxyType
-    user: Optional[str]
-    password: Optional[str] = pyd.Field(None, alias="pass")
+    user: str | None
+    password: str | None = pyd.Field(None, alias="pass")
 
     class Config(RohmuModel.Config):
         # Allow ProxyInfo(**proxy_info.dict()) to work with the alias
@@ -76,7 +75,7 @@ class ProxyInfo(RohmuModel):
 
 class StorageModel(pyd.BaseModel):
     storage_type: StorageDriver
-    statsd_info: Optional[StatsdConfig] = None
+    statsd_info: StatsdConfig | None = None
 
     class Config:
         use_enum_values = True

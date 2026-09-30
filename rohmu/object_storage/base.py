@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Collection, Iterable, Iterator
 from contextlib import suppress
 from dataclasses import dataclass, field
 from io import BytesIO
@@ -24,17 +24,10 @@ from rohmu.util import file_object_is_empty
 from typing import (
     Any,
     BinaryIO,
-    Callable,
-    Collection,
     Generic,
-    Iterator,
     NamedTuple,
-    Optional,
     Protocol,
-    Tuple,
-    Type,
     TypeVar,
-    Union,
 )
 from typing_extensions import Self
 
@@ -48,14 +41,14 @@ KEY_TYPE_PREFIX = "prefix"
 
 class IterKeyItem(NamedTuple):
     type: str
-    value: Union[str, dict[str, Any]]
+    value: str | dict[str, Any]
 
 
 # Percent complete is the ratio of the first argument to the second
-ProgressProportionCallbackType = Optional[Callable[[int, int], None]]
+ProgressProportionCallbackType = Callable[[int, int], None] | None
 
 # Argument is the additional number of bytes transferred
-IncrementalProgressCallbackType = Optional[Callable[[int], None]]
+IncrementalProgressCallbackType = Callable[[int], None] | None
 
 
 class ObjectTransferProgressCallback(Protocol):
@@ -67,7 +60,7 @@ class ConcurrentUpload:
     backend: str
     backend_id: str
     key: str
-    metadata: Optional[Metadata]
+    metadata: Metadata | None
     chunks_to_etags: dict[int, str] = field(default_factory=dict, hash=False, compare=False)
 
 
@@ -75,16 +68,16 @@ SourceStorageModelT = TypeVar("SourceStorageModelT", bound=StorageModel)
 
 
 class BaseTransfer(Generic[StorageModelT]):
-    config_model: Type[StorageModelT]
+    config_model: type[StorageModelT]
 
     is_thread_safe: bool = False
     supports_concurrent_upload: bool = False
 
     def __init__(
         self,
-        prefix: Optional[str],
-        notifier: Optional[Notifier] = None,
-        statsd_info: Optional[StatsdConfig] = None,
+        prefix: str | None,
+        notifier: Notifier | None = None,
+        statsd_info: StatsdConfig | None = None,
         ensure_object_store_available: bool = True,
     ) -> None:
         """
@@ -174,7 +167,7 @@ class BaseTransfer(Generic[StorageModelT]):
 
     @staticmethod
     def _should_multipart(
-        *, fd: BinaryIO, metadata: Optional[Metadata], chunk_size: int, multipart: Union[bool, None] = None, default: bool
+        *, fd: BinaryIO, metadata: Metadata | None, chunk_size: int, multipart: bool | None = None, default: bool
     ) -> bool:
         size = (metadata or {}).get("Content-Length")
         # uploading empty/very small files in multiple parts must not be done
@@ -193,7 +186,7 @@ class BaseTransfer(Generic[StorageModelT]):
 
     @classmethod
     def from_model(
-        cls, model: StorageModelT, notifier: Optional[Notifier] = None, ensure_object_store_available: bool = True
+        cls, model: StorageModelT, notifier: Notifier | None = None, ensure_object_store_available: bool = True
     ) -> Self:
         return cls(
             **model.dict(by_alias=True, exclude={"storage_type"}),
@@ -201,9 +194,7 @@ class BaseTransfer(Generic[StorageModelT]):
             ensure_object_store_available=ensure_object_store_available,
         )
 
-    def copy_file(
-        self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **_kwargs: Any
-    ) -> None:
+    def copy_file(self, *, source_key: str, destination_key: str, metadata: Metadata | None = None, **_kwargs: Any) -> None:
         """Performs remote copy from source key name to destination key name. Key must identify a file, trees
         cannot be copied with this method. If no metadata is given copies the existing metadata."""
         raise NotImplementedError
@@ -230,7 +221,7 @@ class BaseTransfer(Generic[StorageModelT]):
         source_bucket: Self,
         source_key: str,
         destination_key: str,
-        metadata: Optional[Metadata] = None,
+        metadata: Metadata | None = None,
         timeout: int = 15,
     ) -> None:
         raise NotImplementedError
@@ -300,17 +291,17 @@ class BaseTransfer(Generic[StorageModelT]):
         key: str,
         fileobj_to_store_to: BinaryIO,
         *,
-        byte_range: Optional[Tuple[int, int]] = None,
+        byte_range: tuple[int, int] | None = None,
         progress_callback: ProgressProportionCallbackType = None,
     ) -> Metadata:
         """Like `get_contents_to_file()` but writes to an open file-like object."""
         raise NotImplementedError
 
-    def _validate_byte_range(self, byte_range: Optional[Tuple[int, int]]) -> None:
+    def _validate_byte_range(self, byte_range: tuple[int, int] | None) -> None:
         if byte_range is not None and byte_range[0] > byte_range[1]:
             raise InvalidByteRangeError(f"Invalid byte_range: {byte_range}. Start must be <= end.")
 
-    def get_contents_to_string(self, key: str, *, byte_range: Optional[Tuple[int, int]] = None) -> tuple[bytes, Metadata]:
+    def get_contents_to_string(self, key: str, *, byte_range: tuple[int, int] | None = None) -> tuple[bytes, Metadata]:
         """Returns a tuple (content-byte-string, metadata).
 
         byte_range can be used to limit the content requested (as per RFC9110 section 14.1.2):
@@ -353,7 +344,7 @@ class BaseTransfer(Generic[StorageModelT]):
     ) -> Iterator[IterKeyItem]:
         raise NotImplementedError
 
-    def sanitize_metadata(self, metadata: Optional[Metadata], replace_hyphen_with: str = "-") -> dict[str, str]:
+    def sanitize_metadata(self, metadata: Metadata | None, replace_hyphen_with: str = "-") -> dict[str, str]:
         """Convert non-string metadata values to strings and drop null values"""
         return {str(k).replace("-", replace_hyphen_with): str(v) for k, v in (metadata or {}).items() if v is not None}
 
@@ -361,11 +352,11 @@ class BaseTransfer(Generic[StorageModelT]):
         self,
         key: str,
         memstring: bytes,
-        metadata: Optional[Metadata] = None,
+        metadata: Metadata | None = None,
         *,
-        cache_control: Optional[str] = None,
-        mimetype: Optional[str] = None,
-        multipart: Optional[bool] = None,
+        cache_control: str | None = None,
+        mimetype: str | None = None,
+        multipart: bool | None = None,
         progress_fn: ProgressProportionCallbackType = None,
     ) -> None:
         with BytesIO(memstring) as buf:
@@ -389,11 +380,11 @@ class BaseTransfer(Generic[StorageModelT]):
         self,
         key: str,
         filepath: AnyPath,
-        metadata: Optional[Metadata] = None,
+        metadata: Metadata | None = None,
         *,
-        cache_control: Optional[str] = None,
-        mimetype: Optional[str] = None,
-        multipart: Optional[bool] = None,
+        cache_control: str | None = None,
+        mimetype: str | None = None,
+        multipart: bool | None = None,
         progress_fn: ProgressProportionCallbackType = None,
     ) -> None:
         size = os.path.getsize(filepath)
@@ -417,11 +408,11 @@ class BaseTransfer(Generic[StorageModelT]):
         self,
         key: str,
         fd: BinaryIO,
-        metadata: Optional[Metadata] = None,
+        metadata: Metadata | None = None,
         *,
-        cache_control: Optional[str] = None,
-        mimetype: Optional[str] = None,
-        multipart: Optional[bool] = None,
+        cache_control: str | None = None,
+        mimetype: str | None = None,
+        multipart: bool | None = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
     ) -> None:
         raise NotImplementedError
@@ -431,9 +422,9 @@ class TransferWithConcurrentUploadSupport(Protocol):
     def create_concurrent_upload(
         self,
         key: str,
-        metadata: Optional[Metadata] = None,
-        mimetype: Optional[str] = None,
-        cache_control: Optional[str] = None,
+        metadata: Metadata | None = None,
+        mimetype: str | None = None,
+        cache_control: str | None = None,
     ) -> ConcurrentUpload:
         """Starts a concurrent upload to the object storage.
         :param key: the key of the object to upload

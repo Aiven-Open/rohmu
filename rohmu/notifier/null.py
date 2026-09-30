@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from .interface import Notifier
-from typing import Optional
 
 
 class NullNotifier(Notifier):
@@ -12,7 +11,7 @@ class NullNotifier(Notifier):
     Used by default if configuration is missing to avoid None checks
     """
 
-    def object_created(self, key: str, size: Optional[int], metadata: Optional[dict[str, str]]) -> None:
+    def object_created(self, key: str, size: int | None, metadata: dict[str, str] | None) -> None:
         pass
 
     def object_deleted(self, key: str) -> None:

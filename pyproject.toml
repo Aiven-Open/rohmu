@@ -9,7 +9,7 @@ authors = [
 ]
 description = "Rohmu is a python library providing an interface to various cloud storage providers."
 readme = "README.rst"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = {text = "Apache-2.0 license"}
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -17,11 +17,11 @@ classifiers = [
     "Intended Audience :: Information Technology",
     "Intended Audience :: System Administrators",
     "License :: OSI Approved :: Apache Software License",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Database :: Database Engines/Servers",
     "Topic :: Software Development :: Libraries :: Python Modules"
 ]
@@ -48,12 +48,12 @@ dynamic = ["version"]
 [project.optional-dependencies]
 dev = [
     # Kept in sync with the versions in CI
-    "ruff==0.3.3",
-    "mypy==1.9.0",
-    # Kept in sync with Fedora versions
-    "python-snappy==0.6.1",
-    "zstandard==0.21.0",
-    'typing_extensions >= 3.10, < 5; python_version<"3.12"',
+    "ruff==0.12.5",
+    "mypy==1.18.2",
+    # Kept in sync with Fedora 43 versions
+    "python-snappy==0.7.3",
+    "zstandard==0.25.0",
+    'typing_extensions==4.16.0; python_version<"3.12"',
     # Unpinned dependencies, latest is fine
     "botocore",
     "boto3",
@@ -86,7 +86,7 @@ docs  = [
 
 
 [tool.ruff]
-target-version = "py38"
+target-version = "py310"
 line-length = 125
 extend-exclude = ["rohmu/version.py"]
 
@@ -105,6 +105,7 @@ extend-select = [
   "RUF100", # unused-noqa
 ]
 extend-ignore = [
+  "PLC0415", # import-outside-top-level: backends are imported lazily so their SDKs stay optional
   "PLR0904", # too-many-public-methods
   "PLR0912", # too-many-branches
   "PLR0913", # too-many-arguments
@@ -112,8 +113,7 @@ extend-ignore = [
   "PLR0915", # too-many-statements
   "PLR0916", # too-many-boolean-expressions
   "PLR2004", # magic-value-comparison
-  "UP006", # non-pep585-annotation
-  "UP007", # non-pep604-annotation
+  "UP038", # non-pep604-isinstance: deprecated by ruff, X | Y in isinstance is slower than a tuple
 ]
 
 [tool.ruff.lint.isort]

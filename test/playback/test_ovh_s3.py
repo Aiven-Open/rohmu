@@ -4,7 +4,6 @@ from rohmu.errors import (
     TransferObjectStoreMissingError,
 )
 from rohmu.object_storage.s3 import S3Transfer
-from typing import Optional
 from vcr.cassette import Cassette
 
 import logging
@@ -21,7 +20,7 @@ pytestmark = [
 
 def test_transfer_init__noop(
     ovh_s3_admin_existing_bucket_storage_config: factory.Config,
-    vcr: Optional[Cassette],
+    vcr: Cassette | None,
     record_mode: str,
 ) -> None:
     """Expect no HTTP requests when initializing the transfer object the "new" way."""
@@ -34,7 +33,7 @@ def test_transfer_init__noop(
 
 def test_transfer_init__compat_existing(
     ovh_s3_admin_existing_bucket_storage_config: factory.Config,
-    vcr: Optional[Cassette],
+    vcr: Cassette | None,
     record_mode: str,
 ) -> None:
     """Expect some HTTP requests to check for existence when initializing in compat mode.
@@ -52,7 +51,7 @@ def test_transfer_init__compat_existing(
 
 def test_verify_object_storage__existing(
     ovh_s3_admin_existing_bucket_storage_config: factory.Config,
-    vcr: Optional[Cassette],
+    vcr: Cassette | None,
     record_mode: str,
 ) -> None:
     """Expect a single successful HEAD request when a bucket already exists."""
@@ -69,7 +68,7 @@ def test_verify_object_storage__existing(
 
 def test_verify_object_storage__new_bucket(
     ovh_s3_admin_existing_bucket_storage_config: factory.Config,
-    vcr: Optional[Cassette],
+    vcr: Cassette | None,
     record_mode: str,
 ) -> None:
     """Expect a single 404 HEAD request when a bucket does not exist (and no attempt to create it)."""
@@ -91,7 +90,7 @@ def test_verify_object_storage__new_bucket(
 
 def test_verify_object_storage__bad_aws_secret_access_key(
     ovh_s3_admin_existing_bucket_storage_config: factory.Config,
-    vcr: Optional[Cassette],
+    vcr: Cassette | None,
     record_mode: str,
 ) -> None:
     """Expect a single 403 HEAD request when a bucket does not exist (and no attempt to create it).
@@ -117,7 +116,7 @@ def test_verify_object_storage__bad_aws_secret_access_key(
 
 def test_verify_object_storage__missing_permission(
     ovh_s3_user1_existing_bucket_storage_config: factory.Config,
-    vcr: Optional[Cassette],
+    vcr: Cassette | None,
     record_mode: str,
 ) -> None:
     transfer = get_transfer(ovh_s3_user1_existing_bucket_storage_config, ensure_object_store_available=False)
@@ -135,7 +134,7 @@ def test_verify_object_storage__missing_permission(
 
 def test_create_object_store_if_needed__missing_permission(
     ovh_s3_user1_existing_bucket_storage_config: factory.Config,
-    vcr: Optional[Cassette],
+    vcr: Cassette | None,
     record_mode: str,
 ) -> None:
     transfer = get_transfer(ovh_s3_user1_existing_bucket_storage_config, ensure_object_store_available=False)
@@ -153,7 +152,7 @@ def test_create_object_store_if_needed__missing_permission(
 
 def test_create_object_store_if_needed__existing(
     ovh_s3_admin_existing_bucket_storage_config: factory.Config,
-    vcr: Optional[Cassette],
+    vcr: Cassette | None,
     record_mode: str,
 ) -> None:
     """Expect a single successful HEAD request when a bucket already exists (and no attempt to create it)."""

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from rohmu.delta.common import (
     BackupPath,
@@ -15,7 +16,7 @@ from rohmu.delta.common import (
 )
 from rohmu.typing import AnyPath
 from test.conftest import SnapshotterWithDefaults
-from typing import Any, Callable, Union
+from typing import Any
 from unittest.mock import patch
 
 import os
@@ -25,7 +26,7 @@ import pytest
 @pytest.mark.timeout(2)
 def test_snapshot(snapshotter_creator: Callable[..., SnapshotterWithDefaults]) -> None:
     snapshotter = snapshotter_creator()
-    samples: dict[Union[str, Path], str] = {
+    samples: dict[str | Path, str] = {
         "foo": "foobar",
         "foo2": "foobar",
         "foobig": "foobar" * EMBEDDED_FILE_SIZE,
@@ -109,7 +110,7 @@ def test_snapshot_error_filenotfound(
 @pytest.mark.timeout(2)
 def test_snapshot_single_file_size(snapshotter_creator: Callable[..., SnapshotterWithDefaults]) -> None:
     snapshotter = snapshotter_creator(min_delta_file_size=1024 * 1024)
-    samples: dict[Union[str, Path], str] = {
+    samples: dict[str | Path, str] = {
         "embed1": "foobar",
         "embed2": "foobar",
         "bundle1": "foobar" * EMBEDDED_FILE_SIZE,
@@ -152,7 +153,7 @@ def test_snapshot_single_file_size(snapshotter_creator: Callable[..., Snapshotte
 
 
 def test_snapshot_error_when_required_files_not_found(snapshotter_creator: Callable[..., SnapshotterWithDefaults]) -> None:
-    def src_iterate_func() -> list[Union[AnyPath, BackupPath]]:
+    def src_iterate_func() -> list[AnyPath | BackupPath]:
         return [
             BackupPath(path=snapshotter.src / "foo", missing_ok=False),
             BackupPath(path=snapshotter.src / "bar"),
@@ -222,7 +223,7 @@ def test_snapshot_with_callback(snapshotter_creator: Callable[..., SnapshotterWi
         callback_message = f"{message.value}: {progress_metrics['handled']}"
         callback_messages.append(callback_message)
 
-    samples: dict[Union[str, Path], str] = {
+    samples: dict[str | Path, str] = {
         "foo": "foobar",
         "foo2": "foobar",
         "foobig": "foobar" * EMBEDDED_FILE_SIZE,

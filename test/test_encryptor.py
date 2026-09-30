@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key, load_pem_public_key
@@ -26,7 +27,7 @@ from rohmu.encryptor import (
     SymmetricEncryptorStream,
 )
 from rohmu.typing import HasRead, HasWrite
-from typing import Callable, cast, IO
+from typing import cast, IO
 
 import io
 import os

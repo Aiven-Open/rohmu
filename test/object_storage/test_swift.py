@@ -3,7 +3,6 @@ from datetime import datetime
 from io import BytesIO
 from tempfile import NamedTemporaryFile
 from types import ModuleType
-from typing import Union
 from unittest.mock import call, MagicMock, patch
 
 import pytest
@@ -90,9 +89,7 @@ def test_iter_key_with_empty_key(swift_module: ModuleType) -> None:
         ("2/", None, "test-prefix/2"),
     ],
 )
-def test_delete_key(
-    swift_module: ModuleType, key: str, preserve_trailing_slash: Union[bool, None], expected_key: str
-) -> None:
+def test_delete_key(swift_module: ModuleType, key: str, preserve_trailing_slash: bool | None, expected_key: str) -> None:
     notifier = MagicMock()
     connection = MagicMock()
     swift_module.client.Connection.return_value = connection
@@ -121,7 +118,7 @@ def test_delete_key(
 
 
 @pytest.mark.parametrize("preserve_trailing_slash", [True, False, None])
-def test_delete_keys(swift_module: ModuleType, preserve_trailing_slash: Union[bool, None]) -> None:
+def test_delete_keys(swift_module: ModuleType, preserve_trailing_slash: bool | None) -> None:
     notifier = MagicMock()
     connection = MagicMock()
     swift_module.client.Connection.return_value = connection

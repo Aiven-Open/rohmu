@@ -6,11 +6,12 @@ from __future__ import annotations
 
 from .errors import InvalidTransferError
 from .factory import get_transfer as rohmu_get_transfer
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from rohmu.common.models import StorageModel
 from rohmu.notifier.interface import Notifier
 from rohmu.object_storage.base import BaseTransfer
-from typing import Any, Callable, Generator, Optional
+from typing import Any
 from typing_extensions import Self
 
 import heapq
@@ -62,7 +63,7 @@ class _TransferCache:
         while self.transfers_heap and self.transfers_heap[0].is_expired():
             heapq.heappop(self.transfers_heap)
 
-    def get(self) -> Optional[TransferCacheItem]:
+    def get(self) -> TransferCacheItem | None:
         self.last_used = time.monotonic()
         self.prune_expired()
         if self.transfers_heap:
@@ -96,7 +97,7 @@ class _TransferCacheForThreadSafeTransfer(_TransferCache):
         super().__init__(max_age)
         self.transfers_heap.append(transfer_item)
 
-    def get(self) -> Optional[TransferCacheItem]:
+    def get(self) -> TransferCacheItem | None:
         self.last_used = time.monotonic()
         # there will always be only one transfer instance at most in this cache type
         return self.transfers_heap[0]
@@ -136,7 +137,7 @@ class SafeTransfer(BaseTransfer[StorageModel]):
 
     @classmethod
     def from_model(
-        cls, model: StorageModel, notifier: Optional[Notifier] = None, ensure_object_store_available: bool = True
+        cls, model: StorageModel, notifier: Notifier | None = None, ensure_object_store_available: bool = True
     ) -> Self:
         raise InvalidTransferError("You should not call class methods on SafeTransfer instances")
 

@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
 from typing_extensions import Self
 
 import enum
@@ -15,7 +14,7 @@ class StrEnum(str, enum.Enum):
         return str(self.value)
 
     @classmethod
-    def of(cls, value: str) -> Optional[Self]:
+    def of(cls, value: str) -> Self | None:
         try:
             return cls(value)
         except ValueError:

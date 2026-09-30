@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from botocore.response import StreamingBody
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
@@ -14,7 +15,7 @@ from rohmu.object_storage.config import S3_MAX_NUM_PARTS_PER_UPLOAD, S3ObjectSto
 from rohmu.object_storage.s3 import S3Transfer
 from rohmu.typing import Metadata
 from tempfile import NamedTemporaryFile
-from typing import Any, BinaryIO, Callable, Iterator, Optional, Union
+from typing import Any, BinaryIO
 from unittest.mock import ANY, call, MagicMock, patch
 
 import botocore.exceptions
@@ -89,7 +90,7 @@ def test_close(infra: S3Infra) -> None:
 
 @pytest.mark.parametrize("size", [0, 5 * 1024**3 - 1, 5 * 1024**3])
 @pytest.mark.parametrize("metadata", [None, {}, {"replacement": "metadata"}])
-def test_copy_file_small(infra: S3Infra, size: int, metadata: Optional[Metadata]) -> None:
+def test_copy_file_small(infra: S3Infra, size: int, metadata: Metadata | None) -> None:
     infra.s3_client.head_object.return_value = {"ContentLength": size}
 
     infra.transfer.copy_file(source_key="source", destination_key="destination", metadata=metadata)
@@ -108,7 +109,7 @@ def test_copy_file_small(infra: S3Infra, size: int, metadata: Optional[Metadata]
 
 @pytest.mark.parametrize("last_part_size", [1, 5 * 1024**3])
 @pytest.mark.parametrize("metadata", [None, {}, {"replacement": "metadata"}])
-def test_copy_file_large(infra: S3Infra, last_part_size: int, metadata: Optional[Metadata]) -> None:
+def test_copy_file_large(infra: S3Infra, last_part_size: int, metadata: Metadata | None) -> None:
     part_size = 5 * 1024**3
     headers = {
         "ContentType": "application/octet-stream",
@@ -327,7 +328,7 @@ def test_store_file_object_large(infra: S3Infra) -> None:
 
 
 @pytest.mark.parametrize("multipart", [False, None, True])
-def test_store_file_object(infra: S3Infra, multipart: Optional[bool]) -> None:
+def test_store_file_object(infra: S3Infra, multipart: bool | None) -> None:
     test_data = b"test-data"
     file_object = BytesIO(test_data)
 
@@ -393,7 +394,7 @@ def test_operations_reporting(infra: S3Infra) -> None:
 
 
 @pytest.mark.parametrize("preserve_trailing_slash", [True, False, None])
-def test_delete_keys(infra: S3Infra, preserve_trailing_slash: Union[bool, None]) -> None:
+def test_delete_keys(infra: S3Infra, preserve_trailing_slash: bool | None) -> None:
     if preserve_trailing_slash is None:
         infra.transfer.delete_keys(["2", "3", "4/"])
     else:
@@ -421,7 +422,7 @@ def test_delete_keys(infra: S3Infra, preserve_trailing_slash: Union[bool, None])
         ("2/", None, "test-prefix/2"),
     ],
 )
-def test_delete_key(infra: S3Infra, key: str, preserve_trailing_slash: Union[bool, None], expected_key: str) -> None:
+def test_delete_key(infra: S3Infra, key: str, preserve_trailing_slash: bool | None, expected_key: str) -> None:
     if preserve_trailing_slash is None:
         infra.transfer.delete_key(key)
     else:
@@ -503,7 +504,7 @@ def test_concurrent_upload_complete(infra: S3Infra, with_progress: bool) -> None
     upload = transfer.create_concurrent_upload("test_key", metadata=metadata)
 
     total_progress = 0
-    upload_progress_fn: Optional[Callable[[int], None]] = None
+    upload_progress_fn: Callable[[int], None] | None = None
     if with_progress:
 
         def inc_progress(size: int) -> None:
@@ -588,7 +589,7 @@ def test_validate_is_verify_tls_and_cert_path() -> None:
         (False, None, False),
     ],
 )
-def test_cert_path(is_verify_tls: bool, cert_path: Optional[Path], expected: Union[str, bool]) -> None:
+def test_cert_path(is_verify_tls: bool, cert_path: Path | None, expected: str | bool) -> None:
     with patch.object(rohmu.object_storage.s3, "create_s3_client") as mock:
         S3Transfer(
             region="test-region",
@@ -872,7 +873,7 @@ def randbytes(size: int) -> bytes:
 # All other tests aggressively mock this function, so let's test it now once and for all.
 @pytest.mark.parametrize("_size", [999999, None])
 def test_multipart_upload_file_object(
-    mocker: Any, tmp_path: Path, caplog: pytest.LogCaptureFixture, _size: Optional[int]
+    mocker: Any, tmp_path: Path, caplog: pytest.LogCaptureFixture, _size: int | None
 ) -> None:
     cache_control = "no-cache"
     key = "test_key_123"

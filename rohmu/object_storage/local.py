@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from rohmu.common.models import StorageOperation
 from rohmu.common.statsd import StatsdConfig
@@ -22,7 +23,7 @@ from rohmu.object_storage.base import (
 from rohmu.object_storage.config import LOCAL_CHUNK_SIZE as CHUNK_SIZE, LocalObjectStorageConfig as Config
 from rohmu.typing import Metadata
 from rohmu.util import BinaryStreamsConcatenation, ProgressStream
-from typing import Any, BinaryIO, Iterator, Optional, TextIO, Tuple, Union
+from typing import Any, BinaryIO, TextIO
 from typing_extensions import Self
 
 import contextlib
@@ -46,10 +47,10 @@ class LocalTransfer(BaseTransfer[Config]):
 
     def __init__(
         self,
-        directory: Union[str, Path],
-        prefix: Optional[str] = None,
-        notifier: Optional[Notifier] = None,
-        statsd_info: Optional[StatsdConfig] = None,
+        directory: str | Path,
+        prefix: str | None = None,
+        notifier: Notifier | None = None,
+        statsd_info: StatsdConfig | None = None,
         ensure_object_store_available: bool = True,
     ) -> None:
         prefix = os.path.join(directory, (prefix or "").strip("/"))
@@ -73,9 +74,7 @@ class LocalTransfer(BaseTransfer[Config]):
     def create_object_store_if_needed(self) -> None:
         """No-op as there's no need to create the directory ahead of time."""
 
-    def copy_file(
-        self, *, source_key: str, destination_key: str, metadata: Optional[Metadata] = None, **_kwargs: Any
-    ) -> None:
+    def copy_file(self, *, source_key: str, destination_key: str, metadata: Metadata | None = None, **_kwargs: Any) -> None:
         self._copy_file_from_bucket(
             source_bucket=self, source_key=source_key, destination_key=destination_key, metadata=metadata
         )
@@ -86,7 +85,7 @@ class LocalTransfer(BaseTransfer[Config]):
         source_bucket: Self,
         source_key: str,
         destination_key: str,
-        metadata: Optional[Metadata] = None,
+        metadata: Metadata | None = None,
         timeout: float = 15.0,
     ) -> None:
         source_path = source_bucket.format_key_for_backend(source_key.strip("/"))
@@ -210,7 +209,7 @@ class LocalTransfer(BaseTransfer[Config]):
         key: str,
         fileobj_to_store_to: BinaryIO,
         *,
-        byte_range: Optional[Tuple[int, int]] = None,
+        byte_range: tuple[int, int] | None = None,
         progress_callback: ProgressProportionCallbackType = None,
     ) -> Metadata:
         self._validate_byte_range(byte_range)
@@ -242,7 +241,7 @@ class LocalTransfer(BaseTransfer[Config]):
             raise FileNotFoundFromStorageError(key)
         return os.stat(source_path).st_size
 
-    def _save_metadata(self, target_path: str, metadata: Optional[Metadata]) -> None:
+    def _save_metadata(self, target_path: str, metadata: Metadata | None) -> None:
         metadata_path = target_path + ".metadata"
         with atomic_create_file(metadata_path) as fp:
             json.dump(self.sanitize_metadata(metadata), fp)
@@ -251,11 +250,11 @@ class LocalTransfer(BaseTransfer[Config]):
         self,
         key: str,
         fd: BinaryIO,
-        metadata: Optional[Metadata] = None,
+        metadata: Metadata | None = None,
         *,
-        cache_control: Optional[str] = None,
-        mimetype: Optional[str] = None,
-        multipart: Optional[bool] = None,
+        cache_control: str | None = None,
+        mimetype: str | None = None,
+        multipart: bool | None = None,
         upload_progress_fn: IncrementalProgressCallbackType = None,
     ) -> None:
         target_path = self.format_key_for_backend(key.strip("/"))
@@ -282,9 +281,9 @@ class LocalTransfer(BaseTransfer[Config]):
     def create_concurrent_upload(
         self,
         key: str,
-        metadata: Optional[Metadata] = None,
-        mimetype: Optional[str] = None,
-        cache_control: Optional[str] = None,
+        metadata: Metadata | None = None,
+        mimetype: str | None = None,
+        cache_control: str | None = None,
     ) -> ConcurrentUpload:
         upload_id = uuid.uuid4().hex
         upload = ConcurrentUpload("local", upload_id, key, metadata, {})

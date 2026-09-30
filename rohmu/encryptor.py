@@ -12,6 +12,7 @@ from .errors import UninitializedError
 from .filewrap import FileWrap, Sink, Stream
 from .typing import BinaryData, FileLike, HasRead, HasSeek, HasWrite
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -19,7 +20,6 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPubl
 from cryptography.hazmat.primitives.ciphers import algorithms, Cipher, CipherContext, modes
 from cryptography.hazmat.primitives.hashes import SHA1, SHA256
 from cryptography.hazmat.primitives.hmac import HMAC
-from typing import Callable, Optional, Union
 
 import io
 import logging
@@ -36,8 +36,8 @@ class EncryptorError(Exception):
 
 class BaseEncryptor(ABC):
     def __init__(self) -> None:
-        self._cipher: Optional[CipherContext] = None
-        self._authenticator: Optional[HMAC] = None
+        self._cipher: CipherContext | None = None
+        self._authenticator: HMAC | None = None
 
     @abstractmethod
     def init_cipher(self) -> bytes:
@@ -82,7 +82,7 @@ class BaseEncryptor(ABC):
 class BaseEncryptorFile(FileWrap):
     def __init__(self, next_fp: FileLike, encryptor: BaseEncryptor) -> None:
         super().__init__(next_fp)
-        self._encryptor: Optional[BaseEncryptor] = encryptor
+        self._encryptor: BaseEncryptor | None = encryptor
         self.offset = 0
         self.state = "OPEN"
 
@@ -135,8 +135,8 @@ class BaseEncryptorStream(Stream):
 
 class BaseDecryptor(ABC):
     def __init__(self) -> None:
-        self._cipher: Optional[CipherContext] = None
-        self._authenticator: Optional[HMAC] = None
+        self._cipher: CipherContext | None = None
+        self._authenticator: HMAC | None = None
 
     @property
     def authenticator(self) -> HMAC:
@@ -186,10 +186,10 @@ class BaseDecryptorFile(FileWrap):
         super().__init__(next_fp)
         self._decryptor_factory = decryptor_factory
         self.log = logging.getLogger(self.__class__.__name__)
-        self._maybe_decryptor: Optional[BaseDecryptor] = None
-        self._maybe_crypted_size: Optional[int] = None
-        self._maybe_plaintext_size: Optional[int] = None
-        self._maybe_boundary_block: Optional[bytes] = None
+        self._maybe_decryptor: BaseDecryptor | None = None
+        self._maybe_crypted_size: int | None = None
+        self._maybe_plaintext_size: int | None = None
+        self._maybe_boundary_block: bytes | None = None
         # Our actual plain-text read offset. seek may change self.offset to something
         # else temporarily but we keep _decrypt_offset intact until we actually do a
         # read in case the caller just called seek in order to then immediately seek back
@@ -327,7 +327,7 @@ class BaseDecryptorFile(FileWrap):
         super().close()
         self._maybe_decryptor = None
 
-    def read(self, size: Optional[int] = -1) -> bytes:
+    def read(self, size: int | None = -1) -> bytes:
         """Read up to size decrypted bytes"""
         self._check_not_closed()
         if self.state == "EOF" or size == 0:
@@ -429,7 +429,7 @@ class BaseDecryptSink(Sink):
 
 
 class Encryptor(BaseEncryptor):
-    def __init__(self, public_key_pem: Union[str, bytes, RSAPublicKey]):
+    def __init__(self, public_key_pem: str | bytes | RSAPublicKey):
         if isinstance(public_key_pem, RSAPublicKey):
             rsa_public_key = public_key_pem
         else:
@@ -455,19 +455,19 @@ class Encryptor(BaseEncryptor):
 
 
 class EncryptorFile(BaseEncryptorFile):
-    def __init__(self, next_fp: FileLike, public_key_pem: Union[str, bytes, RSAPublicKey]) -> None:
+    def __init__(self, next_fp: FileLike, public_key_pem: str | bytes | RSAPublicKey) -> None:
         super().__init__(next_fp, Encryptor(public_key_pem))
 
 
 class EncryptorStream(BaseEncryptorStream):
     """Non-seekable stream of data that adds encryption on top of given source stream"""
 
-    def __init__(self, src_fp: HasRead, public_key_pem: Union[str, bytes, RSAPublicKey]) -> None:
+    def __init__(self, src_fp: HasRead, public_key_pem: str | bytes | RSAPublicKey) -> None:
         super().__init__(src_fp, Encryptor(public_key_pem))
 
 
 class Decryptor(BaseDecryptor):
-    def __init__(self, private_key_pem: Union[str, bytes, RSAPrivateKey]) -> None:
+    def __init__(self, private_key_pem: str | bytes | RSAPrivateKey) -> None:
         if isinstance(private_key_pem, RSAPrivateKey):
             rsa_private_key = private_key_pem
         else:
@@ -522,12 +522,12 @@ class Decryptor(BaseDecryptor):
 
 
 class DecryptorFile(BaseDecryptorFile):
-    def __init__(self, next_fp: FileLike, private_key_pem: Union[bytes, str, RSAPrivateKey]):
+    def __init__(self, next_fp: FileLike, private_key_pem: bytes | str | RSAPrivateKey):
         super().__init__(next_fp, lambda: Decryptor(private_key_pem))
 
 
 class DecryptSink(BaseDecryptSink):
-    def __init__(self, next_sink: HasWrite, file_size: int, private_key_pem: Union[bytes, str, RSAPrivateKey]):
+    def __init__(self, next_sink: HasWrite, file_size: int, private_key_pem: bytes | str | RSAPrivateKey):
         super().__init__(next_sink, file_size, Decryptor(private_key_pem))
 
 

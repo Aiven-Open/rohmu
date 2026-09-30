@@ -5,18 +5,18 @@ from .errors import InvalidConfigurationError
 from .notifier.interface import Notifier
 from rohmu.object_storage.base import BaseTransfer
 from rohmu.object_storage.config import StorageModelT
-from typing import Any, Dict, Optional, Type
+from typing import Any
 
 STORAGE_TYPE = "storage_type"
 NOTIFIER_TYPE = "notifier_type"
-Config = Dict[str, Any]
+Config = dict[str, Any]
 
 
-def get_class_for_transfer(obj_store: Config) -> Type[BaseTransfer[Any]]:
+def get_class_for_transfer(obj_store: Config) -> type[BaseTransfer[Any]]:
     return get_class_for_storage_driver(_to_storage_driver(obj_store[STORAGE_TYPE]))
 
 
-def get_class_for_storage_driver(storage_driver: StorageDriver) -> Type[BaseTransfer[Any]]:
+def get_class_for_storage_driver(storage_driver: StorageDriver) -> type[BaseTransfer[Any]]:
     if storage_driver == StorageDriver.azure:
         from rohmu.object_storage.azure import AzureTransfer
 
@@ -45,7 +45,7 @@ def get_class_for_storage_driver(storage_driver: StorageDriver) -> Type[BaseTran
     raise InvalidConfigurationError(f"unsupported storage type {storage_driver.value!r}")
 
 
-def get_class_for_notifier(notifier_config: Config) -> Type[Notifier]:
+def get_class_for_notifier(notifier_config: Config) -> type[Notifier]:
     notifier_type = notifier_config[NOTIFIER_TYPE]
     if notifier_type == "http":
         from .notifier.http import BackgroundHTTPNotifier
@@ -78,7 +78,7 @@ def get_transfer(storage_config: Config, ensure_object_store_available: bool = T
 
 def get_transfer_from_model(
     model: StorageModelT,
-    notifier: Optional[Notifier] = None,
+    notifier: Notifier | None = None,
     ensure_object_store_available: bool = True,
 ) -> BaseTransfer[StorageModelT]:
     storage_class = get_class_for_storage_driver(model.storage_type)
