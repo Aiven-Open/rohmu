@@ -21,6 +21,8 @@ import requests
 import threading
 import time
 
+_LOOPBACK = "127.0.0.1"
+
 
 class _TestSession:
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -78,7 +80,7 @@ def _create_local_server() -> Iterator[tuple[HTTPServer, list[Any]]]:
             self.send_response(200)
             self.end_headers()
 
-    server = HTTPServer(("", 0), _TestServerRequestHandler)
+    server = HTTPServer((_LOOPBACK, 0), _TestServerRequestHandler)
 
     try:
         yield server, post_called
@@ -96,7 +98,8 @@ def _create_server_and_configured_notifier(
     test with calls to `handle_request`.
     """
     with _create_local_server() as (server, post_called):
-        url = f"http://{server.server_name}:{server.server_port}{path}"
+        # server_name is the machine's FQDN, which doesn't resolve on every host (e.g. macOS .local names)
+        url = f"http://{_LOOPBACK}:{server.server_port}{path}"
 
         with _make_notifier(url=url) as notifier:
             yield notifier, server, post_called
