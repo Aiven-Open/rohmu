@@ -25,6 +25,7 @@ import math
 import pytest
 import re
 import rohmu.object_storage.s3
+import threading
 
 log = logging.getLogger(__name__)
 
@@ -126,10 +127,9 @@ def test_copy_file_large(infra: S3Infra, last_part_size: int, metadata: Metadata
         **headers,
     }
     infra.s3_client.create_multipart_upload.return_value = {"UploadId": "copy-upload"}
-    infra.s3_client.upload_part_copy.side_effect = [
-        {"CopyPartResult": {"ETag": "first-part"}},
-        {"CopyPartResult": {"ETag": "last-part"}},
-    ]
+    infra.s3_client.upload_part_copy.side_effect = lambda **kwargs: {
+        "CopyPartResult": {"ETag": ["first-part", "last-part"][kwargs["PartNumber"] - 1]}
+    }
 
     infra.transfer.copy_file(source_key="source", destination_key="destination", metadata=metadata)
 
@@ -145,7 +145,7 @@ def test_copy_file_large(infra: S3Infra, last_part_size: int, metadata: Metadata
         Key="test-prefix/destination",
         **expected_args,
     )
-    assert infra.s3_client.upload_part_copy.call_args_list == [
+    assert sorted(infra.s3_client.upload_part_copy.call_args_list, key=lambda c: c.kwargs["PartNumber"]) == [
         call(
             Bucket="test-bucket",
             Key="test-prefix/destination",
@@ -211,6 +211,45 @@ def test_copy_files_from_large(infra: S3Infra) -> None:
         assert part_call.kwargs["Key"] == "test-prefix/key with spaces/+?#"
     infra.notifier.object_copied.assert_called_once_with(key="key with spaces/+?#", size=None, metadata=None)
     progress_fn.assert_called_once_with(1, 1)
+
+
+def test_copy_files_from_copies_keys_concurrently(infra: S3Infra) -> None:
+    source = S3Transfer(
+        region="test-region", bucket_name="source-bucket", prefix="source-prefix", ensure_object_store_available=False
+    )
+    source.s3_client = MagicMock()
+    source.s3_client.head_object.return_value = {"ContentLength": 1}
+    keys = [f"key{index}" for index in range(3)]
+    # Raises BrokenBarrierError if the keys are copied sequentially
+    barrier = threading.Barrier(len(keys), timeout=5)
+    infra.s3_client.copy_object.side_effect = lambda **_: barrier.wait()
+    progress_fn = MagicMock()
+
+    infra.transfer.copy_files_from(source=source, keys=keys, progress_fn=progress_fn)
+
+    assert sorted(c.kwargs["Key"] for c in infra.s3_client.copy_object.call_args_list) == [
+        f"test-prefix/{key}" for key in keys
+    ]
+    assert progress_fn.call_args_list == [call(1, 3), call(2, 3), call(3, 3)]
+
+
+@pytest.mark.parametrize(
+    ("max_concurrent_requests", "key_count", "expected_part_workers"),
+    [(10, 1, 10), (10, 2, 5), (10, 3, 3), (10, 10, 1), (10, 50, 1), (32, 4, 8), (1, 1, 1)],
+)
+def test_copy_files_from_splits_concurrency(
+    infra: S3Infra, max_concurrent_requests: int, key_count: int, expected_part_workers: int
+) -> None:
+    infra.transfer.max_concurrent_requests = max_concurrent_requests
+    source = S3Transfer(
+        region="test-region", bucket_name="source-bucket", prefix="source-prefix", ensure_object_store_available=False
+    )
+    source.s3_client = MagicMock()
+    with patch.object(S3Transfer, "_copy_file_from_bucket") as copy_file_from_bucket:
+        infra.transfer.copy_files_from(source=source, keys=[f"key{index}" for index in range(key_count)])
+
+    assert copy_file_from_bucket.call_count == key_count
+    assert {c.kwargs["part_workers"] for c in copy_file_from_bucket.call_args_list} == {expected_part_workers}
 
 
 @pytest.mark.parametrize(
@@ -391,6 +430,78 @@ def test_store_empty_file_object(infra: S3Infra, has_content_length: bool) -> No
 
 def test_operations_reporting(infra: S3Infra) -> None:
     infra.operation.assert_called_once_with(StorageOperation.head_request)
+
+
+@pytest.mark.parametrize("with_metadata", [True, False])
+def test_iter_key(infra: S3Infra, with_metadata: bool) -> None:
+    last_modified = datetime(2024, 1, 1)
+    infra.s3_client.list_objects_v2.side_effect = [
+        {
+            "Contents": [
+                {"Key": f"test-prefix/dir/{name}", "LastModified": last_modified, "ETag": f'"{name}"', "Size": 1}
+                for name in ["a", "gone", "b"]
+            ],
+            "CommonPrefixes": [{"Prefix": "test-prefix/dir/sub/"}],
+            "NextContinuationToken": "token",
+        },
+        {
+            "Contents": [{"Key": "test-prefix/dir/c", "LastModified": last_modified, "ETag": '"c"', "Size": 1}],
+        },
+    ]
+
+    def head_object(Bucket: str, Key: str) -> dict[str, Any]:
+        if Key.endswith("/gone"):
+            raise botocore.exceptions.ClientError(
+                {
+                    "Error": {"Code": "404", "Message": "Not Found"},
+                    "ResponseMetadata": {
+                        "HTTPStatusCode": 404,
+                        "RequestId": "request-id",
+                        "HostId": "host-id",
+                        "HTTPHeaders": {},
+                        "RetryAttempts": 0,
+                    },
+                },
+                "HeadObject",
+            )
+        return {"Metadata": {"Key": Key}}
+
+    infra.s3_client.head_object.side_effect = head_object
+
+    items = list(infra.transfer.iter_key("dir", with_metadata=with_metadata))
+
+    names = ["a", "b"] if with_metadata else ["a", "gone", "b"]
+    assert [(item.type, item.value) for item in items] == [
+        *(
+            (
+                "object",
+                {
+                    "last_modified": last_modified,
+                    "md5": name,
+                    "metadata": {"key": f"test-prefix/dir/{name}"} if with_metadata else None,
+                    "name": f"dir/{name}",
+                    "size": 1,
+                },
+            )
+            for name in names
+        ),
+        ("prefix", "dir/sub"),
+        (
+            "object",
+            {
+                "last_modified": last_modified,
+                "md5": "c",
+                "metadata": {"key": "test-prefix/dir/c"} if with_metadata else None,
+                "name": "dir/c",
+                "size": 1,
+            },
+        ),
+    ]
+    assert infra.s3_client.list_objects_v2.call_args_list == [
+        call(Bucket="test-bucket", Prefix="test-prefix/dir/", Delimiter="/"),
+        call(Bucket="test-bucket", Prefix="test-prefix/dir/", Delimiter="/", ContinuationToken="token"),
+    ]
+    assert infra.s3_client.head_object.call_count == (4 if with_metadata else 0)
 
 
 @pytest.mark.parametrize("preserve_trailing_slash", [True, False, None])
@@ -601,6 +712,30 @@ def test_cert_path(is_verify_tls: bool, cert_path: Path | None, expected: str | 
         )
         mock.assert_called_once()
         assert mock.call_args[1]["verify"] == expected
+
+
+@pytest.mark.parametrize("host,port", [(None, None), ("host", 1000)])
+def test_max_concurrent_requests_sets_connection_pool_size(host: str | None, port: int | None) -> None:
+    with patch.object(rohmu.object_storage.s3, "create_s3_client") as mock:
+        transfer = S3Transfer(
+            region="test-region", bucket_name="test-bucket", host=host, port=port, max_concurrent_requests=32
+        )
+        assert transfer.max_concurrent_requests == 32
+        assert mock.call_args.kwargs["config"].max_pool_connections == 32
+        assert mock.call_args.kwargs["config"].retries == {"max_attempts": 10, "mode": "adaptive"}
+
+
+def test_max_concurrent_requests_must_be_positive() -> None:
+    with pytest.raises(ValidationError):
+        S3ObjectStorageConfig(
+            region="test-region",
+            bucket_name="test-bucket",
+            aws_secret_access_key=None,
+            aws_session_token=None,
+            max_concurrent_requests=0,
+        )
+    with pytest.raises(ValueError):
+        S3Transfer(region="test-region", bucket_name="test-bucket", max_concurrent_requests=0)
 
 
 def mb_to_bytes(size: int) -> int:

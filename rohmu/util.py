@@ -4,7 +4,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Generator, Iterable
+from collections import deque
+from collections.abc import Callable, Generator, Iterable
+from concurrent.futures import Future, ThreadPoolExecutor
 from io import BytesIO, UnsupportedOperation
 from itertools import islice
 from rohmu.typing import HasFileno
@@ -69,6 +71,27 @@ def file_object_is_empty(fd: BinaryIO) -> bool:
 
 
 T = TypeVar("T")
+R = TypeVar("R")
+
+
+def parallel_map(fn: Callable[[T], R], iterable: Iterable[T], *, max_workers: int) -> Generator[R, None, None]:
+    """Like map(), but runs up to `max_workers` calls of `fn` concurrently in threads.
+
+    Results are yielded in input order. The input is consumed lazily, at most `2 * max_workers` items ahead
+    of the consumer. If `fn` raises or the consumer stops early, pending calls are cancelled and running
+    calls are waited for before returning.
+    """
+    executor = ThreadPoolExecutor(max_workers=max_workers)
+    pending: deque[Future[R]] = deque()
+    try:
+        for item in iterable:
+            pending.append(executor.submit(fn, item))
+            if len(pending) >= 2 * max_workers:
+                yield pending.popleft().result()
+        while pending:
+            yield pending.popleft().result()
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)
 
 
 def batched(iterable: Iterable[T], n: int) -> Generator[tuple[T, ...], None, None]:

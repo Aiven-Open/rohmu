@@ -44,6 +44,8 @@ def test_get_transfer_s3(
     expected_config_arg = dict(config)
     expected_config_arg.pop("notifier")
     expected_botocore_config = {
+        "max_pool_connections": 20,
+        "retries": {"max_attempts": 10, "mode": "adaptive"},
         "proxies": {"https": "socks5://bob:secret@proxy.test:16666"},
         "use_dualstack_endpoint": True,
     }
