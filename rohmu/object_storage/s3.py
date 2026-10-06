@@ -35,6 +35,7 @@ from rohmu.object_storage.base import (
 )
 from rohmu.object_storage.config import (  # noqa: F401
     calculate_s3_chunk_size as calculate_chunk_size,
+    S3_DEFAULT_MAX_CONCURRENT_DELETE_REQUESTS,
     S3_DEFAULT_MAX_CONCURRENT_REQUESTS,
     S3_DEFAULT_MULTIPART_CHUNK_SIZE as MULTIPART_CHUNK_SIZE,
     S3_MAX_COPY_SIZE_BYTES,
@@ -116,6 +117,8 @@ class S3Transfer(BaseTransfer[Config]):
     config_model = Config
 
     supports_concurrent_upload = True
+    # Waits before re-sending keys that DeleteObjects reported as failed
+    delete_retry_delays: tuple[float, ...] = (3.0, 15.0, 45.0)
 
     def __init__(
         self,
@@ -144,6 +147,7 @@ class S3Transfer(BaseTransfer[Config]):
         user_agent_extra: str | None = None,
         lowercase_metadata_keys: bool = False,
         max_concurrent_requests: int = S3_DEFAULT_MAX_CONCURRENT_REQUESTS,
+        max_concurrent_delete_requests: int = S3_DEFAULT_MAX_CONCURRENT_DELETE_REQUESTS,
     ) -> None:
         super().__init__(
             prefix=prefix,
@@ -173,6 +177,9 @@ class S3Transfer(BaseTransfer[Config]):
         if max_concurrent_requests < 1:
             raise ValueError("max_concurrent_requests must be at least 1")
         self.max_concurrent_requests = max_concurrent_requests
+        if max_concurrent_delete_requests < 1:
+            raise ValueError("max_concurrent_delete_requests must be at least 1")
+        self.max_concurrent_delete_requests = max_concurrent_delete_requests
         self.s3_client: S3Client | None = None
         self.location = ""
         if not self.host or not self.port:
@@ -226,10 +233,11 @@ class S3Transfer(BaseTransfer[Config]):
                 timeouts["connect_timeout"] = self.connect_timeout
             if self.read_timeout:
                 timeouts["read_timeout"] = self.read_timeout
+            max_pool_connections = max(self.max_concurrent_requests, self.max_concurrent_delete_requests)
             if not self.host or not self.port:
                 custom_config: dict[str, Any] = {
                     **timeouts,
-                    "max_pool_connections": self.max_concurrent_requests,
+                    "max_pool_connections": max_pool_connections,
                     "retries": {"max_attempts": 10, "mode": "adaptive"},
                 }
                 if self.proxy_info:
@@ -265,7 +273,7 @@ class S3Transfer(BaseTransfer[Config]):
                     # Adaptive mode also rate-limits the client after throttling, which matters in shared buckets
                     retries={"max_attempts": 10, "mode": "adaptive"},
                     user_agent_extra=self.user_agent_extra or "",
-                    max_pool_connections=self.max_concurrent_requests,
+                    max_pool_connections=max_pool_connections,
                     **timeouts,
                 )
                 with self._get_session() as session:
@@ -472,24 +480,50 @@ class S3Transfer(BaseTransfer[Config]):
         self.notifier.object_deleted(key=key)
 
     def delete_keys(self, keys: Iterable[str], preserve_trailing_slash: bool = False) -> None:
-        for batch in batched(keys, 1000):  # Cannot delete more than 1000 objects at a time
-            self.stats.operation(StorageOperation.delete_key, count=len(batch))
-            formatted_keys = [
-                self.format_key_for_backend(
-                    k,
-                    remove_slash_prefix=True,
-                    trailing_slash=preserve_trailing_slash and k.endswith("/"),
-                )
-                for k in batch
-            ]
-            self.get_client().delete_objects(
-                Bucket=self.bucket_name,
-                Delete={"Objects": [{"Key": key} for key in formatted_keys]},
-            )
+        def delete_batch(batch: tuple[str, ...]) -> tuple[str, ...]:
+            self._delete_objects(batch, preserve_trailing_slash=preserve_trailing_slash)
+            return batch
+
+        batches = batched(keys, 1000)  # Cannot delete more than 1000 objects at a time
+        if self.max_concurrent_delete_requests == 1:
+            # On the calling thread, so a failed batch stops the delete before the next one is sent
+            deleted_batches: Iterable[tuple[str, ...]] = map(delete_batch, batches)
+        else:
+            deleted_batches = parallel_map(delete_batch, batches, max_workers=self.max_concurrent_delete_requests)
+        for batch in deleted_batches:
             # Note: `tree_deleted` is not used here because the operation on S3 is not atomic, i.e.
             # it is possible for a new object to be created after `list_objects` above
             for key in batch:
                 self.notifier.object_deleted(key=key)
+
+    def _delete_objects(self, keys: Collection[str], *, preserve_trailing_slash: bool) -> None:
+        pending = [
+            self.format_key_for_backend(
+                k, remove_slash_prefix=True, trailing_slash=preserve_trailing_slash and k.endswith("/")
+            )
+            for k in keys
+        ]
+        for retry_delay in (*self.delete_retry_delays, None):
+            self.stats.operation(StorageOperation.delete_key, count=len(pending))
+            response = self.get_client().delete_objects(
+                Bucket=self.bucket_name,
+                Delete={"Objects": [{"Key": key} for key in pending]},
+            )
+            # A successful response can still list keys that were not deleted
+            errors = response.get("Errors", [])
+            if not errors:
+                return
+            failed_keys = {error.get("Key") for error in errors}
+            pending = [key for key in pending if key in failed_keys]
+            first_error = errors[0]
+            description = (
+                f"{len(errors)} of {len(keys)} keys, e.g. {first_error.get('Key')!r}: "
+                f"{first_error.get('Code')} {first_error.get('Message')}"
+            )
+            if retry_delay is None or not pending:
+                raise StorageError(f"Failed to delete {description}")
+            self.log.warning("Failed to delete %s, retrying in %ss", description, retry_delay)
+            time.sleep(retry_delay)
 
     def iter_key(
         self, key: str, *, with_metadata: bool = True, deep: bool = False, include_key: bool = False

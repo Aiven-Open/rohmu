@@ -73,6 +73,8 @@ S3_MIN_PART_SIZE_BYTES: Final[int] = S3_MIN_PART_SIZE_MB * 1024 * 1024
 S3_MAX_PART_SIZE_BYTES: Final[int] = S3_MAX_PART_SIZE_MB * 1024 * 1024
 # Above the AWS CLI default of 10; adaptive retries back off if a shared bucket gets throttled
 S3_DEFAULT_MAX_CONCURRENT_REQUESTS: Final[int] = 20
+# Deletes stay sequential unless the caller opts in
+S3_DEFAULT_MAX_CONCURRENT_DELETE_REQUESTS: Final[int] = 1
 
 
 def calculate_s3_chunk_size() -> int:
@@ -196,6 +198,8 @@ class S3ObjectStorageConfig(StorageModel):
     lowercase_metadata_keys: bool = False
     # Upper bound on concurrent requests per transfer (listing HEADs, key and part copies); also the connection pool size
     max_concurrent_requests: int = Field(default=S3_DEFAULT_MAX_CONCURRENT_REQUESTS, ge=1)
+    # Upper bound on concurrent DeleteObjects requests in delete_keys and delete_tree
+    max_concurrent_delete_requests: int = Field(default=S3_DEFAULT_MAX_CONCURRENT_DELETE_REQUESTS, ge=1)
 
     @root_validator(skip_on_failure=True)
     @classmethod

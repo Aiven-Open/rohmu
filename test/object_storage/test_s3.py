@@ -506,6 +506,7 @@ def test_iter_key(infra: S3Infra, with_metadata: bool) -> None:
 
 @pytest.mark.parametrize("preserve_trailing_slash", [True, False, None])
 def test_delete_keys(infra: S3Infra, preserve_trailing_slash: bool | None) -> None:
+    infra.s3_client.delete_objects.return_value = {}
     if preserve_trailing_slash is None:
         infra.transfer.delete_keys(["2", "3", "4/"])
     else:
@@ -520,6 +521,110 @@ def test_delete_keys(infra: S3Infra, preserve_trailing_slash: bool | None) -> No
             ],
         },
     )
+
+
+def test_delete_keys_sends_batches_from_the_calling_thread_by_default(infra: S3Infra) -> None:
+    request_threads = []
+
+    def delete_objects(**_kwargs: Any) -> dict[str, Any]:
+        request_threads.append(threading.current_thread())
+        return {}
+
+    infra.s3_client.delete_objects.side_effect = delete_objects
+
+    infra.transfer.delete_keys([str(i) for i in range(2500)])
+
+    assert request_threads == [threading.current_thread()] * 3
+
+
+def test_delete_keys_sends_batches_concurrently(infra: S3Infra) -> None:
+    infra.transfer.max_concurrent_delete_requests = 3
+    # Raises BrokenBarrierError if the batches are sent sequentially
+    barrier = threading.Barrier(3, timeout=5)
+
+    def delete_objects(**_kwargs: Any) -> dict[str, Any]:
+        barrier.wait()
+        return {}
+
+    infra.s3_client.delete_objects.side_effect = delete_objects
+    keys = [str(i) for i in range(3000)]
+
+    infra.transfer.delete_keys(keys)
+
+    assert infra.s3_client.delete_objects.call_count == 3
+    assert infra.notifier.object_deleted.call_args_list == [call(key=key) for key in keys]
+
+
+def test_delete_keys_resends_keys_reported_as_failed(infra: S3Infra) -> None:
+    infra.s3_client.delete_objects.side_effect = [
+        {
+            "Deleted": [{"Key": "test-prefix/1"}],
+            "Errors": [{"Key": "test-prefix/2", "Code": "SlowDown", "Message": "Please reduce your request rate."}],
+        },
+        {"Deleted": [{"Key": "test-prefix/2"}]},
+    ]
+
+    with patch.object(rohmu.object_storage.s3.time, "sleep") as sleep:
+        infra.transfer.delete_keys(["1", "2"])
+
+    assert infra.s3_client.delete_objects.call_args_list == [
+        call(Bucket="test-bucket", Delete={"Objects": [{"Key": "test-prefix/1"}, {"Key": "test-prefix/2"}]}),
+        call(Bucket="test-bucket", Delete={"Objects": [{"Key": "test-prefix/2"}]}),
+    ]
+    sleep.assert_called_once_with(3.0)
+    assert [c for c in infra.operation.call_args_list if c.args[0] == StorageOperation.delete_key] == [
+        call(StorageOperation.delete_key, count=2),
+        call(StorageOperation.delete_key, count=1),
+    ]
+    assert infra.notifier.object_deleted.call_args_list == [call(key="1"), call(key="2")]
+
+
+def test_delete_keys_raises_when_keys_keep_failing(infra: S3Infra) -> None:
+    infra.s3_client.delete_objects.return_value = {
+        "Errors": [{"Key": "test-prefix/2", "Code": "InternalError", "Message": "We encountered an internal error."}],
+    }
+
+    with (
+        patch.object(rohmu.object_storage.s3.time, "sleep") as sleep,
+        pytest.raises(
+            StorageError,
+            match=re.escape("Failed to delete 1 of 2 keys, e.g. 'test-prefix/2': InternalError We encountered"),
+        ),
+    ):
+        infra.transfer.delete_keys(["1", "2"])
+
+    assert sleep.call_args_list == [call(3.0), call(15.0), call(45.0)]
+    assert (
+        infra.s3_client.delete_objects.call_args_list[1:]
+        == [
+            call(Bucket="test-bucket", Delete={"Objects": [{"Key": "test-prefix/2"}]}),
+        ]
+        * 3
+    )
+    infra.notifier.object_deleted.assert_not_called()
+
+
+def test_delete_keys_raises_at_once_on_errors_for_keys_not_sent(infra: S3Infra) -> None:
+    infra.s3_client.delete_objects.return_value = {"Errors": [{"Key": "unknown", "Code": "InternalError"}]}
+
+    with patch.object(rohmu.object_storage.s3.time, "sleep") as sleep, pytest.raises(StorageError):
+        infra.transfer.delete_keys(["1"])
+
+    sleep.assert_not_called()
+    assert infra.s3_client.delete_objects.call_count == 1
+
+
+def test_delete_keys_stops_at_the_first_failed_batch(infra: S3Infra) -> None:
+    infra.transfer.delete_retry_delays = ()
+    infra.s3_client.delete_objects.return_value = {
+        "Errors": [{"Key": "test-prefix/0", "Code": "AccessDenied", "Message": "Access Denied"}],
+    }
+
+    with pytest.raises(StorageError, match="AccessDenied"):
+        infra.transfer.delete_keys([str(i) for i in range(2000)])
+
+    assert infra.s3_client.delete_objects.call_count == 1
+    infra.notifier.object_deleted.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -736,6 +841,42 @@ def test_max_concurrent_requests_must_be_positive() -> None:
         )
     with pytest.raises(ValueError):
         S3Transfer(region="test-region", bucket_name="test-bucket", max_concurrent_requests=0)
+
+
+@pytest.mark.parametrize("host,port", [(None, None), ("host", 1000)])
+@pytest.mark.parametrize(
+    ("max_concurrent_requests", "max_concurrent_delete_requests", "expected_pool_size"), [(20, 1, 20), (4, 10, 10)]
+)
+def test_connection_pool_fits_the_larger_concurrency_limit(
+    host: str | None,
+    port: int | None,
+    max_concurrent_requests: int,
+    max_concurrent_delete_requests: int,
+    expected_pool_size: int,
+) -> None:
+    with patch.object(rohmu.object_storage.s3, "create_s3_client") as mock:
+        S3Transfer(
+            region="test-region",
+            bucket_name="test-bucket",
+            host=host,
+            port=port,
+            max_concurrent_requests=max_concurrent_requests,
+            max_concurrent_delete_requests=max_concurrent_delete_requests,
+        )
+        assert mock.call_args.kwargs["config"].max_pool_connections == expected_pool_size
+
+
+def test_max_concurrent_delete_requests_must_be_positive() -> None:
+    with pytest.raises(ValidationError):
+        S3ObjectStorageConfig(
+            region="test-region",
+            bucket_name="test-bucket",
+            aws_secret_access_key=None,
+            aws_session_token=None,
+            max_concurrent_delete_requests=0,
+        )
+    with pytest.raises(ValueError):
+        S3Transfer(region="test-region", bucket_name="test-bucket", max_concurrent_delete_requests=0)
 
 
 def mb_to_bytes(size: int) -> int:
