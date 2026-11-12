@@ -9,10 +9,16 @@ from io import BytesIO
 from pathlib import Path
 from pydantic.v1 import ValidationError
 from rohmu.common.models import StorageOperation
-from rohmu.errors import FileNotFoundFromStorageError, InvalidByteRangeError, StorageError, TransferObjectStoreMissingError
+from rohmu.errors import (
+    ConcurrentUploadError,
+    FileNotFoundFromStorageError,
+    InvalidByteRangeError,
+    StorageError,
+    TransferObjectStoreMissingError,
+)
 from rohmu.object_storage.base import TransferWithConcurrentUploadSupport
 from rohmu.object_storage.config import S3_MAX_NUM_PARTS_PER_UPLOAD, S3ObjectStorageConfig
-from rohmu.object_storage.s3 import S3Transfer
+from rohmu.object_storage.s3 import calculate_multipart_etag, S3Transfer
 from rohmu.typing import Metadata
 from tempfile import NamedTemporaryFile
 from typing import Any, BinaryIO
@@ -20,6 +26,7 @@ from unittest.mock import ANY, call, MagicMock, patch
 
 import botocore.exceptions
 import contextlib
+import hashlib
 import logging
 import math
 import pytest
@@ -296,6 +303,8 @@ def test_copy_file_failure(infra: S3Infra, operation: str, status_code: int, abo
 
     if status_code != 404:
         assert exc_info.value.__cause__ is error
+        # The message names the failed call and its error code, whichever step failed
+        assert repr(error) in str(exc_info.value)
     if operation in ("upload_part_copy", "complete_multipart_upload"):
         infra.s3_client.abort_multipart_upload.assert_called_once_with(
             Bucket="test-bucket", Key="test-prefix/destination", UploadId="copy-upload"
@@ -783,6 +792,268 @@ def test_concurrent_upload_abort(infra: S3Infra) -> None:
 
     # no notification is sent
     notifier.object_created.assert_not_called()
+
+
+def md5_etag(data: bytes) -> str:
+    return f'"{hashlib.md5(data).hexdigest()}"'
+
+
+def multipart_etag(*parts: bytes) -> str:
+    digests = b"".join(hashlib.md5(part).digest() for part in parts)
+    return f'"{hashlib.md5(digests).hexdigest()}-{len(parts)}"'
+
+
+def client_error(code: str, status_code: int, operation: str, retry_attempts: int = 0) -> botocore.exceptions.ClientError:
+    return botocore.exceptions.ClientError(
+        {
+            "Error": {"Code": code, "Message": "request failed"},
+            "ResponseMetadata": {
+                "HTTPStatusCode": status_code,
+                "RequestId": "request-id",
+                "HostId": "host-id",
+                "HTTPHeaders": {},
+                "RetryAttempts": retry_attempts,
+            },
+        },
+        operation,
+    )
+
+
+def no_such_upload_error(retry_attempts: int = 1) -> botocore.exceptions.ClientError:
+    # What a retried CompleteMultipartUpload gets when an earlier attempt completed the upload
+    return client_error("NoSuchUpload", 404, "CompleteMultipartUpload", retry_attempts=retry_attempts)
+
+
+def test_calculate_multipart_etag() -> None:
+    parts: list[Any] = [
+        {"ETag": '"550cf6b6e60f65a0e3104a26e70fea42"', "PartNumber": 1},
+        {"ETag": "98BD1C45684CF587AC2347A92DD7BB51", "PartNumber": 2},
+    ]
+    assert calculate_multipart_etag(parts) == "39dfd7f3d6a3ab7f00ab302c4e299196-2"
+    assert f'"{calculate_multipart_etag(parts)}"' == multipart_etag(*UPLOAD_PARTS)
+
+
+@pytest.mark.parametrize("part_etag", ['"opaque-part-etag"', '"550cf6b6e60f65a0e3104a26e70fea42-1"', ""])
+def test_calculate_multipart_etag_needs_md5_part_etags(part_etag: str) -> None:
+    parts: list[Any] = [
+        {"ETag": '"550cf6b6e60f65a0e3104a26e70fea42"', "PartNumber": 1},
+        {"ETag": part_etag, "PartNumber": 2},
+    ]
+    assert calculate_multipart_etag(parts) is None
+
+
+UPLOAD_PARTS = (b"first part", b"last")
+UPLOAD_SIZE = sum(len(part) for part in UPLOAD_PARTS)
+
+
+def upload_with_failing_complete(infra: S3Infra, error: botocore.exceptions.ClientError) -> None:
+    infra.transfer.default_multipart_chunk_size = len(UPLOAD_PARTS[0])
+    infra.s3_client.create_multipart_upload.return_value = {"UploadId": "upload-id"}
+    infra.s3_client.complete_multipart_upload.side_effect = error
+    infra.transfer.store_file_object(key="test_key", fd=BytesIO(b"".join(UPLOAD_PARTS)), multipart=True)
+
+
+@pytest.mark.parametrize(
+    "head_result,completed",
+    [
+        pytest.param({"ETag": multipart_etag(*UPLOAD_PARTS), "ContentLength": UPLOAD_SIZE}, True, id="etag-matches"),
+        pytest.param(
+            {"ETag": multipart_etag(*UPLOAD_PARTS).upper(), "ContentLength": UPLOAD_SIZE}, True, id="etag-in-upper-case"
+        ),
+        pytest.param(
+            {"ETag": multipart_etag(b"another", b"object"), "ContentLength": UPLOAD_SIZE}, False, id="etag-differs-same-size"
+        ),
+        pytest.param({"ETag": '"opaque-etag"', "ContentLength": UPLOAD_SIZE}, True, id="opaque-etag-same-size"),
+        pytest.param({"ETag": '"opaque-etag"', "ContentLength": UPLOAD_SIZE + 1}, False, id="opaque-etag-other-size"),
+        pytest.param(client_error("404", 404, "HeadObject"), False, id="object-missing"),
+        pytest.param(
+            botocore.exceptions.EndpointConnectionError(endpoint_url="https://s3.example.com"), False, id="head-fails"
+        ),
+    ],
+)
+def test_store_file_object_no_such_upload_on_complete(
+    infra: S3Infra, head_result: dict[str, Any] | Exception, completed: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    infra.transfer.multipart_complete_check_delays = ()
+    infra.s3_client.upload_part.side_effect = lambda Body, **_kwargs: {"ETag": md5_etag(Body)}
+    infra.s3_client.head_object.side_effect = [head_result]
+    error = no_such_upload_error()
+
+    if completed:
+        with caplog.at_level(logging.WARNING):
+            upload_with_failing_complete(infra, error)
+        assert "treating the upload as complete" in caplog.text
+        infra.s3_client.abort_multipart_upload.assert_not_called()
+        infra.notifier.object_created.assert_called_once_with(key="test_key", size=UPLOAD_SIZE, metadata=None)
+    else:
+        with pytest.raises(StorageError, match="Failed to complete multipart upload") as exc_info:
+            upload_with_failing_complete(infra, error)
+        assert exc_info.value.__cause__ is error
+        infra.s3_client.abort_multipart_upload.assert_called_once_with(
+            Bucket="test-bucket", Key="test-prefix/test_key", UploadId="upload-id"
+        )
+        infra.notifier.object_created.assert_not_called()
+
+    infra.s3_client.complete_multipart_upload.assert_called_once()
+    infra.s3_client.head_object.assert_called_once_with(Bucket="test-bucket", Key="test-prefix/test_key")
+    # One HEAD for the bucket check at startup, one for the uploaded object
+    assert infra.operation.call_args_list.count(call(StorageOperation.head_request)) == 2
+
+
+@pytest.mark.parametrize(
+    "content_length,retry_attempts,completed",
+    [
+        pytest.param(UPLOAD_SIZE, 1, True, id="same-size"),
+        pytest.param(UPLOAD_SIZE - 1, 1, False, id="other-size"),
+        # With no retry, no earlier request can have completed the upload, and the size alone proves nothing
+        pytest.param(UPLOAD_SIZE, 0, False, id="same-size-without-retry"),
+    ],
+)
+def test_store_file_object_no_such_upload_on_complete_with_opaque_part_etags(
+    infra: S3Infra, content_length: int, retry_attempts: int, completed: bool
+) -> None:
+    infra.transfer.multipart_complete_check_delays = ()
+    infra.s3_client.upload_part.return_value = {"ETag": '"opaque-part-etag"'}
+    # The ETag looks like an S3 multipart ETag, but it cannot be derived from part ETags that are not MD5s
+    infra.s3_client.head_object.return_value = {"ETag": multipart_etag(*UPLOAD_PARTS), "ContentLength": content_length}
+    error = no_such_upload_error(retry_attempts)
+
+    if completed:
+        upload_with_failing_complete(infra, error)
+        infra.notifier.object_created.assert_called_once_with(key="test_key", size=UPLOAD_SIZE, metadata=None)
+    else:
+        with pytest.raises(StorageError, match="Failed to complete multipart upload"):
+            upload_with_failing_complete(infra, error)
+        infra.notifier.object_created.assert_not_called()
+
+
+def test_store_file_object_no_such_upload_on_complete_without_retry(infra: S3Infra) -> None:
+    # The caller may be the one retrying, after a timeout on its first call: a matching ETag is proof enough
+    infra.s3_client.upload_part.side_effect = lambda Body, **_kwargs: {"ETag": md5_etag(Body)}
+    infra.s3_client.head_object.return_value = {"ETag": multipart_etag(*UPLOAD_PARTS), "ContentLength": UPLOAD_SIZE}
+
+    upload_with_failing_complete(infra, no_such_upload_error(retry_attempts=0))
+
+    infra.s3_client.abort_multipart_upload.assert_not_called()
+    infra.notifier.object_created.assert_called_once_with(key="test_key", size=UPLOAD_SIZE, metadata=None)
+
+
+@pytest.mark.parametrize("appears_after_checks", [1, 2, None])
+def test_store_file_object_no_such_upload_on_complete_checks_again(
+    infra: S3Infra, mocker: Any, appears_after_checks: int | None
+) -> None:
+    sleep = mocker.patch("rohmu.object_storage.s3.time.sleep")
+    infra.s3_client.upload_part.side_effect = lambda Body, **_kwargs: {"ETag": md5_etag(Body)}
+    missing = client_error("404", 404, "HeadObject")
+    stale = {"ETag": multipart_etag(b"another", b"object"), "ContentLength": UPLOAD_SIZE}
+    uploaded = {"ETag": multipart_etag(*UPLOAD_PARTS), "ContentLength": UPLOAD_SIZE}
+    head_results = [missing, stale, missing]
+    if appears_after_checks is not None:
+        head_results[appears_after_checks:] = [uploaded]
+    infra.s3_client.head_object.side_effect = head_results
+
+    if appears_after_checks is not None:
+        upload_with_failing_complete(infra, no_such_upload_error())
+        infra.s3_client.abort_multipart_upload.assert_not_called()
+        infra.notifier.object_created.assert_called_once_with(key="test_key", size=UPLOAD_SIZE, metadata=None)
+    else:
+        with pytest.raises(StorageError, match="Failed to complete multipart upload"):
+            upload_with_failing_complete(infra, no_such_upload_error())
+        infra.s3_client.abort_multipart_upload.assert_called_once()
+        infra.notifier.object_created.assert_not_called()
+
+    assert infra.s3_client.head_object.call_count == len(head_results)
+    assert sleep.call_args_list == [call(2.0), call(10.0)][: len(head_results) - 1]
+    infra.s3_client.complete_multipart_upload.assert_called_once()
+
+
+def test_store_file_object_other_error_on_complete(infra: S3Infra) -> None:
+    infra.s3_client.upload_part.side_effect = lambda Body, **_kwargs: {"ETag": md5_etag(Body)}
+    infra.s3_client.head_object.return_value = {"ETag": multipart_etag(*UPLOAD_PARTS), "ContentLength": UPLOAD_SIZE}
+    error = client_error("InternalError", 500, "CompleteMultipartUpload", retry_attempts=9)
+
+    with pytest.raises(StorageError, match="Failed to complete multipart upload") as exc_info:
+        upload_with_failing_complete(infra, error)
+
+    assert exc_info.value.__cause__ is error
+    infra.s3_client.head_object.assert_not_called()
+    infra.s3_client.abort_multipart_upload.assert_called_once_with(
+        Bucket="test-bucket", Key="test-prefix/test_key", UploadId="upload-id"
+    )
+    infra.notifier.object_created.assert_not_called()
+
+
+@pytest.mark.parametrize("completed", [True, False])
+def test_copy_file_large_no_such_upload_on_complete(infra: S3Infra, completed: bool) -> None:
+    size = 5 * 1024**3 + 1
+    copied_etag = multipart_etag(b"first", b"last")
+    infra.s3_client.head_object.side_effect = [
+        {"ContentLength": size, "Metadata": {}, "ETag": "source-etag"},
+        {"ContentLength": size, "ETag": copied_etag if completed else multipart_etag(b"another", b"object")},
+    ]
+    infra.s3_client.create_multipart_upload.return_value = {"UploadId": "copy-upload"}
+    infra.s3_client.upload_part_copy.side_effect = lambda **kwargs: {
+        "CopyPartResult": {"ETag": [md5_etag(b"first"), md5_etag(b"last")][kwargs["PartNumber"] - 1]}
+    }
+    error = no_such_upload_error()
+    infra.s3_client.complete_multipart_upload.side_effect = error
+    infra.transfer.multipart_complete_check_delays = ()
+
+    if completed:
+        infra.transfer.copy_file(source_key="source", destination_key="destination")
+        infra.s3_client.abort_multipart_upload.assert_not_called()
+        infra.notifier.object_copied.assert_called_once_with(key="destination", size=None, metadata=None)
+    else:
+        # Not FileNotFoundFromStorageError, which copy_file raises for other 404s: the source is still there
+        with pytest.raises(StorageError) as exc_info:
+            infra.transfer.copy_file(source_key="source", destination_key="destination")
+        assert not isinstance(exc_info.value, FileNotFoundFromStorageError)
+        assert exc_info.value.__cause__ is error
+        assert str(exc_info.value) == f"Copying 'source' to 'destination' failed: {error!r}"
+        assert "NoSuchUpload" in str(exc_info.value)
+        infra.s3_client.abort_multipart_upload.assert_called_once_with(
+            Bucket="test-bucket", Key="test-prefix/destination", UploadId="copy-upload"
+        )
+        infra.notifier.object_copied.assert_not_called()
+
+    assert infra.s3_client.head_object.call_args_list == [
+        call(Bucket="test-bucket", Key="test-prefix/source"),
+        call(Bucket="test-bucket", Key="test-prefix/destination"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "head_etag,completed",
+    [
+        pytest.param(multipart_etag(b"Hello, ", b"World"), True, id="etag-matches"),
+        pytest.param(multipart_etag(b"World", b"Hello, "), False, id="etag-differs"),
+        # The size of a concurrent upload is not known, so there is nothing else to compare
+        pytest.param('"opaque-etag"', False, id="opaque-etag"),
+    ],
+)
+def test_concurrent_upload_no_such_upload_on_complete(infra: S3Infra, head_etag: str, completed: bool) -> None:
+    infra.s3_client.create_multipart_upload.return_value = {"UploadId": "<aws-mpu-id>"}
+    infra.s3_client.upload_part.side_effect = lambda Body, **_kwargs: {"ETag": md5_etag(Body.read())}
+    infra.s3_client.head_object.return_value = {"ETag": head_etag, "ContentLength": 12}
+    error = no_such_upload_error()
+    infra.s3_client.complete_multipart_upload.side_effect = error
+    infra.transfer.multipart_complete_check_delays = ()
+    transfer: TransferWithConcurrentUploadSupport = infra.transfer
+    upload = transfer.create_concurrent_upload("test_key")
+    transfer.upload_concurrent_chunk(upload, 2, BytesIO(b"World"))
+    transfer.upload_concurrent_chunk(upload, 1, BytesIO(b"Hello, "))
+
+    if completed:
+        transfer.complete_concurrent_upload(upload)
+    else:
+        with pytest.raises(ConcurrentUploadError) as exc_info:
+            transfer.complete_concurrent_upload(upload)
+        assert exc_info.value.__cause__ is error
+
+    infra.s3_client.head_object.assert_called_once_with(
+        Bucket="test-bucket", Key="test-prefix/test_key", RequestPayer="requester"
+    )
+    infra.s3_client.abort_multipart_upload.assert_not_called()
 
 
 def test_validate_is_verify_tls_and_cert_path() -> None:
