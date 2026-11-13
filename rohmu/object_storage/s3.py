@@ -56,12 +56,33 @@ import botocore.config
 import botocore.exceptions
 import botocore.session
 import contextlib
+import hashlib
 import math
+import re
 import time
 
 if TYPE_CHECKING:
     from mypy_boto3_s3 import S3Client
     from mypy_boto3_s3.type_defs import CompletedPartTypeDef, CopySourceTypeDef, HeadObjectOutputTypeDef
+
+MD5_ETAG_RE = re.compile(r"[0-9a-f]{32}", re.IGNORECASE)
+MULTIPART_ETAG_RE = re.compile(r"[0-9a-f]{32}-[0-9]+", re.IGNORECASE)
+
+
+def calculate_multipart_etag(parts: Collection[CompletedPartTypeDef]) -> str | None:
+    """ETag of the object S3 assembles from the given parts.
+
+    S3 and most S3-compatible stores use the MD5 of the concatenated binary MD5s of the parts,
+    followed by the number of parts. Returns None if a part ETag is not an MD5: the store then
+    uses some other scheme and the ETag of the object cannot be predicted.
+    """
+    digests = []
+    for part in parts:
+        part_etag = part.get("ETag", "").strip('"')
+        if not MD5_ETAG_RE.fullmatch(part_etag):
+            return None
+        digests.append(bytes.fromhex(part_etag))
+    return f"{hashlib.md5(b''.join(digests), usedforsecurity=False).hexdigest()}-{len(digests)}"
 
 
 # botocore typing stubs are incomplete. We either have to write all the stubs we need
@@ -119,6 +140,8 @@ class S3Transfer(BaseTransfer[Config]):
     supports_concurrent_upload = True
     # Waits before re-sending keys that DeleteObjects reported as failed
     delete_retry_delays: tuple[float, ...] = (3.0, 15.0, 45.0)
+    # Waits before looking again for the object of a multipart upload whose completion failed with NoSuchUpload
+    multipart_complete_check_delays: tuple[float, ...] = (2.0, 10.0)
 
     def __init__(
         self,
@@ -380,7 +403,8 @@ class S3Transfer(BaseTransfer[Config]):
             self.notifier.object_copied(key=destination_key, size=None, metadata=metadata)
         except botocore.exceptions.ClientError as ex:
             status_code = ex.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
-            if status_code == 404:
+            # NoSuchUpload is a 404 as well, but there it is the multipart upload that is gone, not the source
+            if status_code == 404 and ex.response.get("Error", {}).get("Code") != "NoSuchUpload":
                 raise FileNotFoundFromStorageError(source_key)
             else:
                 raise StorageError(f"Copying {source_key!r} to {destination_key!r} failed: {ex!r}") from ex
@@ -437,13 +461,7 @@ class S3Transfer(BaseTransfer[Config]):
         try:
             part_starts = enumerate(range(0, size, S3_MAX_COPY_SIZE_BYTES), start=1)
             parts = list(parallel_map(copy_part, part_starts, max_workers=part_workers))
-            self.stats.operation(StorageOperation.multipart_complete)
-            client.complete_multipart_upload(
-                Bucket=self.bucket_name,
-                Key=destination_path,
-                UploadId=upload_id,
-                MultipartUpload={"Parts": parts},
-            )
+            self._complete_multipart_upload(path=destination_path, upload_id=upload_id, parts=parts, size=size)
         except Exception:
             self.stats.operation(StorageOperation.multipart_aborted)
             try:
@@ -797,14 +815,8 @@ class S3Transfer(BaseTransfer[Config]):
                     # TODO: change this to incremental progress. Size parameter is currently unused.
                     progress_fn(bytes_sent, size)  # type: ignore[arg-type]
 
-        self.stats.operation(StorageOperation.multipart_complete)
         try:
-            self.get_client().complete_multipart_upload(
-                Bucket=self.bucket_name,
-                Key=path,
-                MultipartUpload={"Parts": parts},
-                UploadId=mp_id,
-            )
+            self._complete_multipart_upload(path=path, upload_id=mp_id, parts=parts, size=bytes_sent)
         except botocore.exceptions.ClientError as ex:
             try:
                 self.stats.operation(StorageOperation.multipart_aborted)
@@ -951,13 +963,12 @@ class S3Transfer(BaseTransfer[Config]):
             key=lambda part: part["PartNumber"],
         )
         try:
-            self.stats.operation(StorageOperation.multipart_complete)
-            self.get_client().complete_multipart_upload(
-                Bucket=self.bucket_name,
-                Key=backend_key,
-                MultipartUpload={"Parts": sorted_chunks},
-                UploadId=upload.backend_id,
-                RequestPayer="requester",
+            self._complete_multipart_upload(
+                path=backend_key,
+                upload_id=upload.backend_id,
+                parts=sorted_chunks,
+                size=None,
+                requester_pays=True,
             )
         except botocore.exceptions.ClientError as ex:
             raise ConcurrentUploadError(f"Failed to complete multipart upload for {upload.key}") from ex
@@ -1005,6 +1016,79 @@ class S3Transfer(BaseTransfer[Config]):
             raise ConcurrentUploadError(
                 f"Failed to upload chunk {chunk_number} of multipart upload for {upload.key}"
             ) from ex
+
+    def _complete_multipart_upload(
+        self,
+        *,
+        path: str,
+        upload_id: str,
+        parts: list[CompletedPartTypeDef],
+        size: int | None,
+        requester_pays: bool = False,
+    ) -> None:
+        """Complete a multipart upload, accepting NoSuchUpload if the object is already in place.
+
+        botocore retries CompleteMultipartUpload when the response takes longer than the read
+        timeout. The store may have completed the upload on the first request, and the retry
+        then fails with NoSuchUpload although the object is there.
+        """
+        payer_args: dict[str, Any] = {"RequestPayer": "requester"} if requester_pays else {}
+        self.stats.operation(StorageOperation.multipart_complete)
+        try:
+            self.get_client().complete_multipart_upload(
+                Bucket=self.bucket_name,
+                Key=path,
+                MultipartUpload={"Parts": parts},
+                UploadId=upload_id,
+                **payer_args,
+            )
+        except botocore.exceptions.ClientError as ex:
+            if ex.response.get("Error", {}).get("Code") != "NoSuchUpload":
+                raise
+            retry_attempts = ex.response.get("ResponseMetadata", {}).get("RetryAttempts", 0)
+            for check_delay in (None, *self.multipart_complete_check_delays):
+                if check_delay is not None:
+                    time.sleep(check_delay)
+                # Without a retry no earlier request can have completed the upload, so the size alone proves nothing
+                if self._object_matches_multipart_upload(
+                    path=path, parts=parts, size=size if retry_attempts else None, payer_args=payer_args
+                ):
+                    break
+            else:
+                raise
+            self.log.warning(
+                "Completing multipart upload %r of %r failed with NoSuchUpload after %r retries, "
+                "but the object is in place, treating the upload as complete",
+                upload_id,
+                path,
+                retry_attempts,
+            )
+
+    def _object_matches_multipart_upload(
+        self,
+        *,
+        path: str,
+        parts: list[CompletedPartTypeDef],
+        size: int | None,
+        payer_args: dict[str, Any],
+    ) -> bool:
+        """Check whether the object at path is the one assembled from the given parts.
+
+        The ETags decide if they can be compared. Otherwise the object must have the given size,
+        and with no size there is nothing to compare.
+        """
+        self.stats.operation(StorageOperation.head_request)
+        try:
+            response = self.get_client().head_object(Bucket=self.bucket_name, Key=path, **payer_args)
+        except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError) as ex:
+            self.log.warning("Could not check whether multipart upload of %r completed: %r", path, ex)
+            return False
+        etag = response.get("ETag", "").strip('"')
+        expected_etag = calculate_multipart_etag(parts)
+        if expected_etag is not None and MULTIPART_ETAG_RE.fullmatch(etag):
+            return etag.lower() == expected_etag
+        # The store does not use S3's multipart ETag scheme, the size is all that is left to compare
+        return size is not None and response.get("ContentLength") == size
 
     def _init_args_for_multipart(
         self, key: str, metadata: Metadata | None, mimetype: str | None, cache_control: str | None
