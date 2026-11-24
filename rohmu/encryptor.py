@@ -13,21 +13,46 @@ from .filewrap import FileWrap, Sink, Stream
 from .typing import BinaryData, FileLike, HasRead, HasSeek, HasWrite
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
-from cryptography.hazmat.primitives.ciphers import algorithms, Cipher, CipherContext, modes
+from cryptography.hazmat.primitives.ciphers import (
+    AEADDecryptionContext,
+    AEADEncryptionContext,
+    algorithms,
+    Cipher,
+    CipherContext,
+    modes,
+)
 from cryptography.hazmat.primitives.hashes import SHA1, SHA256
 from cryptography.hazmat.primitives.hmac import HMAC
+from typing import Final, Literal
 
 import io
 import logging
 import os
 import struct
 
+# AES-128-CTR + HMAC-SHA256 format
 FILEMAGIC = b"pghoa1"
+# AES-256-GCM format: the GCM tag also authenticates the file header (magic, key length and wrapped key)
+FILEMAGIC_AES_256_GCM = b"pghoa2"
 AES_BLOCK_SIZE = 16
+GCM_KEY_SIZE = 32
+GCM_NONCE_SIZE = 12
+GCM_TAG_SIZE = 16
+CTR_HMAC_FOOTER_SIZE = 32
+
+EncryptionCipher = Literal["aes-128-ctr", "aes-256-gcm"]
+CIPHER_AES_128_CTR: Final = "aes-128-ctr"
+CIPHER_AES_256_GCM: Final = "aes-256-gcm"
+SUPPORTED_ENCRYPTION_CIPHERS: Final = (CIPHER_AES_128_CTR, CIPHER_AES_256_GCM)
+
+
+def _rsa_oaep_padding() -> padding.OAEP:
+    return padding.OAEP(mgf=padding.MGF1(algorithm=SHA1()), algorithm=SHA1(), label=None)
 
 
 class EncryptorError(Exception):
@@ -429,7 +454,21 @@ class BaseDecryptSink(Sink):
 
 
 class Encryptor(BaseEncryptor):
-    def __init__(self, public_key_pem: str | bytes | RSAPublicKey):
+    """Encrypts data with a random per-file key wrapped with RSA-OAEP.
+
+    ``encryption_cipher`` selects the data cipher: ``"aes-128-ctr"`` (default, AES-128-CTR + HMAC-SHA256)
+    or ``"aes-256-gcm"``. A single AES-256-GCM file must not exceed 64 GiB of plaintext.
+    Decryptor detects the format automatically.
+    """
+
+    def __init__(
+        self,
+        public_key_pem: str | bytes | RSAPublicKey,
+        *,
+        encryption_cipher: EncryptionCipher = CIPHER_AES_128_CTR,
+    ):
+        if encryption_cipher not in SUPPORTED_ENCRYPTION_CIPHERS:
+            raise ValueError(f"Unsupported encryption cipher: {encryption_cipher!r}")
         if isinstance(public_key_pem, RSAPublicKey):
             rsa_public_key = public_key_pem
         else:
@@ -442,28 +481,69 @@ class Encryptor(BaseEncryptor):
 
         super().__init__()
         self.rsa_public_key = rsa_public_key
+        self.encryption_cipher = encryption_cipher
+        self._gcm_cipher: AEADEncryptionContext | None = None
 
     def init_cipher(self) -> bytes:
+        if self.encryption_cipher == CIPHER_AES_256_GCM:
+            cipher_key = os.urandom(GCM_KEY_SIZE)
+            nonce = os.urandom(GCM_NONCE_SIZE)
+            key = self.rsa_public_key.encrypt(cipher_key + nonce, _rsa_oaep_padding())
+            header = FILEMAGIC_AES_256_GCM + struct.pack(">H", len(key)) + key
+            gcm_cipher = Cipher(algorithms.AES(cipher_key), modes.GCM(nonce), backend=default_backend()).encryptor()
+            gcm_cipher.authenticate_additional_data(header)
+            self._gcm_cipher = gcm_cipher
+            return header
+
         cipher_key = os.urandom(16)
         nonce = os.urandom(16)
         hmac_key = os.urandom(32)
         self._cipher = Cipher(algorithms.AES(cipher_key), modes.CTR(nonce), backend=default_backend()).encryptor()
         self._authenticator = HMAC(hmac_key, SHA256(), backend=default_backend())
-        pad = padding.OAEP(mgf=padding.MGF1(algorithm=SHA1()), algorithm=SHA1(), label=None)
-        key = self.rsa_public_key.encrypt(cipher_key + nonce + hmac_key, pad)
+        key = self.rsa_public_key.encrypt(cipher_key + nonce + hmac_key, _rsa_oaep_padding())
         return FILEMAGIC + struct.pack(">H", len(key)) + key
+
+    def update(self, data: bytes) -> bytes:
+        if self.encryption_cipher != CIPHER_AES_256_GCM:
+            return super().update(data)
+        header = b""
+        if self._gcm_cipher is None:
+            header = self.init_cipher()
+        assert self._gcm_cipher is not None
+        return header + self._gcm_cipher.update(data)
+
+    def finalize(self) -> bytes:
+        if self.encryption_cipher != CIPHER_AES_256_GCM:
+            return super().finalize()
+        if self._gcm_cipher is None:
+            return b""  # empty plaintext input yields empty encrypted output
+        ret = self._gcm_cipher.finalize() + self._gcm_cipher.tag
+        self._gcm_cipher = None
+        return ret
 
 
 class EncryptorFile(BaseEncryptorFile):
-    def __init__(self, next_fp: FileLike, public_key_pem: str | bytes | RSAPublicKey) -> None:
-        super().__init__(next_fp, Encryptor(public_key_pem))
+    def __init__(
+        self,
+        next_fp: FileLike,
+        public_key_pem: str | bytes | RSAPublicKey,
+        *,
+        encryption_cipher: EncryptionCipher = CIPHER_AES_128_CTR,
+    ) -> None:
+        super().__init__(next_fp, Encryptor(public_key_pem, encryption_cipher=encryption_cipher))
 
 
 class EncryptorStream(BaseEncryptorStream):
     """Non-seekable stream of data that adds encryption on top of given source stream"""
 
-    def __init__(self, src_fp: HasRead, public_key_pem: str | bytes | RSAPublicKey) -> None:
-        super().__init__(src_fp, Encryptor(public_key_pem))
+    def __init__(
+        self,
+        src_fp: HasRead,
+        public_key_pem: str | bytes | RSAPublicKey,
+        *,
+        encryption_cipher: EncryptionCipher = CIPHER_AES_128_CTR,
+    ) -> None:
+        super().__init__(src_fp, Encryptor(public_key_pem, encryption_cipher=encryption_cipher))
 
 
 class Decryptor(BaseDecryptor):
@@ -480,8 +560,11 @@ class Decryptor(BaseDecryptor):
 
         super().__init__()
         self.rsa_private_key = rsa_private_key
-        self._key_size = None
-        self._header_size = None
+        self._key_size: int | None = None
+        self._header_size: int | None = None
+        self._header_prefix = b""
+        self._gcm_cipher: AEADDecryptionContext | None = None
+        self._is_gcm = False
 
     def expected_header_bytes(self) -> int:
         if self._cipher is not None:
@@ -495,30 +578,66 @@ class Decryptor(BaseDecryptor):
         return self._header_size
 
     def footer_size(self) -> int:
-        return 32
+        return GCM_TAG_SIZE if self._is_gcm else CTR_HMAC_FOOTER_SIZE
 
     def process_header(self, data: bytes) -> None:
         if self._key_size is None:
             n = len(FILEMAGIC)
-            if data[0:n] != FILEMAGIC:
+            magic = data[0:n]
+            if magic == FILEMAGIC:
+                self._is_gcm = False
+            elif magic == FILEMAGIC_AES_256_GCM:
+                self._is_gcm = True
+            else:
                 raise EncryptorError("Invalid magic bytes")
+            self._header_prefix = data
             self._key_size = struct.unpack(">H", data[n : n + 2])[0]
         else:
-            pad = padding.OAEP(mgf=padding.MGF1(algorithm=SHA1()), algorithm=SHA1(), label=None)
             try:
-                key = self.rsa_private_key.decrypt(data, pad)
+                key = self.rsa_private_key.decrypt(data, _rsa_oaep_padding())
             except AssertionError:
                 raise EncryptorError("Decrypting key data failed")
-            if len(key) != 64:
-                raise EncryptorError("Integrity check failed")
 
-            cipher_key = key[0:16]
-            nonce = key[16:32]
-            hmac_key = key[32:64]
-            self._cipher = Cipher(algorithms.AES(cipher_key), modes.CTR(nonce), backend=default_backend()).decryptor()
-            self._authenticator = HMAC(hmac_key, SHA256(), backend=default_backend())
-            self._header_size = len(FILEMAGIC) + 2 + self._key_size
+            if self._is_gcm:
+                if len(key) != GCM_KEY_SIZE + GCM_NONCE_SIZE:
+                    raise EncryptorError("Integrity check failed")
+                gcm_cipher = Cipher(
+                    algorithms.AES(key[:GCM_KEY_SIZE]), modes.GCM(key[GCM_KEY_SIZE:]), backend=default_backend()
+                ).decryptor()
+                gcm_cipher.authenticate_additional_data(self._header_prefix + data)
+                self._gcm_cipher = gcm_cipher
+                self._cipher = gcm_cipher
+            else:
+                if len(key) != 64:
+                    raise EncryptorError("Integrity check failed")
+                cipher_key = key[0:16]
+                nonce = key[16:32]
+                hmac_key = key[32:64]
+                self._cipher = Cipher(algorithms.AES(cipher_key), modes.CTR(nonce), backend=default_backend()).decryptor()
+                self._authenticator = HMAC(hmac_key, SHA256(), backend=default_backend())
+            self._header_size = len(self._header_prefix) + self._key_size
+            self._header_prefix = b""
             self._key_size = None
+
+    def process_data(self, data: bytes) -> bytes:
+        if not self._is_gcm:
+            return super().process_data(data)
+        if not data:
+            return b""
+        return self.cipher.update(data)
+
+    def finalize(self, footer: bytes) -> bytes:
+        if not self._is_gcm:
+            return super().finalize(footer)
+        if self._gcm_cipher is None:
+            raise UninitializedError("cipher not initialized")
+        try:
+            result = self._gcm_cipher.finalize_with_tag(footer)
+        except (InvalidTag, ValueError):
+            raise EncryptorError("Integrity check failed")
+        self._gcm_cipher = None
+        self._cipher = None
+        return result
 
 
 class DecryptorFile(BaseDecryptorFile):

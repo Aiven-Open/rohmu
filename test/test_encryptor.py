@@ -17,7 +17,10 @@ from rohmu.encryptor import (
     BaseEncryptorStream,
     Decryptor,
     DecryptorFile,
+    DecryptSink,
+    EncryptionCipher,
     Encryptor,
+    EncryptorError,
     EncryptorFile,
     EncryptorStream,
     SymmetricDecryptor,
@@ -100,6 +103,10 @@ assert isinstance(LOADED_RSA_PRIVATE_KEY, RSAPrivateKey)
             lambda: Decryptor(LOADED_RSA_PRIVATE_KEY),
         ),
         (
+            lambda: Encryptor(RSA_PUBLIC_KEY, encryption_cipher="aes-256-gcm"),
+            lambda: Decryptor(RSA_PRIVATE_KEY),
+        ),
+        (
             lambda: SymmetricEncryptor(SYMMETRIC_KEY),
             lambda: SymmetricDecryptor(SYMMETRIC_KEY),
         ),
@@ -139,6 +146,10 @@ def test_encryptor_decryptor(
         ),
         (
             lambda x: EncryptorStream(x, LOADED_RSA_PUBLIC_KEY),
+            lambda x: DecryptorFile(x, RSA_PRIVATE_KEY),
+        ),
+        (
+            lambda x: EncryptorStream(x, RSA_PUBLIC_KEY, encryption_cipher="aes-256-gcm"),
             lambda x: DecryptorFile(x, RSA_PRIVATE_KEY),
         ),
         (
@@ -193,6 +204,10 @@ def test_encryptor_stream(
         (
             lambda: Encryptor(RSA_PUBLIC_KEY),
             lambda x: DecryptorFile(x, LOADED_RSA_PRIVATE_KEY),
+        ),
+        (
+            lambda: Encryptor(RSA_PUBLIC_KEY, encryption_cipher="aes-256-gcm"),
+            lambda x: DecryptorFile(x, RSA_PRIVATE_KEY),
         ),
         (
             lambda: SymmetricEncryptor(SYMMETRIC_KEY),
@@ -348,6 +363,10 @@ def test_decryptorfile_for_tarfile(
             lambda x: DecryptorFile(x, RSA_PRIVATE_KEY),
         ),
         (
+            lambda x: EncryptorFile(x, RSA_PUBLIC_KEY, encryption_cipher="aes-256-gcm"),
+            lambda x: DecryptorFile(x, RSA_PRIVATE_KEY),
+        ),
+        (
             lambda x: SymmetricEncryptorFile(x, SYMMETRIC_KEY),
             lambda x: SymmetricDecryptorFile(x, SYMMETRIC_KEY),
         ),
@@ -467,3 +486,57 @@ def test_empty_file(
     df = decryptor_file_factory(bio)
     data = df.read()
     assert data == b""
+
+
+def test_encryptor_defaults_to_aes_128_ctr() -> None:
+    encryptor = Encryptor(RSA_PUBLIC_KEY)
+    encrypted = encryptor.update(b"data") + encryptor.finalize()
+    assert encrypted.startswith(b"pghoa1")
+
+
+def test_encryptor_rejects_unsupported_cipher() -> None:
+    with pytest.raises(ValueError, match="Unsupported encryption cipher"):
+        Encryptor(RSA_PUBLIC_KEY, encryption_cipher="aes-256-cbc")  # type: ignore[arg-type]
+
+
+def _encrypt_gcm(plaintext: bytes) -> bytes:
+    encryptor = Encryptor(RSA_PUBLIC_KEY, encryption_cipher="aes-256-gcm")
+    return encryptor.update(plaintext) + encryptor.finalize()
+
+
+def test_aes_256_gcm_format() -> None:
+    plaintext = b"some plaintext"
+    encrypted = _encrypt_gcm(plaintext)
+    assert encrypted.startswith(b"pghoa2")
+    # header (magic + key length + RSA-1024 wrapped key) + ciphertext + 16-byte GCM tag
+    assert len(encrypted) == 6 + 2 + 128 + len(plaintext) + 16
+
+
+@pytest.mark.parametrize(
+    "tamper_offset",
+    (2, 7, 20, -20, -1),
+    ids=("magic", "key_length", "wrapped_key", "ciphertext", "tag"),
+)
+def test_aes_256_gcm_detects_tampering(tamper_offset: int) -> None:
+    encrypted = bytearray(_encrypt_gcm(b"x" * 100))
+    encrypted[tamper_offset] ^= 0x01
+    with pytest.raises((EncryptorError, ValueError)):
+        DecryptorFile(io.BytesIO(bytes(encrypted)), RSA_PRIVATE_KEY).read()
+
+
+def test_aes_256_gcm_detects_truncation() -> None:
+    encrypted = _encrypt_gcm(b"x" * 100)
+    with pytest.raises(EncryptorError):
+        DecryptorFile(io.BytesIO(encrypted[:-1]), RSA_PRIVATE_KEY).read()
+
+
+@pytest.mark.parametrize("encryption_cipher", ("aes-128-ctr", "aes-256-gcm"))
+def test_decrypt_sink_with_small_writes(encryption_cipher: EncryptionCipher) -> None:
+    plaintext = os.urandom(10_000)
+    encryptor = Encryptor(RSA_PUBLIC_KEY, encryption_cipher=encryption_cipher)
+    encrypted = encryptor.update(plaintext) + encryptor.finalize()
+    output = io.BytesIO()
+    sink = DecryptSink(output, len(encrypted), RSA_PRIVATE_KEY)
+    for offset in range(0, len(encrypted), 7):
+        sink.write(encrypted[offset : offset + 7])
+    assert output.getvalue() == plaintext
