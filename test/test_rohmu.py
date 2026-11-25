@@ -1,4 +1,5 @@
 from rohmu import rohmufile
+from rohmu.encryptor import EncryptionCipher
 from rohmu.object_storage.base import BaseTransfer
 from rohmu.object_storage.local import LocalTransfer
 from rohmu.rohmufile import create_sink_pipeline
@@ -41,9 +42,12 @@ EMPTY_FILE_SHA1 = "da39a3ee5e6b4b0d3255bfef95601890afd80709"
 log = logging.getLogger(__name__)
 
 
+@pytest.mark.parametrize("encryption_cipher", ["aes-128-ctr", "aes-256-gcm"])
 @pytest.mark.parametrize("compress_algorithm", ["lzma", "snappy", "zstd"])
 @pytest.mark.parametrize("file_size", [0, 1], ids=["0byte_file", "1byte_file"])
-def test_rohmu_with_local_storage(compress_algorithm: str, file_size: int, tmp_path: pathlib.Path) -> None:
+def test_rohmu_with_local_storage(
+    compress_algorithm: str, file_size: int, encryption_cipher: EncryptionCipher, tmp_path: pathlib.Path
+) -> None:
     hash_algorithm = "sha1"
     compression_level = 0
 
@@ -59,7 +63,9 @@ def test_rohmu_with_local_storage(compress_algorithm: str, file_size: int, tmp_p
     compressed_filepath = tmp_path / "compressed" / "hello_compressed"
     compressed_filepath.parent.mkdir(exist_ok=True)
     hasher = hashlib.new(hash_algorithm)
-    compressed_file_size = _compress_file(orig_file, compressed_filepath, compress_algorithm, compression_level, hasher)
+    compressed_file_size = _compress_file(
+        orig_file, compressed_filepath, compress_algorithm, compression_level, hasher, encryption_cipher
+    )
     file_hash = hasher.hexdigest()
 
     log.info(
@@ -122,6 +128,7 @@ def _compress_file(  # type: ignore[no-untyped-def]
     algorithm: str,
     compress_level: int,
     hasher,
+    encryption_cipher: EncryptionCipher,
 ) -> int:
     with open(input_file, "rb") as input_obj, open(f"{output_file.resolve()}.tmp-compress", "wb") as output_obj:
         _, compressed_file_size = rohmufile.write_file(
@@ -131,6 +138,7 @@ def _compress_file(  # type: ignore[no-untyped-def]
             compression_algorithm=algorithm,
             compression_level=compress_level,
             rsa_public_key=CONSTANT_TEST_RSA_PUBLIC_KEY,
+            encryption_cipher=encryption_cipher,
             log_func=log.debug,
         )
         os.link(output_obj.name, output_file)

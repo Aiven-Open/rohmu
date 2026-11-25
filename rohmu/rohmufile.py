@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from .common.constants import IO_BLOCK_SIZE
 from .compressor import CompressionFile, DecompressionFile, DecompressSink
-from .encryptor import DecryptorFile, DecryptSink, EncryptorFile
+from .encryptor import CIPHER_AES_128_CTR, DecryptorFile, DecryptSink, EncryptionCipher, EncryptorFile
 from .errors import InvalidConfigurationError
 from .filewrap import ThrottleSink
 from .typing import FileLike, HasRead, HasWrite, Metadata
@@ -146,9 +146,10 @@ def file_writer(
     compression_level: int = 0,
     compression_threads: int = 0,
     rsa_public_key: None | str | bytes | RSAPublicKey = None,
+    encryption_cipher: EncryptionCipher = CIPHER_AES_128_CTR,
 ) -> FileLike:
     if rsa_public_key:
-        fileobj = EncryptorFile(fileobj, rsa_public_key)
+        fileobj = EncryptorFile(fileobj, rsa_public_key, encryption_cipher=encryption_cipher)
 
     if compression_algorithm:
         fileobj = CompressionFile(fileobj, compression_algorithm, compression_level, compression_threads)
@@ -165,6 +166,7 @@ def write_file(
     compression_level: int = 0,
     compression_threads: int = 0,
     rsa_public_key: None | str | bytes | RSAPublicKey = None,
+    encryption_cipher: EncryptionCipher = CIPHER_AES_128_CTR,
     log_func: Callable[..., None] | None = None,
     header_func: Callable[[bytes], None] | None = None,
     data_callback: Callable[[bytes], None] | None = None,
@@ -179,6 +181,7 @@ def write_file(
         compression_threads=compression_threads,
         compression_level=compression_level,
         rsa_public_key=rsa_public_key,
+        encryption_cipher=encryption_cipher,
     ) as fp_out:
         header_block = True
         while True:
